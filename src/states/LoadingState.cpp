@@ -1,4 +1,4 @@
-#include "states/LoadingState.h"
+п»ї#include "states/LoadingState.h"
 
 void LoadingState::onEnter() {
     LOG_INFO("LoadingState: entered");
@@ -11,13 +11,13 @@ void LoadingState::onExit() {
 }
 
 void LoadingState::update(float dt) {
-    timer_ += dt; // накапливаем время
+    timer_ += dt; // Accumulate elapsed loading time.
 
     if (timer_ >= duration_) {
-        finished_ = true; // прошло 2 секунды - готово
+        finished_ = true; // The loading timeout has elapsed.
     }
 }
 
 void LoadingState::render() {
-    // Пока просто тёмный экран — треугольник добавим позже
+    // Rendering is intentionally empty for now.
 }

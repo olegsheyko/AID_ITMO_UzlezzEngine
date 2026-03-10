@@ -1,25 +1,25 @@
-#pragma once
+п»ї#pragma once
 #include <string>
 
 class IRenderAdapter {
 	public:
 	virtual ~IRenderAdapter() = default;
 
-	// Создание окна и инициализация рендерера
+	// Create a window and initialize the renderer.
 	virtual bool init(int width, int height, const std::string& title) = 0;
 
-	// Проверка, открыто ли окно
+	// Check whether the window should keep running.
 	virtual bool isRunning() const = 0;
 
-	// Обработка событий
+	// Process platform events.
 	virtual void pollEvents() = 0;
 
-	// Очистка экрана и подготовка к рендерингу
+	// Clear the framebuffer and prepare for drawing.
 	virtual void beginFrame(float r, float g, float b) = 0;
 
-	// Завершение рендеринга и отображение на экране
+	// Present the rendered frame.
 	virtual void endFrame() = 0;
 
-	// Закрытие окна и освобождение ресурсов
+	// Release window and renderer resources.
 	virtual void shutdown() = 0;
 };

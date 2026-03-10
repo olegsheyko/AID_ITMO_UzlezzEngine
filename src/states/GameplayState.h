@@ -1,11 +1,11 @@
-#pragma once
+п»ї#pragma once
 #include "states/IGameState.h"
 #include "core/Logger.h"
 #include "render/ShaderProgram.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-// Основное игровое состояние
+// Main gameplay state.
 class GameplayState : public IGameState {
 public:
     void onEnter() override;
@@ -14,21 +14,21 @@ public:
     void render() override;
 
 private:
-	ShaderProgram shader_; // шейдер для рисования треугольника
+	ShaderProgram shader_; // Shader used to draw the triangle.
 
-	GLuint VAO_ = 0; // Vertex Array Object для треугольника
-	GLuint VBO_ = 0; // Vertex Buffer Object для треугольника
+	GLuint VAO_ = 0; // Vertex Array Object for the triangle.
+	GLuint VBO_ = 0; // Vertex Buffer Object for the triangle.
 
-    float x_ = 0.0f; // позиция объекта — пригодится когда добавим треугольник
+    float x_ = 0.0f; // Horizontal triangle offset.
     float y_ = 0.0f;
 
-	float centerX_ = 0.0f; // центр треугольника по X
-	float centerY_ = 0.0f; // центр треугольника по Y
+	float centerX_ = 0.0f; // Triangle center on the X axis.
+	float centerY_ = 0.0f; // Triangle center on the Y axis.
 
-	float scale_ = 1.0f; // масштаб объекта
-	float rotation_ = 0.0f; // угол поворота объекта
+	float scale_ = 1.0f; // Current object scale.
+	float rotation_ = 0.0f; // Current object rotation in radians.
 
-	bool rmbWasPressed_ = false; // была ли нажата правая кнопка мыши
-	bool lmbWasPressed_ = false; // была ли нажата левая кнопка мыши
-	bool mmbWasPressed_ = false; // была ли нажата средняя кнопка мыши
+	bool rmbWasPressed_ = false; // Edge detection for the right mouse button.
+	bool lmbWasPressed_ = false; // Edge detection for the left mouse button.
+	bool mmbWasPressed_ = false; // Edge detection for the middle mouse button.
 };

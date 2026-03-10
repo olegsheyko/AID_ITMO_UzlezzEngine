@@ -1,20 +1,23 @@
-#include "states/GameplayState.h"
+п»ї#include "states/GameplayState.h"
 #include <GLFW/glfw3.h>
 #include <cmath>
 
 void GameplayState::onEnter() {
     LOG_INFO("GameplayState: entered");
 
-    shader_.load("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl");
+    if (!shader_.load("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl")) {
+        LOG_ERROR("GameplayState: failed to load shaders");
+        return;
+    }
 
     float vertices[] = {
-        -0.5f, -0.5f, 0.0f,  // левый нижний
-         0.5f, -0.5f, 0.0f,  // правый нижний
-         0.0f,  0.5f, 0.0f   // верхний центр
+        -0.5f, -0.5f, 0.0f,  // Bottom-left vertex.
+         0.5f, -0.5f, 0.0f,  // Bottom-right vertex.
+         0.0f,  0.5f, 0.0f   // Top-center vertex.
     };
 
-	centerX_ = (vertices[0] + vertices[3] + vertices[6]) / 3.0f; // среднее X
-	centerY_ = (vertices[1] + vertices[4] + vertices[7]) / 3.0f; // среднее Y
+	centerX_ = (vertices[0] + vertices[3] + vertices[6]) / 3.0f; // Average X center.
+	centerY_ = (vertices[1] + vertices[4] + vertices[7]) / 3.0f; // Average Y center.
 
 	glGenVertexArrays(1, &VAO_);
 	glGenBuffers(1, &VBO_);
@@ -27,7 +30,7 @@ void GameplayState::onEnter() {
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 	glEnableVertexAttribArray(0);
 
-	glBindVertexArray(0); // отщелкиваем VAO, чтобы случайно не изменить его настройки в другом месте
+	glBindVertexArray(0); // Unbind VAO to avoid accidental later changes.
 }
 
 void GameplayState::onExit() {
@@ -38,37 +41,55 @@ void GameplayState::onExit() {
 }
 
 void GameplayState::update(float dt) {
-    // Движение стрелками — пригодится когда добавим треугольник
     float speed = 1.0f * dt;
 
-    if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_LEFT) == GLFW_PRESS)  x_ -= speed;
-    if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_RIGHT) == GLFW_PRESS) x_ += speed;
-    if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_UP) == GLFW_PRESS)    y_ += speed;
-    if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_DOWN) == GLFW_PRESS)  y_ -= speed;
+    if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_LEFT) == GLFW_PRESS) {
+        x_ -= speed;
+        LOG_INFO("GameplayState: move left  x=" + std::to_string(x_));
+    }
+    if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_RIGHT) == GLFW_PRESS) {
+        x_ += speed;
+        LOG_INFO("GameplayState: move right x=" + std::to_string(x_));
+    }
+    if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_UP) == GLFW_PRESS) {
+        y_ += speed;
+        LOG_INFO("GameplayState: move up    y=" + std::to_string(y_));
+    }
+    if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_DOWN) == GLFW_PRESS) {
+        y_ -= speed;
+        LOG_INFO("GameplayState: move down  y=" + std::to_string(y_));
+    }
 
-    // LMB input
-	bool lmbNow = glfwGetMouseButton(glfwGetCurrentContext(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    // LMB input.
+    bool lmbNow = glfwGetMouseButton(glfwGetCurrentContext(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     if (lmbNow && !lmbWasPressed_) {
-        scale_ += 0.1f; // увеличиваем масштаб при каждом новом нажатии ЛКМ
-	}
-	lmbWasPressed_ = lmbNow;
+        scale_ += 0.1f;
+        LOG_INFO("GameplayState: scale up   scale=" + std::to_string(scale_));
+    }
+    lmbWasPressed_ = lmbNow;
 
-	// RMB input
+    // RMB input.
     bool rmbNow = glfwGetMouseButton(glfwGetCurrentContext(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     if (rmbNow && !rmbWasPressed_) {
-        rotation_ += 3.14159f / 4.0f; // поворачиваем на 15 градусов при каждом новом нажатии ПКМ
-	}
-	rmbWasPressed_ = rmbNow;
+        rotation_ += 3.14159f / 4.0f;
+        LOG_INFO("GameplayState: rotate     rotation=" + std::to_string(rotation_));
+    }
+    rmbWasPressed_ = rmbNow;
 
-	// MMB input
-	bool mmbNow = glfwGetMouseButton(glfwGetCurrentContext(), GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
-	if (mmbNow && !mmbWasPressed_) {
-		scale_ -= 0.1f; // сбрасываем масштаб при каждом новом нажатии СКМ
-	}
-	mmbWasPressed_ = mmbNow;
+    // MMB input.
+    bool mmbNow = glfwGetMouseButton(glfwGetCurrentContext(), GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
+    if (mmbNow && !mmbWasPressed_) {
+        scale_ -= 0.1f;
+        LOG_INFO("GameplayState: scale down scale=" + std::to_string(scale_));
+    }
+    mmbWasPressed_ = mmbNow;
 }
 
 void GameplayState::render() {
+    if (shader_.getId() == 0 || VAO_ == 0) {
+        return;
+    }
+
     shader_.use();
 
 	GLint posLoc = glGetUniformLocation(shader_.getId(), "uPosition");
@@ -78,9 +99,9 @@ void GameplayState::render() {
 
 	glUniform2f(posLoc, x_, y_);
 	glUniform1f(scaleLoc, scale_);
-	glUniform1f(rotLoc, rotation_);
-	glUniform2f(centerLoc, centerX_, centerY_);
+    glUniform1f(rotLoc, rotation_);
+    glUniform2f(centerLoc, centerX_, centerY_);
 
     glBindVertexArray(VAO_);
-    glDrawArrays(GL_TRIANGLES, 0, 3); // рисуем 3 вершины = 1 треугольник
+    glDrawArrays(GL_TRIANGLES, 0, 3); // Draw 3 vertices == 1 triangle.
 }

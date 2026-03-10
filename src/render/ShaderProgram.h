@@ -1,28 +1,28 @@
-#pragma once
+п»ї#pragma once
 #include <glad/glad.h>
 #include <string>
 #include "core/Logger.h"
 
-// Загружает шейдеры из файлов и компилирует их на видеокарте
+// Loads shader sources from disk and compiles a GPU program.
 class ShaderProgram {
 public:
-    // Загрузить и скомпилировать шейдеры
+    // Load and compile the shader pair.
     bool load(const std::string& vertexPath, const std::string& fragmentPath);
 
-    // Сказать OpenGL использовать эту программу для рисования
+    // Bind the program for drawing.
     void use() const;
 
-    // Удалить программу с видеокарты
+    // Delete the GPU program.
     void destroy();
 
-	GLuint getId() const { return id_; } // получить ID программы (для установки uniform-переменных и т.п.)
+	GLuint getId() const { return id_; } // Expose the OpenGL program id.
 
 private:
-    GLuint id_ = 0; // ID программы на видеокарте
+    GLuint id_ = 0; // OpenGL program id.
 
-    // Прочитать файл в строку
+    // Read the full file into a string.
     std::string readFile(const std::string& path);
 
-    // Скомпилировать один шейдер
+    // Compile a single shader stage.
     GLuint compileShader(GLenum type, const std::string& source);
 };

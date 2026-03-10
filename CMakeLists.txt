@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+п»їcmake_minimum_required(VERSION 3.16)
 project(GameEngine VERSION 1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -20,7 +20,7 @@ set_target_properties(glfw PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/include"
 )
 
-# --- Наш проект ---
+# --- Game target ---
 add_executable(GameEngine
     src/main.cpp
     src/core/Application.cpp

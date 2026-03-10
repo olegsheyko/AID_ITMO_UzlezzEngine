@@ -1,8 +1,8 @@
-#pragma once
+пїњ#pragma once
 #include "states/IGameState.h"
 #include "core/Logger.h"
 
-// √лавное меню Ч нажми Enter чтобы начать игру
+// Main menu state. Press Enter to start the game.
 class MenuState : public IGameState {
 public:
     void onEnter() override;

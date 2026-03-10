@@ -32,3 +32,6 @@ compile_commands.json
 Thumbs.db
 
 .idea/
+build_local/
+build/
+build_local_debug/

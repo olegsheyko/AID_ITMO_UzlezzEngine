@@ -12,12 +12,12 @@ void MenuState::onExit() {
 
 void MenuState::update(float dt) {
     (void)dt;
-    // Проверяем нажатие Enter
+    // Start the game once Enter is pressed.
     if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_ENTER) == GLFW_PRESS) {
         startGame_ = true;
     }
 }
 
 void MenuState::render() {
-    // Пока пустой экран — потом добавим треугольник
+    // Rendering is intentionally empty for now.
 }

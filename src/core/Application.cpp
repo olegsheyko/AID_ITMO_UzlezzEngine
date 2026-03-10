@@ -23,7 +23,7 @@ bool Application::init(int width, int height, const char* title) {
 void Application::run() {
 	LOG_INFO("Application: starting main loop");
 
-	while (renderer_->isRunning()) {
+	while (renderer_ && renderer_->isRunning()) {
 		auto now = Clock::now();
 		float dt = std::chrono::duration<float>(now - lastFrameTime_).count();
 		lastFrameTime_ = now;
@@ -53,12 +53,23 @@ void Application::update(float dt) {
 }
 
 void Application::render() {
+	auto* current = stateManager_.current();
+
 	renderer_->beginFrame(0.1f, 0.1f, 0.2f);
-	stateManager_.current()->render();
+	if (current) {
+		current->render();
+	}
 	renderer_->endFrame();
 }
 
 void Application::shutdown() {
 	LOG_INFO("Application: shutting down");
-	renderer_->shutdown();
+
+	while (!stateManager_.isEmpty()) {
+		stateManager_.pop();
+	}
+
+	if (renderer_) {
+		renderer_->shutdown();
+	}
 }

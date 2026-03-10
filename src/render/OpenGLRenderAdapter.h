@@ -17,4 +17,5 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 
 private:
 	GLFWwindow* window_ = nullptr;
+	bool initialized_ = false;
 };
