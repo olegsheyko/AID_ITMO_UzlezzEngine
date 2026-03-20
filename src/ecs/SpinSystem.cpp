@@ -4,6 +4,6 @@
 
 void SpinSystem::update(World& world, float dt) {
     world.forEach<Spin, Transform>([dt](Entity, Spin& spin, Transform& transform) {
-        transform.rotation += spin.speed * dt;
+        transform.rotation.y += spin.speed * dt;
     });
 }

@@ -1,0 +1,14 @@
+# Material file for Cowboy Hat.obj
+
+newmtl Hat
+Ka 1.0 1.0 1.0
+Kd 0.6 0.6 0.6
+Ks 0.0 0.0 0.0
+d 1.0
+illum 2
+map_Kd textures/Cowboy Hat_Hat_BaseColor.png
+map_bump textures/Cowboy Hat_Hat_Normal.png
+map_Ks textures/Cowboy Hat_Hat_Metallic.png
+map_Pr textures/Cowboy Hat_Hat_Roughness.png
+map_Ka textures/Cowboy Hat_Hat_AO.png
+disp textures/Cowboy Hat_Hat_Height.png

@@ -3,6 +3,11 @@
 #include <array>
 #include <cmath>
 
+struct Vec2 {
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
 struct Vec3 {
     float x = 0.0f;
     float y = 0.0f;
@@ -71,6 +76,30 @@ inline Mat4 rotationZ(float radians) {
     return matrix;
 }
 
+inline Mat4 rotationY(float radians) {
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+
+    Mat4 matrix = Mat4::identity();
+    matrix.values[0] = c;
+    matrix.values[2] = -s;
+    matrix.values[8] = s;
+    matrix.values[10] = c;
+    return matrix;
+}
+
+inline Mat4 rotationX(float radians) {
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+
+    Mat4 matrix = Mat4::identity();
+    matrix.values[5] = c;
+    matrix.values[6] = s;
+    matrix.values[9] = -s;
+    matrix.values[10] = c;
+    return matrix;
+}
+
 inline Mat4 scale(const Vec3& scale) {
     Mat4 matrix = Mat4::identity();
     matrix.values[0] = scale.x;
@@ -79,7 +108,22 @@ inline Mat4 scale(const Vec3& scale) {
     return matrix;
 }
 
-inline Mat4 composeTransform(const Vec3& position, float rotationRadians, const Vec3& scaleValue) {
-    return multiply(translation(position), multiply(rotationZ(rotationRadians), scale(scaleValue)));
+inline Mat4 composeTransform(const Vec3& position, const Vec3& rotation, const Vec3& scaleValue) {
+    // Применяем вращения в порядке: Y -> X -> Z (стандартный порядок Euler)
+    Mat4 rotMatrix = multiply(rotationY(rotation.y), multiply(rotationX(rotation.x), rotationZ(rotation.z)));
+    return multiply(translation(position), multiply(rotMatrix, scale(scaleValue)));
+}
+
+inline Mat4 perspective(float fovRadians, float aspect, float near, float far) {
+    Mat4 matrix{};
+    const float tanHalfFov = std::tan(fovRadians / 2.0f);
+    
+    matrix.values[0] = 1.0f / (aspect * tanHalfFov);
+    matrix.values[5] = 1.0f / tanHalfFov;
+    matrix.values[10] = -(far + near) / (far - near);
+    matrix.values[11] = -1.0f;
+    matrix.values[14] = -(2.0f * far * near) / (far - near);
+    
+    return matrix;
 }
 } // namespace Math

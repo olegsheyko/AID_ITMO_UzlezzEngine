@@ -1,4 +1,5 @@
 ﻿#include "states/LoadingState.h"
+#include "core/Logger.h"
 
 void LoadingState::onEnter() {
     LOG_INFO("LoadingState: entered");

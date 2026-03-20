@@ -1,4 +1,5 @@
 #include "states/MenuState.h"
+#include "core/Logger.h"
 #include <GLFW/glfw3.h>
 
 void MenuState::onEnter() {
