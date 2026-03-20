@@ -1,8 +1,14 @@
-﻿#include "states/GameplayState.h"
+#include "states/GameplayState.h"
+
+#include "core/Logger.h"
 #include "ecs/Components.h"
 #include "render/IRenderAdapter.h"
+#include "resources/HotReload.h"
+#include "resources/ResourceManager.h"
+#include "resources/SceneManifest.h"
 
 #include <GLFW/glfw3.h>
+
 #include <algorithm>
 
 namespace {
@@ -10,6 +16,11 @@ constexpr float kMoveSpeed = 1.0f;
 constexpr float kScaleStep = 0.1f;
 constexpr float kRotationStep = 3.1415926f / 4.0f;
 constexpr float kMinScale = 0.1f;
+constexpr const char* kSceneManifestPath = "assets/scenes/demo_scene.json";
+constexpr const char* kFallbackMeshPath = "assets/models/demo_cube.obj";
+constexpr const char* kFallbackTexturePath = "assets/textures/WoodCrate02.dds";
+constexpr const char* kFallbackVertexShaderPath = "assets/shaders/mesh_vertex.glsl";
+constexpr const char* kFallbackFragmentShaderPath = "assets/shaders/mesh_fragment_simple_texture.glsl";
 }
 
 GameplayState::GameplayState(IRenderAdapter& renderer)
@@ -43,45 +54,87 @@ void GameplayState::render() {
 }
 
 void GameplayState::createScene() {
-	// Cowboy Hat модель (управляемая, развернута лицом к пользователю)
-	Entity cowboyHatEntity = world_.createEntity();
-	world_.addComponent<Tag>(cowboyHatEntity, "CowboyHat");
-	world_.addComponent<Transform>(cowboyHatEntity, Transform{
-		{-0.75f, 0.0f, 0.0f},         // position (слева, расстояние уменьшено в 2 раза)
-		{0.0f, 3.1415926f, 0.0f},     // rotation (x, y, z) - поворот по Y на 180°
-		{1.0f, 1.0f, 1.0f}            // scale
-	});
-	
-	MeshRenderer cowboyHatRenderer;
-	cowboyHatRenderer.meshPath = "assets/models/Cowboy Hat.obj";
-	cowboyHatRenderer.baseColorTexturePath = "assets/models/textures/Cowboy Hat_Hat_BaseColor.png";
-	cowboyHatRenderer.vertexShaderPath = "assets/shaders/mesh_vertex.glsl";
-	cowboyHatRenderer.fragmentShaderPath = "assets/shaders/mesh_fragment_simple_texture.glsl";
-	cowboyHatRenderer.color = {1.0f, 1.0f, 1.0f, 1.0f};
-	world_.addComponent<MeshRenderer>(cowboyHatEntity, cowboyHatRenderer);
-	world_.addComponent<Spin>(cowboyHatEntity, Spin{0.5f});
-	
-	controllableEntity_ = cowboyHatEntity;
+	if (createSceneFromManifest()) {
+		return;
+	}
 
-	// Bookcase модель (только вращается, не управляется)
-	Entity bookcaseEntity = world_.createEntity();
-	world_.addComponent<Tag>(bookcaseEntity, "Bookcase");
-	world_.addComponent<Transform>(bookcaseEntity, Transform{
-		{0.75f, 0.0f, 0.0f},          // position (справа, расстояние уменьшено в 2 раза)
-		{0.0f, 0.0f, 0.0f},           // rotation
-		{0.25f, 0.25f, 0.25f}         // scale (в 2 раза меньше: 0.5 / 2 = 0.25)
-	});
-	
-	MeshRenderer bookcaseRenderer;
-	bookcaseRenderer.meshPath = "assets/models/bookcase_with_a_drawer.obj";
-	bookcaseRenderer.baseColorTexturePath = "assets/models/Bakes/Bookcase&Handle baked diffuse.png";
-	bookcaseRenderer.vertexShaderPath = "assets/shaders/mesh_vertex.glsl";
-	bookcaseRenderer.fragmentShaderPath = "assets/shaders/mesh_fragment_simple_texture.glsl";
-	bookcaseRenderer.color = {1.0f, 1.0f, 1.0f, 1.0f};
-	world_.addComponent<MeshRenderer>(bookcaseEntity, bookcaseRenderer);
-	world_.addComponent<Spin>(bookcaseEntity, Spin{0.3f}); // Медленнее вращается
+	LOG_ERROR("Falling back to resource-based test scene");
 
-	LOG_INFO("GameplayState: created scene with Cowboy Hat and Bookcase models");
+	auto& resourceManager = ResourceManager::getInstance();
+	MeshRenderer renderer;
+	renderer.meshId = "fallback_cube";
+	renderer.baseColorTextureId = "fallback_crate";
+	renderer.shaderId = "fallback_textured";
+	renderer.cachedMesh = resourceManager.load<MeshData>(kFallbackMeshPath);
+	renderer.cachedBaseColorTexture = resourceManager.load<TextureData>(kFallbackTexturePath);
+	renderer.cachedShader = resourceManager.loadShader(kFallbackVertexShaderPath, kFallbackFragmentShaderPath);
+
+	if (!renderer.cachedMesh || !renderer.cachedShader || !renderer.cachedBaseColorTexture) {
+		LOG_ERROR("Failed to build fallback scene resources");
+		return;
+	}
+
+	HotReload::getInstance().watchFile(kFallbackVertexShaderPath);
+	HotReload::getInstance().watchFile(kFallbackFragmentShaderPath);
+
+	controllableEntity_ = world_.createEntity();
+	world_.addComponent<Tag>(controllableEntity_, "FallbackCube");
+	world_.addComponent<Transform>(controllableEntity_, Transform{{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.6f, 0.6f, 0.6f}});
+	world_.addComponent<MeshRenderer>(controllableEntity_, renderer);
+}
+
+bool GameplayState::createSceneFromManifest() {
+	SceneManifest manifest;
+	if (!manifest.loadFromFile(kSceneManifestPath)) {
+		return false;
+	}
+
+	auto& resourceManager = ResourceManager::getInstance();
+
+	for (const SceneEntityDescription& description : manifest.getEntities()) {
+		const std::string* meshPath = manifest.findMeshPath(description.meshId);
+		const ShaderAssetPaths* shaderPaths = manifest.findShader(description.shaderId);
+		if (meshPath == nullptr || shaderPaths == nullptr) {
+			LOG_ERROR("Scene entity has unresolved resources: " + description.tag);
+			continue;
+		}
+
+		MeshRenderer renderer;
+		renderer.meshId = description.meshId;
+		renderer.baseColorTextureId = description.baseColorTextureId;
+		renderer.shaderId = description.shaderId;
+		renderer.cachedMesh = resourceManager.load<MeshData>(*meshPath);
+		renderer.cachedShader = resourceManager.loadShader(shaderPaths->vertexPath, shaderPaths->fragmentPath);
+
+		if (!description.baseColorTextureId.empty()) {
+			if (const std::string* texturePath = manifest.findTexturePath(description.baseColorTextureId)) {
+				renderer.cachedBaseColorTexture = resourceManager.load<TextureData>(*texturePath);
+			}
+		}
+
+		if (!renderer.cachedMesh || !renderer.cachedShader) {
+			LOG_ERROR("Failed to load scene resources for entity: " + description.tag);
+			continue;
+		}
+
+		Entity entity = world_.createEntity();
+		world_.addComponent<Tag>(entity, Tag{description.tag});
+		world_.addComponent<Transform>(entity, Transform{description.position, description.rotation, description.scale});
+		world_.addComponent<MeshRenderer>(entity, renderer);
+
+		if (description.spinSpeed != 0.0f) {
+			world_.addComponent<Spin>(entity, Spin{description.spinSpeed});
+		}
+
+		if (description.controllable) {
+			controllableEntity_ = entity;
+		}
+
+		HotReload::getInstance().watchFile(shaderPaths->vertexPath);
+		HotReload::getInstance().watchFile(shaderPaths->fragmentPath);
+	}
+
+	return world_.isAlive(controllableEntity_);
 }
 
 void GameplayState::handleInput(float dt) {

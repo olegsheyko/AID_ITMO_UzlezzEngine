@@ -9,16 +9,17 @@ out vec4 FragColor;
 uniform sampler2D baseColorTexture;
 
 void main() {
-    // Сэмплируем текстуру
     vec4 texColor = texture(baseColorTexture, TexCoord);
-    
-    // Простое освещение
+    if (texColor.a < 0.1) {
+        discard;
+    }
+
     vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));
     vec3 norm = normalize(Normal);
     float diff = max(dot(norm, lightDir), 0.0);
-    
+
     vec3 ambient = 0.3 * texColor.rgb;
     vec3 diffuse = diff * texColor.rgb;
-    
+
     FragColor = vec4(ambient + diffuse, texColor.a);
 }

@@ -20,6 +20,6 @@ private:
     static SubMesh processMesh(aiMesh* mesh, const aiScene* scene, const std::string& directory);
     static Material processMaterial(aiMaterial* material, const std::string& directory);
     static bool uploadToGPU(MeshData& meshData, IRenderAdapter* renderer);
-    static bool uploadSubMeshToGPU(SubMesh& subMesh);
+    static bool uploadSubMeshToGPU(SubMesh& subMesh, IRenderAdapter* renderer);
     static std::string getDirectory(const std::string& path);
 };

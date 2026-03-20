@@ -76,11 +76,13 @@ add_executable(GameEngine
     src/resources/MeshLoader.cpp
     src/resources/TextureLoader.cpp
     src/resources/ShaderLoader.cpp
+    src/resources/SceneManifest.cpp
     src/resources/HotReload.cpp
     src/resources/stb_image_impl.cpp
 )
 
 target_include_directories(GameEngine PRIVATE
+    external
     external/glad/include
     external/glfw/include
     external/stb_image
@@ -100,11 +102,12 @@ else()
     target_link_libraries(GameEngine PRIVATE assimp)
 endif()
 
-add_custom_command(TARGET GameEngine POST_BUILD
+add_custom_target(CopyAssets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_CURRENT_SOURCE_DIR}/assets"
     "$<TARGET_FILE_DIR:GameEngine>/assets"
 )
+add_dependencies(CopyAssets GameEngine)
 
 # Копируем DLL Assimp если нужно
 if(EXISTS "${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.dll")

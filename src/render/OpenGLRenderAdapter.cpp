@@ -43,6 +43,8 @@ bool OpenGLRenderAdapter::init(int width, int height, const std::string& title) 
 	glViewport(0, 0, width, height);
 	glfwSwapInterval(1);
 	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	if (!createRenderResources()) {
 		LOG_ERROR("OpenGLRenderAdapter: Failed to create render resources");
@@ -82,6 +84,211 @@ void OpenGLRenderAdapter::drawPrimitive(PrimitiveType primitive, const Mat4& mod
 	glBindVertexArray(mesh->vao);
 	glDrawArrays(mesh->drawMode, 0, mesh->vertexCount);
 	glBindVertexArray(0);
+}
+
+bool OpenGLRenderAdapter::uploadMesh(
+	const void* vertexData,
+	std::size_t vertexStride,
+	std::size_t vertexCount,
+	const unsigned int* indexData,
+	std::size_t indexCount,
+	unsigned int& outVao,
+	unsigned int& outVbo,
+	unsigned int& outEbo) {
+	outVao = 0;
+	outVbo = 0;
+	outEbo = 0;
+
+	if (vertexData == nullptr || indexData == nullptr || vertexStride == 0 || vertexCount == 0 || indexCount == 0) {
+		return false;
+	}
+
+	glGenVertexArrays(1, &outVao);
+	glGenBuffers(1, &outVbo);
+	glGenBuffers(1, &outEbo);
+
+	if (outVao == 0 || outVbo == 0 || outEbo == 0) {
+		destroyMesh(outVao, outVbo, outEbo);
+		return false;
+	}
+
+	glBindVertexArray(outVao);
+
+	glBindBuffer(GL_ARRAY_BUFFER, outVbo);
+	glBufferData(
+		GL_ARRAY_BUFFER,
+		static_cast<GLsizeiptr>(vertexStride * vertexCount),
+		vertexData,
+		GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, outEbo);
+	glBufferData(
+		GL_ELEMENT_ARRAY_BUFFER,
+		static_cast<GLsizeiptr>(sizeof(unsigned int) * indexCount),
+		indexData,
+		GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(vertexStride), (void*)0);
+
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(vertexStride), (void*)(3 * sizeof(float)));
+
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(vertexStride), (void*)(6 * sizeof(float)));
+
+	glBindVertexArray(0);
+	return true;
+}
+
+bool OpenGLRenderAdapter::createTexture(
+	int width,
+	int height,
+	int channels,
+	const unsigned char* pixels,
+	unsigned int& outTextureId) {
+	outTextureId = 0;
+
+	if (width <= 0 || height <= 0 || pixels == nullptr) {
+		return false;
+	}
+
+	glGenTextures(1, &outTextureId);
+	if (outTextureId == 0) {
+		return false;
+	}
+
+	GLenum internalFormat = GL_RGB;
+	GLenum dataFormat = GL_RGB;
+
+	if (channels == 1) {
+		internalFormat = GL_RED;
+		dataFormat = GL_RED;
+	} else if (channels == 4) {
+		internalFormat = GL_RGBA;
+		dataFormat = GL_RGBA;
+	}
+
+	glBindTexture(GL_TEXTURE_2D, outTextureId);
+	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, dataFormat, GL_UNSIGNED_BYTE, pixels);
+	glGenerateMipmap(GL_TEXTURE_2D);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	return true;
+}
+
+bool OpenGLRenderAdapter::createShaderProgram(
+	const std::string& vertexSource,
+	const std::string& fragmentSource,
+	unsigned int& outProgramId,
+	std::string& outError) {
+	outProgramId = 0;
+	outError.clear();
+
+	GLuint vertexShader = 0;
+	GLuint fragmentShader = 0;
+	if (!compileShader(GL_VERTEX_SHADER, vertexSource, vertexShader, outError)) {
+		return false;
+	}
+
+	if (!compileShader(GL_FRAGMENT_SHADER, fragmentSource, fragmentShader, outError)) {
+		glDeleteShader(vertexShader);
+		return false;
+	}
+
+	outProgramId = glCreateProgram();
+	glAttachShader(outProgramId, vertexShader);
+	glAttachShader(outProgramId, fragmentShader);
+	glLinkProgram(outProgramId);
+
+	GLint success = GL_FALSE;
+	glGetProgramiv(outProgramId, GL_LINK_STATUS, &success);
+	if (success != GL_TRUE) {
+		char infoLog[1024] = {};
+		glGetProgramInfoLog(outProgramId, sizeof(infoLog), nullptr, infoLog);
+		outError = infoLog;
+		glDeleteProgram(outProgramId);
+		outProgramId = 0;
+	}
+
+	glDeleteShader(vertexShader);
+	glDeleteShader(fragmentShader);
+
+	return outProgramId != 0;
+}
+
+void OpenGLRenderAdapter::destroyMesh(unsigned int& vao, unsigned int& vbo, unsigned int& ebo) {
+	if (ebo != 0) {
+		glDeleteBuffers(1, &ebo);
+		ebo = 0;
+	}
+	if (vbo != 0) {
+		glDeleteBuffers(1, &vbo);
+		vbo = 0;
+	}
+	if (vao != 0) {
+		glDeleteVertexArrays(1, &vao);
+		vao = 0;
+	}
+}
+
+void OpenGLRenderAdapter::destroyTexture(unsigned int& textureId) {
+	if (textureId != 0) {
+		glDeleteTextures(1, &textureId);
+		textureId = 0;
+	}
+}
+
+void OpenGLRenderAdapter::destroyShaderProgram(unsigned int& programId) {
+	if (programId != 0) {
+		glDeleteProgram(programId);
+		programId = 0;
+	}
+}
+
+void OpenGLRenderAdapter::useShaderProgram(unsigned int programId) {
+	glUseProgram(programId);
+}
+
+void OpenGLRenderAdapter::setMatrix4(unsigned int programId, const char* name, const Mat4& value) {
+	const GLint location = glGetUniformLocation(programId, name);
+	if (location >= 0) {
+		glUniformMatrix4fv(location, 1, GL_FALSE, value.data());
+	}
+}
+
+void OpenGLRenderAdapter::setInt(unsigned int programId, const char* name, int value) {
+	const GLint location = glGetUniformLocation(programId, name);
+	if (location >= 0) {
+		glUniform1i(location, value);
+	}
+}
+
+void OpenGLRenderAdapter::bindTexture2D(unsigned int textureId, unsigned int unit) {
+	glActiveTexture(GL_TEXTURE0 + unit);
+	glBindTexture(GL_TEXTURE_2D, textureId);
+}
+
+void OpenGLRenderAdapter::drawIndexed(unsigned int vao, unsigned int indexCount) {
+	if (vao == 0 || indexCount == 0) {
+		return;
+	}
+
+	glBindVertexArray(vao);
+	glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT, 0);
+	glBindVertexArray(0);
+}
+
+void OpenGLRenderAdapter::getFramebufferSize(int& width, int& height) const {
+	width = 0;
+	height = 0;
+	if (window_ != nullptr) {
+		glfwGetFramebufferSize(window_, &width, &height);
+	}
 }
 
 void OpenGLRenderAdapter::endFrame() {
@@ -239,4 +446,24 @@ const OpenGLRenderAdapter::PrimitiveMesh* OpenGLRenderAdapter::getMesh(Primitive
 	default:
 		return nullptr;
 	}
+}
+
+bool OpenGLRenderAdapter::compileShader(GLenum type, const std::string& source, GLuint& shaderId, std::string& outError) const {
+	const char* sourcePtr = source.c_str();
+	shaderId = glCreateShader(type);
+	glShaderSource(shaderId, 1, &sourcePtr, nullptr);
+	glCompileShader(shaderId);
+
+	GLint success = GL_FALSE;
+	glGetShaderiv(shaderId, GL_COMPILE_STATUS, &success);
+	if (success != GL_TRUE) {
+		char infoLog[1024] = {};
+		glGetShaderInfoLog(shaderId, sizeof(infoLog), nullptr, infoLog);
+		outError = infoLog;
+		glDeleteShader(shaderId);
+		shaderId = 0;
+		return false;
+	}
+
+	return true;
 }

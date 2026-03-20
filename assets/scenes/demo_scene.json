@@ -1,0 +1,50 @@
+{
+  "meshes": {
+    "cube": "assets/models/demo_cube.obj",
+    "pyramid": "assets/models/demo_pyramid.obj"
+  },
+  "textures": {
+    "crate": "assets/textures/WoodCrate02.dds",
+    "stone": "assets/textures/stone.dds",
+    "fence": "assets/textures/WireFence.dds"
+  },
+  "shaders": {
+    "textured": {
+      "vertex": "assets/shaders/mesh_vertex.glsl",
+      "fragment": "assets/shaders/mesh_fragment_simple_texture.glsl"
+    }
+  },
+  "entities": [
+    {
+      "tag": "ControlledCube",
+      "mesh": "cube",
+      "texture": "crate",
+      "shader": "textured",
+      "position": [-1.4, 0.0, 0.0],
+      "rotation": [0.0, 0.0, 0.0],
+      "scale": [0.9, 0.9, 0.9],
+      "spinSpeed": 0.35,
+      "controllable": true
+    },
+    {
+      "tag": "SharedCube",
+      "mesh": "cube",
+      "texture": "stone",
+      "shader": "textured",
+      "position": [1.4, 0.1, -0.6],
+      "rotation": [0.0, 0.7, 0.0],
+      "scale": [0.8, 0.8, 0.8],
+      "spinSpeed": -0.45
+    },
+    {
+      "tag": "Pyramid",
+      "mesh": "pyramid",
+      "texture": "fence",
+      "shader": "textured",
+      "position": [0.0, -0.7, 0.5],
+      "rotation": [0.0, 0.0, 0.0],
+      "scale": [1.1, 1.1, 1.1],
+      "spinSpeed": 0.2
+    }
+  ]
+}

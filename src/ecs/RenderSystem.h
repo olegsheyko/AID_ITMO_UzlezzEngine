@@ -1,9 +1,11 @@
 #pragma once
 
 #include "ecs/System.h"
+#include "math/MathTypes.h"
 
 class IRenderAdapter;
 class World;
+struct SubMesh;
 struct MeshData;
 struct ShaderData;
 struct MeshRenderer;
@@ -15,11 +17,8 @@ public:
     void render(World& world) override;
 
 private:
-    void renderSubMeshes(const MeshData* meshData, const ShaderData* shaderData);
-    void renderSubMeshesWithOverride(const MeshData* meshData, const ShaderData* shaderData,
-                                     const MeshRenderer& meshRenderer);
-    void renderSimpleMesh(const MeshData* meshData, const ShaderData* shaderData, 
-                         const MeshRenderer& meshRenderer);
+    void renderSubMesh(const SubMesh& subMesh, const ShaderData& shaderData, const MeshRenderer& meshRenderer);
+    void setupMatrices(unsigned int shaderProgram, const Mat4& modelMatrix);
     
     IRenderAdapter& renderer_;
 };

@@ -19,9 +19,6 @@ bool Application::init(int width, int height, const char* title) {
 	ResourceManager::getInstance().init(renderer_.get());
 	LOG_INFO("Application: ResourceManager initialized");
 
-	// Настраиваем горячую замену шейдеров
-	HotReload::getInstance().watchFile("assets/shaders/mesh_vertex.glsl");
-	HotReload::getInstance().watchFile("assets/shaders/mesh_fragment.glsl");
 	LOG_INFO("Application: HotReload initialized");
 
 	stateManager_.push(std::make_unique<LoadingState>());
@@ -51,13 +48,7 @@ void Application::update(float dt) {
 	if (HotReload::getInstance().update()) {
 		const auto& changedFiles = HotReload::getInstance().getChangedFiles();
 		for (const auto& path : changedFiles) {
-			// При изменении шейдера перезагружаем его
-			if (path.find("mesh_vertex") != std::string::npos || path.find("mesh_fragment") != std::string::npos) {
-				ResourceManager::getInstance().reloadShader(
-					"assets/shaders/mesh_vertex.glsl",
-					"assets/shaders/mesh_fragment.glsl"
-				);
-			}
+			ResourceManager::getInstance().reloadShadersForFile(path);
 		}
 	}
 

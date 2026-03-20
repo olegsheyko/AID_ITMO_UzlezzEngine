@@ -35,6 +35,7 @@ struct SubMesh {
     uint32_t vao = 0;
     uint32_t vbo = 0;
     uint32_t ebo = 0;
+    uint32_t indexCount = 0;
 };
 
 // Данные меша (может содержать несколько подмешей)
@@ -47,6 +48,7 @@ struct MeshData {
     uint32_t vao = 0;
     uint32_t vbo = 0;
     uint32_t ebo = 0;
+    uint32_t indexCount = 0;
     
     bool hasMultipleMaterials() const {
         return !subMeshes.empty();
@@ -74,6 +76,8 @@ struct TextureData {
 
 // Данные шейдерной программы
 struct ShaderData {
+    std::string vertexPath;
+    std::string fragmentPath;
     std::string vertexSource;
     std::string fragmentSource;
     

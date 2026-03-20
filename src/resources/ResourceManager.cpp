@@ -3,7 +3,13 @@
 #include "TextureLoader.h"
 #include "ShaderLoader.h"
 #include "core/Logger.h"
-#include <glad/glad.h>
+#include "render/IRenderAdapter.h"
+
+#include <utility>
+
+std::string ResourceManager::makeShaderKey(const std::string& vertexPath, const std::string& fragmentPath) {
+    return vertexPath + "|" + fragmentPath;
+}
 
 ResourceManager& ResourceManager::getInstance() {
     static ResourceManager instance;
@@ -56,7 +62,7 @@ std::shared_ptr<Resource<TextureData>> ResourceManager::loadTexture(const std::s
 }
 
 std::shared_ptr<Resource<ShaderData>> ResourceManager::loadShader(const std::string& vertexPath, const std::string& fragmentPath) {
-    std::string key = vertexPath + "|" + fragmentPath;
+    const std::string key = makeShaderKey(vertexPath, fragmentPath);
     
     auto it = shaderCache_.find(key);
     if (it != shaderCache_.end()) {
@@ -77,6 +83,48 @@ std::shared_ptr<Resource<ShaderData>> ResourceManager::loadShader(const std::str
 }
 
 void ResourceManager::clearCache() {
+    if (renderer_ != nullptr) {
+        for (auto& [path, resource] : meshCache_) {
+            (void)path;
+            if (!resource || !resource->isLoaded()) {
+                continue;
+            }
+
+            MeshData* meshData = resource->getData();
+            if (meshData == nullptr) {
+                continue;
+            }
+
+            for (auto& subMesh : meshData->subMeshes) {
+                renderer_->destroyMesh(subMesh.vao, subMesh.vbo, subMesh.ebo);
+                subMesh.indexCount = 0;
+            }
+
+            if (meshData->subMeshes.empty()) {
+                renderer_->destroyMesh(meshData->vao, meshData->vbo, meshData->ebo);
+            } else {
+                meshData->vao = 0;
+                meshData->vbo = 0;
+                meshData->ebo = 0;
+            }
+            meshData->indexCount = 0;
+        }
+
+        for (auto& [path, resource] : textureCache_) {
+            (void)path;
+            if (resource && resource->isLoaded()) {
+                renderer_->destroyTexture(resource->getData()->textureId);
+            }
+        }
+
+        for (auto& [key, resource] : shaderCache_) {
+            (void)key;
+            if (resource && resource->isLoaded()) {
+                renderer_->destroyShaderProgram(resource->getData()->programId);
+            }
+        }
+    }
+
     meshCache_.clear();
     textureCache_.clear();
     shaderCache_.clear();
@@ -84,22 +132,37 @@ void ResourceManager::clearCache() {
 }
 
 void ResourceManager::reloadShader(const std::string& vertexPath, const std::string& fragmentPath) {
-    std::string key = vertexPath + "|" + fragmentPath;
+    const std::string key = makeShaderKey(vertexPath, fragmentPath);
     
     auto it = shaderCache_.find(key);
     if (it != shaderCache_.end()) {
-        // Удаляем старую программу
         auto* shaderData = it->second->getData();
-        if (shaderData->programId != 0) {
-            glDeleteProgram(shaderData->programId);
-            shaderData->programId = 0;
+        if (renderer_ != nullptr) {
+            renderer_->destroyShaderProgram(shaderData->programId);
         }
-        
-        // Перезагружаем
+
         if (ShaderLoader::load(vertexPath, fragmentPath, *shaderData, renderer_)) {
             LOG_INFO("Shader reloaded: " + key);
         } else {
             LOG_ERROR("Failed to reload shader: " + key);
+        }
+    }
+}
+
+void ResourceManager::reloadShadersForFile(const std::string& changedPath) {
+    for (auto& [key, resource] : shaderCache_) {
+        (void)key;
+        if (resource == nullptr || !resource->isLoaded()) {
+            continue;
+        }
+
+        const ShaderData* shaderData = resource->getData();
+        if (shaderData == nullptr) {
+            continue;
+        }
+
+        if (shaderData->vertexPath == changedPath || shaderData->fragmentPath == changedPath) {
+            reloadShader(shaderData->vertexPath, shaderData->fragmentPath);
         }
     }
 }

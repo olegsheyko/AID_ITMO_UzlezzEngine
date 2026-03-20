@@ -2,9 +2,11 @@
 
 #include "Resource.h"
 #include "ResourceTypes.h"
-#include <unordered_map>
-#include <memory>
+
 #include <string>
+#include <memory>
+#include <type_traits>
+#include <unordered_map>
 
 class IRenderAdapter;
 
@@ -12,6 +14,24 @@ class IRenderAdapter;
 class ResourceManager {
 public:
     static ResourceManager& getInstance();
+
+    template <typename T>
+    std::shared_ptr<Resource<T>> load(const std::string& path) {
+        if constexpr (std::is_same_v<T, MeshData>) {
+            return loadMesh(path);
+        } else if constexpr (std::is_same_v<T, TextureData>) {
+            return loadTexture(path);
+        } else if constexpr (std::is_same_v<T, ShaderData>) {
+            const std::size_t separator = path.find('|');
+            if (separator == std::string::npos) {
+                return nullptr;
+            }
+
+            return loadShader(path.substr(0, separator), path.substr(separator + 1));
+        } else {
+            static_assert(!std::is_same_v<T, T>, "Unsupported resource type");
+        }
+    }
 
     // Инициализация с адаптером рендеринга
     void init(IRenderAdapter* renderer);
@@ -23,6 +43,7 @@ public:
 
     // Перезагрузка ресурса (для горячей замены)
     void reloadShader(const std::string& vertexPath, const std::string& fragmentPath);
+    void reloadShadersForFile(const std::string& changedPath);
 
     // Очистка кэша
     void clearCache();
@@ -33,6 +54,8 @@ public:
     size_t getShaderCount() const { return shaderCache_.size(); }
 
 private:
+    static std::string makeShaderKey(const std::string& vertexPath, const std::string& fragmentPath);
+
     ResourceManager() = default;
     ~ResourceManager() = default;
     ResourceManager(const ResourceManager&) = delete;

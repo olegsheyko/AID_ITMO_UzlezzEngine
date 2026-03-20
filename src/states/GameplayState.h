@@ -20,6 +20,7 @@ public:
 
 private:
 	void createScene();
+	bool createSceneFromManifest();
 	void handleInput(float dt);
 	void attachChild(Entity parent, Entity child);
 
