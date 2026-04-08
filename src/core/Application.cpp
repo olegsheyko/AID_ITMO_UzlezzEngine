@@ -1,4 +1,6 @@
 #include "Application.h"
+#include "input/GlfwInputHandler.h"
+#include "input/InputManager.h"
 #include "render/OpenGLRenderAdapter.h"
 #include "states/LoadingState.h"
 #include "states/MenuState.h"
@@ -14,6 +16,10 @@ bool Application::init(int width, int height, const char* title) {
 		LOG_ERROR("Application: Failed to initialize renderer");
 		return false;
 	}
+
+    if (auto* openGlRenderer = dynamic_cast<OpenGLRenderAdapter*>(renderer_.get())) {
+        InputManager::getInstance().initialize(std::make_unique<GlfwInputHandler>(openGlRenderer->getWindow()));
+    }
 
 	// Инициализируем менеджер ресурсов
 	ResourceManager::getInstance().init(renderer_.get());
@@ -38,6 +44,7 @@ void Application::run() {
 		if (dt > 0.1f) dt = 0.1f;
 
 		renderer_->pollEvents();
+        InputManager::getInstance().updateState();
 		update(dt);
 		render();
 	}
@@ -91,4 +98,6 @@ void Application::shutdown() {
 	if (renderer_) {
 		renderer_->shutdown();
 	}
+
+    InputManager::getInstance().shutdown();
 }

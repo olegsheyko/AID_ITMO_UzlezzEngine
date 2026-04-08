@@ -63,9 +63,14 @@ endif()
 add_executable(GameEngine
     src/main.cpp
     src/core/Application.cpp
+    src/ecs/CameraSystem.cpp
+    src/ecs/DebugRenderSystem.cpp
+    src/ecs/PhysicsSystem.cpp
     src/ecs/RenderSystem.cpp
     src/ecs/SpinSystem.cpp
     src/ecs/World.cpp
+    src/input/GlfwInputHandler.cpp
+    src/input/InputManager.cpp
     src/render/OpenGLRenderAdapter.cpp
     src/states/StateManager.cpp
     src/states/LoadingState.cpp

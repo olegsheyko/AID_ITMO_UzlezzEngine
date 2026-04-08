@@ -1,6 +1,7 @@
 #include "states/MenuState.h"
 #include "core/Logger.h"
-#include <GLFW/glfw3.h>
+#include "input/InputManager.h"
+#include "input/KeyCode.h"
 
 void MenuState::onEnter() {
     LOG_INFO("MenuState: entered");
@@ -14,7 +15,7 @@ void MenuState::onExit() {
 void MenuState::update(float dt) {
     (void)dt;
     // Start the game once Enter is pressed.
-    if (glfwGetKey(glfwGetCurrentContext(), GLFW_KEY_ENTER) == GLFW_PRESS) {
+    if (InputManager::getInstance().isKeyPressed(KeyCode::Enter)) {
         startGame_ = true;
     }
 }

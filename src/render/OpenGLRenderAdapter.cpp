@@ -5,6 +5,23 @@ namespace {
 void framebufferSizeCallback(GLFWwindow*, int width, int height) {
 	glViewport(0, 0, width, height);
 }
+
+Mat4 buildDebugViewProjectionView() {
+	Mat4 viewMatrix = Mat4::identity();
+	viewMatrix.data()[14] = -5.0f;
+	return viewMatrix;
+}
+
+Mat4 buildDebugProjectionMatrix(GLFWwindow* window) {
+	int width = 800;
+	int height = 600;
+	if (window != nullptr) {
+		glfwGetFramebufferSize(window, &width, &height);
+	}
+
+	const float aspect = (width > 0 && height > 0) ? static_cast<float>(width) / static_cast<float>(height) : (800.0f / 600.0f);
+	return Math::perspective(45.0f * 3.1415926f / 180.0f, aspect, 0.1f, 100.0f);
+}
 }
 
 OpenGLRenderAdapter::~OpenGLRenderAdapter() {
@@ -79,11 +96,30 @@ void OpenGLRenderAdapter::drawPrimitive(PrimitiveType primitive, const Mat4& mod
 
 	shader_.use();
 	glUniformMatrix4fv(modelLocation_, 1, GL_FALSE, modelMatrix.data());
+	if (viewLocation_ >= 0) {
+		const Mat4 viewMatrix = buildDebugViewProjectionView();
+		glUniformMatrix4fv(viewLocation_, 1, GL_FALSE, viewMatrix.data());
+	}
+	if (projectionLocation_ >= 0) {
+		const Mat4 projectionMatrix = buildDebugProjectionMatrix(window_);
+		glUniformMatrix4fv(projectionLocation_, 1, GL_FALSE, projectionMatrix.data());
+	}
 	glUniform4f(colorLocation_, color.x, color.y, color.z, color.w);
 
 	glBindVertexArray(mesh->vao);
 	glDrawArrays(mesh->drawMode, 0, mesh->vertexCount);
 	glBindVertexArray(0);
+}
+
+void OpenGLRenderAdapter::drawDebugAABB(const Vec3& center, const Vec3& halfExtents, const Vec4& color) {
+	const Mat4 modelMatrix = Math::composeTransform(
+		center,
+		Vec3{},
+		Vec3{halfExtents.x * 2.0f, halfExtents.y * 2.0f, halfExtents.z * 2.0f});
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	drawPrimitive(PrimitiveType::Cube, modelMatrix, color);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
 bool OpenGLRenderAdapter::uploadMesh(
@@ -268,6 +304,20 @@ void OpenGLRenderAdapter::setInt(unsigned int programId, const char* name, int v
 	}
 }
 
+void OpenGLRenderAdapter::setFloat(unsigned int programId, const char* name, float value) {
+	const GLint location = glGetUniformLocation(programId, name);
+	if (location >= 0) {
+		glUniform1f(location, value);
+	}
+}
+
+void OpenGLRenderAdapter::setVec3(unsigned int programId, const char* name, const Vec3& value) {
+	const GLint location = glGetUniformLocation(programId, name);
+	if (location >= 0) {
+		glUniform3f(location, value.x, value.y, value.z);
+	}
+}
+
 void OpenGLRenderAdapter::bindTexture2D(unsigned int textureId, unsigned int unit) {
 	glActiveTexture(GL_TEXTURE0 + unit);
 	glBindTexture(GL_TEXTURE_2D, textureId);
@@ -324,9 +374,11 @@ bool OpenGLRenderAdapter::createRenderResources() {
 	}
 
 	modelLocation_ = glGetUniformLocation(shader_.getId(), "uModel");
+	viewLocation_ = glGetUniformLocation(shader_.getId(), "uView");
+	projectionLocation_ = glGetUniformLocation(shader_.getId(), "uProjection");
 	colorLocation_ = glGetUniformLocation(shader_.getId(), "uColor");
 
-	if (modelLocation_ < 0 || colorLocation_ < 0) {
+	if (modelLocation_ < 0 || viewLocation_ < 0 || projectionLocation_ < 0 || colorLocation_ < 0) {
 		LOG_ERROR("OpenGLRenderAdapter: Failed to find shader uniforms");
 		return false;
 	}
@@ -409,6 +461,8 @@ void OpenGLRenderAdapter::destroyRenderResources() {
 	destroyMesh(quadMesh_);
 	destroyMesh(cubeMesh_);
 	modelLocation_ = -1;
+	viewLocation_ = -1;
+	projectionLocation_ = -1;
 	colorLocation_ = -1;
 	shader_.destroy();
 }
