@@ -22,8 +22,18 @@ class IRenderAdapter {
 	virtual void beginFrame(float r, float g, float b) = 0;
 
 	// Draw a primitive using the supplied model transform and color.
-	virtual void drawPrimitive(PrimitiveType primitive, const Mat4& modelMatrix, const Vec4& color) = 0;
-	virtual void drawDebugAABB(const Vec3& center, const Vec3& halfExtents, const Vec4& color) = 0;
+	virtual void drawPrimitive(
+		PrimitiveType primitive,
+		const Mat4& modelMatrix,
+		const Vec4& color,
+		const Mat4& viewMatrix,
+		const Mat4& projectionMatrix) = 0;
+	virtual void drawDebugAABB(
+		const Vec3& center,
+		const Vec3& halfExtents,
+		const Vec4& color,
+		const Mat4& viewMatrix,
+		const Mat4& projectionMatrix) = 0;
 
 	// Upload a mesh to GPU buffers.
 	virtual bool uploadMesh(

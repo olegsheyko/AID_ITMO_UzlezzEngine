@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace {
 constexpr float kMoveSpeed = 1.0f;
@@ -21,10 +22,105 @@ constexpr float kScaleStep = 0.1f;
 constexpr float kRotationStep = 3.1415926f / 4.0f;
 constexpr float kMinScale = 0.1f;
 constexpr const char* kSceneManifestPath = "assets/scenes/demo_scene.json";
-constexpr const char* kFallbackMeshPath = "assets/models/demo_cube.obj";
+constexpr const char* kFallbackMeshPath = "primitive:cube";
 constexpr const char* kFallbackTexturePath = "assets/textures/WoodCrate02.dds";
 constexpr const char* kFallbackVertexShaderPath = "assets/shaders/mesh_vertex.glsl";
 constexpr const char* kFallbackFragmentShaderPath = "assets/shaders/mesh_fragment_simple_texture.glsl";
+
+bool isApproximately(float left, float right) {
+    return std::abs(left - right) < 0.0001f;
+}
+
+bool isDefaultBoxCollider(const Collider& collider) {
+    return collider.type == ColliderType::Box &&
+        isApproximately(collider.halfExtents.x, 0.5f) &&
+        isApproximately(collider.halfExtents.y, 0.5f) &&
+        isApproximately(collider.halfExtents.z, 0.5f) &&
+        isApproximately(collider.offset.x, 0.0f) &&
+        isApproximately(collider.offset.y, 0.0f) &&
+        isApproximately(collider.offset.z, 0.0f);
+}
+
+bool extractMeshBounds(const MeshData& meshData, Vec3& outCenter, Vec3& outHalfExtents) {
+    float minX = std::numeric_limits<float>::max();
+    float minY = std::numeric_limits<float>::max();
+    float minZ = std::numeric_limits<float>::max();
+    float maxX = -std::numeric_limits<float>::max();
+    float maxY = -std::numeric_limits<float>::max();
+    float maxZ = -std::numeric_limits<float>::max();
+    bool hasVertices = false;
+
+    auto consumeVertices = [&](const std::vector<Vertex>& vertices) {
+        for (const Vertex& vertex : vertices) {
+            hasVertices = true;
+            minX = std::min(minX, vertex.position.x);
+            minY = std::min(minY, vertex.position.y);
+            minZ = std::min(minZ, vertex.position.z);
+            maxX = std::max(maxX, vertex.position.x);
+            maxY = std::max(maxY, vertex.position.y);
+            maxZ = std::max(maxZ, vertex.position.z);
+        }
+    };
+
+    if (!meshData.subMeshes.empty()) {
+        for (const SubMesh& subMesh : meshData.subMeshes) {
+            consumeVertices(subMesh.vertices);
+        }
+    } else {
+        consumeVertices(meshData.vertices);
+    }
+
+    if (!hasVertices) {
+        return false;
+    }
+
+    outCenter = Vec3{
+        (minX + maxX) * 0.5f,
+        (minY + maxY) * 0.5f,
+        (minZ + maxZ) * 0.5f
+    };
+    outHalfExtents = Vec3{
+        (maxX - minX) * 0.5f,
+        (maxY - minY) * 0.5f,
+        (maxZ - minZ) * 0.5f
+    };
+    return true;
+}
+
+void fitColliderToMeshBounds(const MeshRenderer& renderer, Collider& collider) {
+    if (!isDefaultBoxCollider(collider) || !renderer.cachedMesh || !renderer.cachedMesh->isLoaded()) {
+        return;
+    }
+
+    const MeshData* meshData = renderer.cachedMesh->getData();
+    if (meshData == nullptr) {
+        return;
+    }
+
+    Vec3 boundsCenter{};
+    Vec3 boundsHalfExtents{};
+    if (!extractMeshBounds(*meshData, boundsCenter, boundsHalfExtents)) {
+        return;
+    }
+
+    collider.offset = boundsCenter;
+    collider.halfExtents = boundsHalfExtents;
+}
+
+std::string entityLabel(World& world, Entity entity) {
+    if (!world.isAlive(entity)) {
+        return "Entity#" + std::to_string(entity);
+    }
+
+    if (world.hasComponent<Tag>(entity)) {
+        const Tag& tag = world.getComponent<Tag>(entity);
+        if (!tag.name.empty()) {
+            return tag.name + " (#" + std::to_string(entity) + ")";
+        }
+    }
+
+    return "Entity#" + std::to_string(entity);
+}
 }
 
 GameplayState::GameplayState(IRenderAdapter& renderer)
@@ -38,12 +134,12 @@ void GameplayState::onEnter() {
 	LOG_INFO("GameplayState: entered");
 	world_.clear();
     ServiceLocator::getEventDispatcher().clear();
-    ServiceLocator::getEventDispatcher().addListener<CollisionEvent>([](const CollisionEvent& event) {
+    ServiceLocator::getEventDispatcher().addListener<CollisionEvent>([this](const CollisionEvent& event) {
         LOG_INFO(
-            "CollisionEvent: entities " +
-            std::to_string(event.first) +
-            " and " +
-            std::to_string(event.second) +
+            "CollisionEvent: " +
+            entityLabel(world_, event.first) +
+            " <-> " +
+            entityLabel(world_, event.second) +
             ", penetration=" +
             std::to_string(event.penetration));
     });
@@ -134,7 +230,9 @@ void GameplayState::createScene() {
 	world_.addComponent<Transform>(controllableEntity_, Transform{{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.6f, 0.6f, 0.6f}});
 	world_.addComponent<MeshRenderer>(controllableEntity_, renderer);
     world_.addComponent<Rigidbody>(controllableEntity_, Rigidbody{Vec3{}, Vec3{}, 1.0f, true});
-    world_.addComponent<Collider>(controllableEntity_, Collider{ColliderType::Box, Vec3{0.5f, 0.5f, 0.5f}, Vec3{}, 0.5f});
+    Collider collider{ColliderType::Box, Vec3{0.5f, 0.5f, 0.5f}, Vec3{}, 0.5f};
+    fitColliderToMeshBounds(renderer, collider);
+    world_.addComponent<Collider>(controllableEntity_, collider);
 }
 
 bool GameplayState::createSceneFromManifest() {
@@ -179,7 +277,9 @@ bool GameplayState::createSceneFromManifest() {
             world_.addComponent<Rigidbody>(entity, description.rigidbody);
         }
         if (description.hasCollider) {
-            world_.addComponent<Collider>(entity, description.collider);
+            Collider collider = description.collider;
+            fitColliderToMeshBounds(renderer, collider);
+            world_.addComponent<Collider>(entity, collider);
         }
 
 		if (description.spinSpeed != 0.0f) {
@@ -192,7 +292,9 @@ bool GameplayState::createSceneFromManifest() {
 				world_.addComponent<Rigidbody>(entity, Rigidbody{Vec3{}, Vec3{}, 1.0f, true});
 			}
             if (!world_.hasComponent<Collider>(entity)) {
-                world_.addComponent<Collider>(entity, Collider{ColliderType::Box, Vec3{0.5f, 0.5f, 0.5f}, Vec3{}, 0.5f});
+                Collider collider{ColliderType::Box, Vec3{0.5f, 0.5f, 0.5f}, Vec3{}, 0.5f};
+                fitColliderToMeshBounds(renderer, collider);
+                world_.addComponent<Collider>(entity, collider);
             }
 		}
 

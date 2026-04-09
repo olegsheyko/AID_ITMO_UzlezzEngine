@@ -12,8 +12,18 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual bool isRunning() const override;
 	virtual void pollEvents() override;
 	virtual void beginFrame(float r, float g, float b) override;
-	virtual void drawPrimitive(PrimitiveType primitive, const Mat4& modelMatrix, const Vec4& color) override;
-	virtual void drawDebugAABB(const Vec3& center, const Vec3& halfExtents, const Vec4& color) override;
+	virtual void drawPrimitive(
+		PrimitiveType primitive,
+		const Mat4& modelMatrix,
+		const Vec4& color,
+		const Mat4& viewMatrix,
+		const Mat4& projectionMatrix) override;
+	virtual void drawDebugAABB(
+		const Vec3& center,
+		const Vec3& halfExtents,
+		const Vec4& color,
+		const Mat4& viewMatrix,
+		const Mat4& projectionMatrix) override;
 	virtual bool uploadMesh(
 		const void* vertexData,
 		std::size_t vertexStride,

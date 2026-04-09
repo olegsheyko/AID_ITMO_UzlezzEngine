@@ -1,6 +1,7 @@
 #include "core/ServiceLocator.h"
 #include "ecs/PhysicsSystem.h"
 
+#include "ecs/CollisionUtils.h"
 #include "ecs/Components.h"
 #include "ecs/Entity.h"
 #include "ecs/World.h"
@@ -13,11 +14,6 @@
 #include <vector>
 
 namespace {
-struct AABB {
-    Vec3 center{};
-    Vec3 halfSize{};
-};
-
 struct CollisionManifold {
     Vec3 normal{};
     float penetration = 0.0f;
@@ -39,29 +35,10 @@ float dot(const Vec3& left, const Vec3& right) {
     return left.x * right.x + left.y * right.y + left.z * right.z;
 }
 
-float absolute(float value) {
-    return std::fabs(value);
-}
-
-Vec3 scaledHalfExtents(const Transform& transform, const Collider& collider) {
-    return Vec3{
-        absolute(collider.halfExtents.x * transform.scale.x),
-        absolute(collider.halfExtents.y * transform.scale.y),
-        absolute(collider.halfExtents.z * transform.scale.z)
-    };
-}
-
-AABB buildAABB(const Transform& transform, const Collider& collider) {
-    return AABB{
-        add(transform.position, collider.offset),
-        scaledHalfExtents(transform, collider)
-    };
-}
-
 bool intersects(const AABB& left, const AABB& right, CollisionManifold& outManifold) {
-    const float dx = absolute(left.center.x - right.center.x);
-    const float dy = absolute(left.center.y - right.center.y);
-    const float dz = absolute(left.center.z - right.center.z);
+    const float dx = CollisionUtils::absolute(left.center.x - right.center.x);
+    const float dy = CollisionUtils::absolute(left.center.y - right.center.y);
+    const float dz = CollisionUtils::absolute(left.center.z - right.center.z);
 
     const float overlapX = (left.halfSize.x + right.halfSize.x) - dx;
     if (overlapX <= 0.0f) {
@@ -173,7 +150,7 @@ void PhysicsSystem::update(World& world, float dt) {
             return;
         }
 
-        colliders.emplace_back(entity, buildAABB(transform, collider));
+        colliders.emplace_back(entity, CollisionUtils::buildAABB(transform, collider));
     });
 
     for (std::size_t leftIndex = 0; leftIndex < colliders.size(); ++leftIndex) {
@@ -203,8 +180,8 @@ void PhysicsSystem::update(World& world, float dt) {
                 manifold.penetration
             });
 
-            colliders[leftIndex].second = buildAABB(leftTransform, world.getComponent<Collider>(leftEntity));
-            colliders[rightIndex].second = buildAABB(rightTransform, world.getComponent<Collider>(rightEntity));
+            colliders[leftIndex].second = CollisionUtils::buildAABB(leftTransform, world.getComponent<Collider>(leftEntity));
+            colliders[rightIndex].second = CollisionUtils::buildAABB(rightTransform, world.getComponent<Collider>(rightEntity));
         }
     }
 }

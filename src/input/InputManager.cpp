@@ -2,6 +2,34 @@
 
 #include <algorithm>
 
+namespace {
+constexpr KeyCode kTrackedKeys[] = {
+    KeyCode::Enter,
+    KeyCode::F3,
+    KeyCode::Space,
+    KeyCode::Left,
+    KeyCode::Right,
+    KeyCode::Up,
+    KeyCode::Down,
+    KeyCode::W,
+    KeyCode::A,
+    KeyCode::S,
+    KeyCode::D,
+    KeyCode::I,
+    KeyCode::J,
+    KeyCode::K,
+    KeyCode::L,
+    KeyCode::U,
+    KeyCode::O
+};
+
+constexpr KeyCode kTrackedMouseButtons[] = {
+    KeyCode::MouseLeft,
+    KeyCode::MouseRight,
+    KeyCode::MouseMiddle
+};
+}
+
 InputManager& InputManager::getInstance() {
     static InputManager instance;
     return instance;
@@ -13,6 +41,14 @@ void InputManager::initialize(std::unique_ptr<IInputHandler> handler) {
     mouseButtonStates_.clear();
     trackedKeys_.clear();
     trackedMouseButtons_.clear();
+
+    for (KeyCode key : kTrackedKeys) {
+        trackKey(key);
+    }
+    for (KeyCode button : kTrackedMouseButtons) {
+        trackMouseButton(button);
+    }
+
     mousePosition_ = Vec2{};
     previousMousePosition_ = Vec2{};
     mouseDelta_ = Vec2{};

@@ -15,7 +15,7 @@ void MenuState::onExit() {
 void MenuState::update(float dt) {
     (void)dt;
     // Start the game once Enter is pressed.
-    if (InputManager::getInstance().isKeyPressed(KeyCode::Enter)) {
+    if (InputManager::getInstance().isKeyDown(KeyCode::Enter)) {
         startGame_ = true;
     }
 }

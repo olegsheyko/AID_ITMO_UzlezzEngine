@@ -5,23 +5,6 @@ namespace {
 void framebufferSizeCallback(GLFWwindow*, int width, int height) {
 	glViewport(0, 0, width, height);
 }
-
-Mat4 buildDebugViewProjectionView() {
-	Mat4 viewMatrix = Mat4::identity();
-	viewMatrix.data()[14] = -5.0f;
-	return viewMatrix;
-}
-
-Mat4 buildDebugProjectionMatrix(GLFWwindow* window) {
-	int width = 800;
-	int height = 600;
-	if (window != nullptr) {
-		glfwGetFramebufferSize(window, &width, &height);
-	}
-
-	const float aspect = (width > 0 && height > 0) ? static_cast<float>(width) / static_cast<float>(height) : (800.0f / 600.0f);
-	return Math::perspective(45.0f * 3.1415926f / 180.0f, aspect, 0.1f, 100.0f);
-}
 }
 
 OpenGLRenderAdapter::~OpenGLRenderAdapter() {
@@ -88,7 +71,12 @@ void OpenGLRenderAdapter::beginFrame(float r, float g, float b) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void OpenGLRenderAdapter::drawPrimitive(PrimitiveType primitive, const Mat4& modelMatrix, const Vec4& color) {
+void OpenGLRenderAdapter::drawPrimitive(
+	PrimitiveType primitive,
+	const Mat4& modelMatrix,
+	const Vec4& color,
+	const Mat4& viewMatrix,
+	const Mat4& projectionMatrix) {
 	const PrimitiveMesh* mesh = getMesh(primitive);
 	if (mesh == nullptr || shader_.getId() == 0) {
 		return;
@@ -97,11 +85,9 @@ void OpenGLRenderAdapter::drawPrimitive(PrimitiveType primitive, const Mat4& mod
 	shader_.use();
 	glUniformMatrix4fv(modelLocation_, 1, GL_FALSE, modelMatrix.data());
 	if (viewLocation_ >= 0) {
-		const Mat4 viewMatrix = buildDebugViewProjectionView();
 		glUniformMatrix4fv(viewLocation_, 1, GL_FALSE, viewMatrix.data());
 	}
 	if (projectionLocation_ >= 0) {
-		const Mat4 projectionMatrix = buildDebugProjectionMatrix(window_);
 		glUniformMatrix4fv(projectionLocation_, 1, GL_FALSE, projectionMatrix.data());
 	}
 	glUniform4f(colorLocation_, color.x, color.y, color.z, color.w);
@@ -111,15 +97,50 @@ void OpenGLRenderAdapter::drawPrimitive(PrimitiveType primitive, const Mat4& mod
 	glBindVertexArray(0);
 }
 
-void OpenGLRenderAdapter::drawDebugAABB(const Vec3& center, const Vec3& halfExtents, const Vec4& color) {
-	const Mat4 modelMatrix = Math::composeTransform(
-		center,
-		Vec3{},
-		Vec3{halfExtents.x * 2.0f, halfExtents.y * 2.0f, halfExtents.z * 2.0f});
+void OpenGLRenderAdapter::drawDebugAABB(
+	const Vec3& center,
+	const Vec3& halfExtents,
+	const Vec4& color,
+	const Mat4& viewMatrix,
+	const Mat4& projectionMatrix) {
+	constexpr float kHalfPi = 1.5707963f;
 
-	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-	drawPrimitive(PrimitiveType::Cube, modelMatrix, color);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	auto drawEdge = [&](const Vec3& edgeCenter, const Vec3& rotation, float length) {
+		const Mat4 modelMatrix = Math::composeTransform(
+			edgeCenter,
+			rotation,
+			Vec3{length, 1.0f, 1.0f});
+		drawPrimitive(PrimitiveType::Line, modelMatrix, color, viewMatrix, projectionMatrix);
+	};
+
+	const float minX = center.x - halfExtents.x;
+	const float maxX = center.x + halfExtents.x;
+	const float minY = center.y - halfExtents.y;
+	const float maxY = center.y + halfExtents.y;
+	const float minZ = center.z - halfExtents.z;
+	const float maxZ = center.z + halfExtents.z;
+
+	const float sizeX = halfExtents.x * 2.0f;
+	const float sizeY = halfExtents.y * 2.0f;
+	const float sizeZ = halfExtents.z * 2.0f;
+
+	for (float y : {minY, maxY}) {
+		for (float z : {minZ, maxZ}) {
+			drawEdge(Vec3{center.x, y, z}, Vec3{}, sizeX);
+		}
+	}
+
+	for (float x : {minX, maxX}) {
+		for (float z : {minZ, maxZ}) {
+			drawEdge(Vec3{x, center.y, z}, Vec3{0.0f, 0.0f, kHalfPi}, sizeY);
+		}
+	}
+
+	for (float x : {minX, maxX}) {
+		for (float y : {minY, maxY}) {
+			drawEdge(Vec3{x, y, center.z}, Vec3{0.0f, -kHalfPi, 0.0f}, sizeZ);
+		}
+	}
 }
 
 bool OpenGLRenderAdapter::uploadMesh(

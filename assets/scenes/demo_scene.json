@@ -1,6 +1,6 @@
 {
   "meshes": {
-    "cube": "assets/models/demo_cube.obj",
+    "cube": "primitive:cube",
     "pyramid": "assets/models/demo_pyramid.obj"
   },
   "textures": {
@@ -70,20 +70,6 @@
       "texture": "stone",
       "shader": "textured",
       "position": [0.0, -0.1, 1.7],
-      "rotation": [0.0, 0.7, 0.0],
-      "scale": [1.1, 1.1, 1.1],
-      "collider": {
-        "type": "box",
-        "halfExtents": [0.5, 0.5, 0.5],
-        "offset": [0.0, 0.0, 0.0]
-      }
-    },
-    {
-      "tag": "Pyramid",
-      "mesh": "pyramid",
-      "texture": "fence",
-      "shader": "textured",
-      "position": [2.2, -0.15, -1.4],
       "rotation": [0.0, 0.0, 0.0],
       "scale": [1.1, 1.1, 1.1],
       "collider": {
