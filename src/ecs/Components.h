@@ -49,6 +49,35 @@ struct Spin {
     float speed = 0.0f;
 };
 
+struct Camera {
+    float fovDegrees = 45.0f;
+    float nearClip = 0.1f;
+    float farClip = 100.0f;
+    float aspectRatio = 800.0f / 600.0f;
+    bool active = true;
+    Mat4 viewMatrix = Mat4::identity();
+    Mat4 projectionMatrix = Mat4::identity();
+};
+
+enum class ColliderType {
+    Box,
+    Sphere
+};
+
+struct Rigidbody {
+    Vec3 velocity{};
+    Vec3 acceleration{};
+    float mass = 1.0f;
+    bool useGravity = true;
+};
+
+struct Collider {
+    ColliderType type = ColliderType::Box;
+    Vec3 halfExtents{0.5f, 0.5f, 0.5f};
+    Vec3 offset{};
+    float radius = 0.5f;
+};
+
 template <>
 struct IsComponent<Transform> : std::true_type {
 };
@@ -67,4 +96,16 @@ struct IsComponent<Hierarchy> : std::true_type {
 
 template <>
 struct IsComponent<Spin> : std::true_type {
+};
+
+template <>
+struct IsComponent<Camera> : std::true_type {
+};
+
+template <>
+struct IsComponent<Rigidbody> : std::true_type {
+};
+
+template <>
+struct IsComponent<Collider> : std::true_type {
 };

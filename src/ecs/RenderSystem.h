@@ -18,7 +18,8 @@ public:
 
 private:
     void renderSubMesh(const SubMesh& subMesh, const ShaderData& shaderData, const MeshRenderer& meshRenderer);
-    void setupMatrices(unsigned int shaderProgram, const Mat4& modelMatrix);
+    void setupMatrices(World& world, unsigned int shaderProgram, const Mat4& modelMatrix);
+    void setupLighting(unsigned int shaderProgram);
     
     IRenderAdapter& renderer_;
 };

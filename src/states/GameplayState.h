@@ -1,7 +1,10 @@
 ﻿#pragma once
 #include "states/IGameState.h"
 #include "core/Logger.h"
+#include "ecs/CameraSystem.h"
+#include "ecs/DebugRenderSystem.h"
 #include "ecs/Entity.h"
+#include "ecs/PhysicsSystem.h"
 #include "ecs/RenderSystem.h"
 #include "ecs/SpinSystem.h"
 #include "ecs/World.h"
@@ -21,12 +24,17 @@ public:
 private:
 	void createScene();
 	bool createSceneFromManifest();
+    void createCamera();
 	void handleInput(float dt);
 	void attachChild(Entity parent, Entity child);
 
 	World world_;
+    CameraSystem cameraSystem_;
+	PhysicsSystem physicsSystem_;
 	SpinSystem spinSystem_;
 	RenderSystem renderSystem_;
+    DebugRenderSystem debugRenderSystem_;
+    Entity cameraEntity_ = kInvalidEntity;
 	Entity controllableEntity_ = kInvalidEntity;
 	bool rmbWasPressed_ = false; // Edge detection for the right mouse button.
 	bool lmbWasPressed_ = false; // Edge detection for the left mouse button.

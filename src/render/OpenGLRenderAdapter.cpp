@@ -71,7 +71,12 @@ void OpenGLRenderAdapter::beginFrame(float r, float g, float b) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void OpenGLRenderAdapter::drawPrimitive(PrimitiveType primitive, const Mat4& modelMatrix, const Vec4& color) {
+void OpenGLRenderAdapter::drawPrimitive(
+	PrimitiveType primitive,
+	const Mat4& modelMatrix,
+	const Vec4& color,
+	const Mat4& viewMatrix,
+	const Mat4& projectionMatrix) {
 	const PrimitiveMesh* mesh = getMesh(primitive);
 	if (mesh == nullptr || shader_.getId() == 0) {
 		return;
@@ -79,11 +84,63 @@ void OpenGLRenderAdapter::drawPrimitive(PrimitiveType primitive, const Mat4& mod
 
 	shader_.use();
 	glUniformMatrix4fv(modelLocation_, 1, GL_FALSE, modelMatrix.data());
+	if (viewLocation_ >= 0) {
+		glUniformMatrix4fv(viewLocation_, 1, GL_FALSE, viewMatrix.data());
+	}
+	if (projectionLocation_ >= 0) {
+		glUniformMatrix4fv(projectionLocation_, 1, GL_FALSE, projectionMatrix.data());
+	}
 	glUniform4f(colorLocation_, color.x, color.y, color.z, color.w);
 
 	glBindVertexArray(mesh->vao);
 	glDrawArrays(mesh->drawMode, 0, mesh->vertexCount);
 	glBindVertexArray(0);
+}
+
+void OpenGLRenderAdapter::drawDebugAABB(
+	const Vec3& center,
+	const Vec3& halfExtents,
+	const Vec4& color,
+	const Mat4& viewMatrix,
+	const Mat4& projectionMatrix) {
+	constexpr float kHalfPi = 1.5707963f;
+
+	auto drawEdge = [&](const Vec3& edgeCenter, const Vec3& rotation, float length) {
+		const Mat4 modelMatrix = Math::composeTransform(
+			edgeCenter,
+			rotation,
+			Vec3{length, 1.0f, 1.0f});
+		drawPrimitive(PrimitiveType::Line, modelMatrix, color, viewMatrix, projectionMatrix);
+	};
+
+	const float minX = center.x - halfExtents.x;
+	const float maxX = center.x + halfExtents.x;
+	const float minY = center.y - halfExtents.y;
+	const float maxY = center.y + halfExtents.y;
+	const float minZ = center.z - halfExtents.z;
+	const float maxZ = center.z + halfExtents.z;
+
+	const float sizeX = halfExtents.x * 2.0f;
+	const float sizeY = halfExtents.y * 2.0f;
+	const float sizeZ = halfExtents.z * 2.0f;
+
+	for (float y : {minY, maxY}) {
+		for (float z : {minZ, maxZ}) {
+			drawEdge(Vec3{center.x, y, z}, Vec3{}, sizeX);
+		}
+	}
+
+	for (float x : {minX, maxX}) {
+		for (float z : {minZ, maxZ}) {
+			drawEdge(Vec3{x, center.y, z}, Vec3{0.0f, 0.0f, kHalfPi}, sizeY);
+		}
+	}
+
+	for (float x : {minX, maxX}) {
+		for (float y : {minY, maxY}) {
+			drawEdge(Vec3{x, y, center.z}, Vec3{0.0f, -kHalfPi, 0.0f}, sizeZ);
+		}
+	}
 }
 
 bool OpenGLRenderAdapter::uploadMesh(
@@ -268,6 +325,20 @@ void OpenGLRenderAdapter::setInt(unsigned int programId, const char* name, int v
 	}
 }
 
+void OpenGLRenderAdapter::setFloat(unsigned int programId, const char* name, float value) {
+	const GLint location = glGetUniformLocation(programId, name);
+	if (location >= 0) {
+		glUniform1f(location, value);
+	}
+}
+
+void OpenGLRenderAdapter::setVec3(unsigned int programId, const char* name, const Vec3& value) {
+	const GLint location = glGetUniformLocation(programId, name);
+	if (location >= 0) {
+		glUniform3f(location, value.x, value.y, value.z);
+	}
+}
+
 void OpenGLRenderAdapter::bindTexture2D(unsigned int textureId, unsigned int unit) {
 	glActiveTexture(GL_TEXTURE0 + unit);
 	glBindTexture(GL_TEXTURE_2D, textureId);
@@ -324,9 +395,11 @@ bool OpenGLRenderAdapter::createRenderResources() {
 	}
 
 	modelLocation_ = glGetUniformLocation(shader_.getId(), "uModel");
+	viewLocation_ = glGetUniformLocation(shader_.getId(), "uView");
+	projectionLocation_ = glGetUniformLocation(shader_.getId(), "uProjection");
 	colorLocation_ = glGetUniformLocation(shader_.getId(), "uColor");
 
-	if (modelLocation_ < 0 || colorLocation_ < 0) {
+	if (modelLocation_ < 0 || viewLocation_ < 0 || projectionLocation_ < 0 || colorLocation_ < 0) {
 		LOG_ERROR("OpenGLRenderAdapter: Failed to find shader uniforms");
 		return false;
 	}
@@ -409,6 +482,8 @@ void OpenGLRenderAdapter::destroyRenderResources() {
 	destroyMesh(quadMesh_);
 	destroyMesh(cubeMesh_);
 	modelLocation_ = -1;
+	viewLocation_ = -1;
+	projectionLocation_ = -1;
 	colorLocation_ = -1;
 	shader_.destroy();
 }

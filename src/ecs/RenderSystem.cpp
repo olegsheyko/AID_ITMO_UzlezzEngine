@@ -58,7 +58,8 @@ void RenderSystem::render(World& world) {
         const Mat4 modelMatrix = buildWorldMatrix(world, entity, visited);
 
         renderer_.useShaderProgram(shaderData->programId);
-        setupMatrices(shaderData->programId, modelMatrix);
+        setupMatrices(world, shaderData->programId, modelMatrix);
+        setupLighting(shaderData->programId);
 
         if (!meshData->subMeshes.empty()) {
             for (const SubMesh& subMesh : meshData->subMeshes) {
@@ -78,6 +79,13 @@ void RenderSystem::render(World& world) {
     });
 }
 
+void RenderSystem::setupLighting(unsigned int shaderProgram) {
+    renderer_.setVec3(shaderProgram, "light.direction", Vec3{-0.5f, -1.0f, -0.3f});
+    renderer_.setVec3(shaderProgram, "light.color", Vec3{1.0f, 0.96f, 0.9f});
+    renderer_.setFloat(shaderProgram, "light.ambientStrength", 0.35f);
+    renderer_.setFloat(shaderProgram, "light.diffuseStrength", 0.95f);
+}
+
 void RenderSystem::renderSubMesh(const SubMesh& subMesh, const ShaderData& shaderData, const MeshRenderer& meshRenderer) {
     std::shared_ptr<Resource<TextureData>> texture = meshRenderer.cachedBaseColorTexture;
     if ((!texture || !texture->isLoaded()) && !subMesh.material.diffuseTexturePath.empty()) {
@@ -94,17 +102,33 @@ void RenderSystem::renderSubMesh(const SubMesh& subMesh, const ShaderData& shade
     renderer_.drawIndexed(subMesh.vao, subMesh.indexCount);
 }
 
-void RenderSystem::setupMatrices(unsigned int shaderProgram, const Mat4& modelMatrix) {
+void RenderSystem::setupMatrices(World& world, unsigned int shaderProgram, const Mat4& modelMatrix) {
     renderer_.setMatrix4(shaderProgram, "model", modelMatrix);
 
     Mat4 viewMatrix = Mat4::identity();
-    viewMatrix.data()[14] = -5.0f;
-    renderer_.setMatrix4(shaderProgram, "view", viewMatrix);
+    Mat4 projectionMatrix = Mat4::identity();
 
-    int width = 0;
-    int height = 0;
-    renderer_.getFramebufferSize(width, height);
-    const float aspect = (width > 0 && height > 0) ? static_cast<float>(width) / static_cast<float>(height) : (800.0f / 600.0f);
-    const Mat4 projectionMatrix = Math::perspective(45.0f * 3.1415926f / 180.0f, aspect, 0.1f, 100.0f);
+    bool cameraFound = false;
+    world.forEach<Transform, Camera>([&](Entity, Transform& transform, Camera& camera) {
+        (void)transform;
+        if (cameraFound || !camera.active) {
+            return;
+        }
+
+        viewMatrix = camera.viewMatrix;
+        projectionMatrix = camera.projectionMatrix;
+        cameraFound = true;
+    });
+
+    if (!cameraFound) {
+        viewMatrix.data()[14] = -5.0f;
+        int width = 0;
+        int height = 0;
+        renderer_.getFramebufferSize(width, height);
+        const float aspect = (width > 0 && height > 0) ? static_cast<float>(width) / static_cast<float>(height) : (800.0f / 600.0f);
+        projectionMatrix = Math::perspective(45.0f * 3.1415926f / 180.0f, aspect, 0.1f, 100.0f);
+    }
+
+    renderer_.setMatrix4(shaderProgram, "view", viewMatrix);
     renderer_.setMatrix4(shaderProgram, "projection", projectionMatrix);
 }

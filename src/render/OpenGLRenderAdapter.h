@@ -12,7 +12,18 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual bool isRunning() const override;
 	virtual void pollEvents() override;
 	virtual void beginFrame(float r, float g, float b) override;
-	virtual void drawPrimitive(PrimitiveType primitive, const Mat4& modelMatrix, const Vec4& color) override;
+	virtual void drawPrimitive(
+		PrimitiveType primitive,
+		const Mat4& modelMatrix,
+		const Vec4& color,
+		const Mat4& viewMatrix,
+		const Mat4& projectionMatrix) override;
+	virtual void drawDebugAABB(
+		const Vec3& center,
+		const Vec3& halfExtents,
+		const Vec4& color,
+		const Mat4& viewMatrix,
+		const Mat4& projectionMatrix) override;
 	virtual bool uploadMesh(
 		const void* vertexData,
 		std::size_t vertexStride,
@@ -39,6 +50,8 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual void useShaderProgram(unsigned int programId) override;
 	virtual void setMatrix4(unsigned int programId, const char* name, const Mat4& value) override;
 	virtual void setInt(unsigned int programId, const char* name, int value) override;
+	virtual void setFloat(unsigned int programId, const char* name, float value) override;
+	virtual void setVec3(unsigned int programId, const char* name, const Vec3& value) override;
 	virtual void bindTexture2D(unsigned int textureId, unsigned int unit) override;
 	virtual void drawIndexed(unsigned int vao, unsigned int indexCount) override;
 	virtual void getFramebufferSize(int& width, int& height) const override;
@@ -69,5 +82,7 @@ private:
 	PrimitiveMesh quadMesh_;
 	PrimitiveMesh cubeMesh_;
 	GLint modelLocation_ = -1;
+	GLint viewLocation_ = -1;
+	GLint projectionLocation_ = -1;
 	GLint colorLocation_ = -1;
 };

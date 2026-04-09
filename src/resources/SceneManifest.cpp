@@ -10,6 +10,19 @@ namespace {
 template <typename TVector>
 TVector readVector(const nlohmann::json& node, const TVector& fallback);
 
+ColliderType readColliderType(const nlohmann::json& node, ColliderType fallback) {
+    if (!node.is_string()) {
+        return fallback;
+    }
+
+    const std::string value = node.get<std::string>();
+    if (value == "sphere") {
+        return ColliderType::Sphere;
+    }
+
+    return ColliderType::Box;
+}
+
 template <>
 Vec3 readVector<Vec3>(const nlohmann::json& node, const Vec3& fallback) {
     if (!node.is_array() || node.size() != 3) {
@@ -87,6 +100,25 @@ bool SceneManifest::loadFromFile(const std::string& path) {
             entity.color = readVector<Vec4>(entityNode.value("color", nlohmann::json::array()), entity.color);
             entity.spinSpeed = entityNode.value("spinSpeed", 0.0f);
             entity.controllable = entityNode.value("controllable", false);
+
+            if (entityNode.contains("rigidbody")) {
+                const auto& rigidbodyNode = entityNode["rigidbody"];
+                entity.hasRigidbody = true;
+                entity.rigidbody.velocity = readVector<Vec3>(rigidbodyNode.value("velocity", nlohmann::json::array()), entity.rigidbody.velocity);
+                entity.rigidbody.acceleration = readVector<Vec3>(rigidbodyNode.value("acceleration", nlohmann::json::array()), entity.rigidbody.acceleration);
+                entity.rigidbody.mass = rigidbodyNode.value("mass", entity.rigidbody.mass);
+                entity.rigidbody.useGravity = rigidbodyNode.value("useGravity", entity.rigidbody.useGravity);
+            }
+
+            if (entityNode.contains("collider")) {
+                const auto& colliderNode = entityNode["collider"];
+                entity.hasCollider = true;
+                entity.collider.type = readColliderType(colliderNode.value("type", nlohmann::json()), entity.collider.type);
+                entity.collider.halfExtents = readVector<Vec3>(colliderNode.value("halfExtents", nlohmann::json::array()), entity.collider.halfExtents);
+                entity.collider.offset = readVector<Vec3>(colliderNode.value("offset", nlohmann::json::array()), entity.collider.offset);
+                entity.collider.radius = colliderNode.value("radius", entity.collider.radius);
+            }
+
             entities_.push_back(entity);
         }
     }

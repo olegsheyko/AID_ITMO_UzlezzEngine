@@ -1,0 +1,51 @@
+#pragma once
+
+enum class KeyCode {
+    Unknown = 0,
+    KEY_UNKNOWN = Unknown,
+
+    Enter,
+    KEY_ENTER = Enter,
+    F3,
+    KEY_F3 = F3,
+    Space,
+    KEY_SPACE = Space,
+
+    Left,
+    KEY_LEFT = Left,
+    Right,
+    KEY_RIGHT = Right,
+    Up,
+    KEY_UP = Up,
+    Down,
+    KEY_DOWN = Down,
+
+    W,
+    KEY_W = W,
+    A,
+    KEY_A = A,
+    S,
+    KEY_S = S,
+    D,
+    KEY_D = D,
+    I,
+    KEY_I = I,
+    J,
+    KEY_J = J,
+    K,
+    KEY_K = K,
+    L,
+    KEY_L = L,
+    U,
+    KEY_U = U,
+    O,
+    KEY_O = O,
+
+    MouseLeft,
+    MOUSE_LEFT = MouseLeft,
+    MouseRight,
+    MOUSE_RIGHT = MouseRight,
+    MouseMiddle
+    ,
+    MOUSE_MIDDLE = MouseMiddle
+};

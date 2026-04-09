@@ -1,38 +1,173 @@
 #include "states/GameplayState.h"
 
+#include "core/ServiceLocator.h"
+#include "events/CollisionEvent.h"
 #include "core/Logger.h"
 #include "ecs/Components.h"
+#include "input/InputManager.h"
+#include "input/KeyCode.h"
 #include "render/IRenderAdapter.h"
 #include "resources/HotReload.h"
 #include "resources/ResourceManager.h"
 #include "resources/SceneManifest.h"
 
-#include <GLFW/glfw3.h>
-
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace {
 constexpr float kMoveSpeed = 1.0f;
+constexpr float kJumpSpeed = 3.5f;
 constexpr float kScaleStep = 0.1f;
 constexpr float kRotationStep = 3.1415926f / 4.0f;
 constexpr float kMinScale = 0.1f;
 constexpr const char* kSceneManifestPath = "assets/scenes/demo_scene.json";
-constexpr const char* kFallbackMeshPath = "assets/models/demo_cube.obj";
+constexpr const char* kFallbackMeshPath = "primitive:cube";
 constexpr const char* kFallbackTexturePath = "assets/textures/WoodCrate02.dds";
 constexpr const char* kFallbackVertexShaderPath = "assets/shaders/mesh_vertex.glsl";
 constexpr const char* kFallbackFragmentShaderPath = "assets/shaders/mesh_fragment_simple_texture.glsl";
+
+bool isApproximately(float left, float right) {
+    return std::abs(left - right) < 0.0001f;
+}
+
+bool isDefaultBoxCollider(const Collider& collider) {
+    return collider.type == ColliderType::Box &&
+        isApproximately(collider.halfExtents.x, 0.5f) &&
+        isApproximately(collider.halfExtents.y, 0.5f) &&
+        isApproximately(collider.halfExtents.z, 0.5f) &&
+        isApproximately(collider.offset.x, 0.0f) &&
+        isApproximately(collider.offset.y, 0.0f) &&
+        isApproximately(collider.offset.z, 0.0f);
+}
+
+bool extractMeshBounds(const MeshData& meshData, Vec3& outCenter, Vec3& outHalfExtents) {
+    float minX = std::numeric_limits<float>::max();
+    float minY = std::numeric_limits<float>::max();
+    float minZ = std::numeric_limits<float>::max();
+    float maxX = -std::numeric_limits<float>::max();
+    float maxY = -std::numeric_limits<float>::max();
+    float maxZ = -std::numeric_limits<float>::max();
+    bool hasVertices = false;
+
+    auto consumeVertices = [&](const std::vector<Vertex>& vertices) {
+        for (const Vertex& vertex : vertices) {
+            hasVertices = true;
+            minX = std::min(minX, vertex.position.x);
+            minY = std::min(minY, vertex.position.y);
+            minZ = std::min(minZ, vertex.position.z);
+            maxX = std::max(maxX, vertex.position.x);
+            maxY = std::max(maxY, vertex.position.y);
+            maxZ = std::max(maxZ, vertex.position.z);
+        }
+    };
+
+    if (!meshData.subMeshes.empty()) {
+        for (const SubMesh& subMesh : meshData.subMeshes) {
+            consumeVertices(subMesh.vertices);
+        }
+    } else {
+        consumeVertices(meshData.vertices);
+    }
+
+    if (!hasVertices) {
+        return false;
+    }
+
+    outCenter = Vec3{
+        (minX + maxX) * 0.5f,
+        (minY + maxY) * 0.5f,
+        (minZ + maxZ) * 0.5f
+    };
+    outHalfExtents = Vec3{
+        (maxX - minX) * 0.5f,
+        (maxY - minY) * 0.5f,
+        (maxZ - minZ) * 0.5f
+    };
+    return true;
+}
+
+void fitColliderToMeshBounds(const MeshRenderer& renderer, Collider& collider) {
+    if (!isDefaultBoxCollider(collider) || !renderer.cachedMesh || !renderer.cachedMesh->isLoaded()) {
+        return;
+    }
+
+    const MeshData* meshData = renderer.cachedMesh->getData();
+    if (meshData == nullptr) {
+        return;
+    }
+
+    Vec3 boundsCenter{};
+    Vec3 boundsHalfExtents{};
+    if (!extractMeshBounds(*meshData, boundsCenter, boundsHalfExtents)) {
+        return;
+    }
+
+    collider.offset = boundsCenter;
+    collider.halfExtents = boundsHalfExtents;
+}
+
+std::string entityLabel(World& world, Entity entity) {
+    if (!world.isAlive(entity)) {
+        return "Entity#" + std::to_string(entity);
+    }
+
+    if (world.hasComponent<Tag>(entity)) {
+        const Tag& tag = world.getComponent<Tag>(entity);
+        if (!tag.name.empty()) {
+            return tag.name + " (#" + std::to_string(entity) + ")";
+        }
+    }
+
+    return "Entity#" + std::to_string(entity);
+}
 }
 
 GameplayState::GameplayState(IRenderAdapter& renderer)
-	: renderSystem_(renderer) {
+	: cameraSystem_(renderer),
+      physicsSystem_(),
+	  renderSystem_(renderer),
+      debugRenderSystem_(renderer) {
 }
 
 void GameplayState::onEnter() {
 	LOG_INFO("GameplayState: entered");
 	world_.clear();
+    ServiceLocator::getEventDispatcher().clear();
+    ServiceLocator::getEventDispatcher().addListener<CollisionEvent>([this](const CollisionEvent& event) {
+        LOG_INFO(
+            "CollisionEvent: " +
+            entityLabel(world_, event.first) +
+            " <-> " +
+            entityLabel(world_, event.second) +
+            ", penetration=" +
+            std::to_string(event.penetration));
+    });
+	world_.addUpdateSystem(physicsSystem_);
+    world_.addUpdateSystem(cameraSystem_);
 	world_.addUpdateSystem(spinSystem_);
 	world_.addRenderSystem(renderSystem_);
+    world_.addRenderSystem(debugRenderSystem_);
+    InputManager& inputManager = InputManager::getInstance();
+    inputManager.BindAction("ToggleDebug", KeyCode::KEY_F3);
+    inputManager.BindAction("MoveLeft", KeyCode::KEY_LEFT);
+    inputManager.BindAction("MoveLeft", KeyCode::KEY_A);
+    inputManager.BindAction("MoveRight", KeyCode::KEY_RIGHT);
+    inputManager.BindAction("MoveRight", KeyCode::KEY_D);
+    inputManager.BindAction("MoveForward", KeyCode::KEY_UP);
+    inputManager.BindAction("MoveForward", KeyCode::KEY_W);
+    inputManager.BindAction("MoveBackward", KeyCode::KEY_DOWN);
+    inputManager.BindAction("MoveBackward", KeyCode::KEY_S);
+    inputManager.BindAction("Jump", KeyCode::KEY_SPACE);
+    inputManager.BindAction("CameraForward", KeyCode::KEY_I);
+    inputManager.BindAction("CameraBackward", KeyCode::KEY_K);
+    inputManager.BindAction("CameraLeft", KeyCode::KEY_J);
+    inputManager.BindAction("CameraRight", KeyCode::KEY_L);
+    inputManager.BindAction("CameraUp", KeyCode::KEY_U);
+    inputManager.BindAction("CameraDown", KeyCode::KEY_O);
 	createScene();
+    createCamera();
+    debugRenderSystem_.setEnabled(false);
 	lmbWasPressed_ = false;
 	rmbWasPressed_ = false;
 	mmbWasPressed_ = false;
@@ -40,7 +175,9 @@ void GameplayState::onEnter() {
 
 void GameplayState::onExit() {
 	LOG_INFO("GameplayState: exited");
+    ServiceLocator::getEventDispatcher().clear();
 	world_.clear();
+    cameraEntity_ = kInvalidEntity;
 	controllableEntity_ = kInvalidEntity;
 }
 
@@ -51,6 +188,17 @@ void GameplayState::update(float dt) {
 
 void GameplayState::render() {
 	world_.renderSystems();
+}
+
+void GameplayState::createCamera() {
+    cameraEntity_ = world_.createEntity();
+    world_.addComponent<Tag>(cameraEntity_, Tag{"MainCamera"});
+    world_.addComponent<Transform>(cameraEntity_, Transform{
+        Vec3{0.0f, 4.0f, 10.0f},
+        Vec3{-0.3f, 0.0f, 0.0f},
+        Vec3{1.0f, 1.0f, 1.0f}
+    });
+    world_.addComponent<Camera>(cameraEntity_, Camera{45.0f, 0.1f, 100.0f, 800.0f / 600.0f, true, Mat4::identity(), Mat4::identity()});
 }
 
 void GameplayState::createScene() {
@@ -81,6 +229,10 @@ void GameplayState::createScene() {
 	world_.addComponent<Tag>(controllableEntity_, "FallbackCube");
 	world_.addComponent<Transform>(controllableEntity_, Transform{{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.6f, 0.6f, 0.6f}});
 	world_.addComponent<MeshRenderer>(controllableEntity_, renderer);
+    world_.addComponent<Rigidbody>(controllableEntity_, Rigidbody{Vec3{}, Vec3{}, 1.0f, true});
+    Collider collider{ColliderType::Box, Vec3{0.5f, 0.5f, 0.5f}, Vec3{}, 0.5f};
+    fitColliderToMeshBounds(renderer, collider);
+    world_.addComponent<Collider>(controllableEntity_, collider);
 }
 
 bool GameplayState::createSceneFromManifest() {
@@ -121,6 +273,14 @@ bool GameplayState::createSceneFromManifest() {
 		world_.addComponent<Tag>(entity, Tag{description.tag});
 		world_.addComponent<Transform>(entity, Transform{description.position, description.rotation, description.scale});
 		world_.addComponent<MeshRenderer>(entity, renderer);
+        if (description.hasRigidbody) {
+            world_.addComponent<Rigidbody>(entity, description.rigidbody);
+        }
+        if (description.hasCollider) {
+            Collider collider = description.collider;
+            fitColliderToMeshBounds(renderer, collider);
+            world_.addComponent<Collider>(entity, collider);
+        }
 
 		if (description.spinSpeed != 0.0f) {
 			world_.addComponent<Spin>(entity, Spin{description.spinSpeed});
@@ -128,6 +288,14 @@ bool GameplayState::createSceneFromManifest() {
 
 		if (description.controllable) {
 			controllableEntity_ = entity;
+			if (!world_.hasComponent<Rigidbody>(entity)) {
+				world_.addComponent<Rigidbody>(entity, Rigidbody{Vec3{}, Vec3{}, 1.0f, true});
+			}
+            if (!world_.hasComponent<Collider>(entity)) {
+                Collider collider{ColliderType::Box, Vec3{0.5f, 0.5f, 0.5f}, Vec3{}, 0.5f};
+                fitColliderToMeshBounds(renderer, collider);
+                world_.addComponent<Collider>(entity, collider);
+            }
 		}
 
 		HotReload::getInstance().watchFile(shaderPaths->vertexPath);
@@ -142,28 +310,44 @@ void GameplayState::handleInput(float dt) {
 		return;
 	}
 
-	GLFWwindow* window = glfwGetCurrentContext();
-	if (window == nullptr) {
-		return;
-	}
+	if (!world_.hasComponent<Rigidbody>(controllableEntity_)) {
+        return;
+    }
 
 	Transform& transform = world_.getComponent<Transform>(controllableEntity_);
-	const float moveStep = kMoveSpeed * dt;
+    Rigidbody& rigidbody = world_.getComponent<Rigidbody>(controllableEntity_);
+    InputManager& inputManager = InputManager::getInstance();
 
-	if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-		transform.position.x -= moveStep;
+    if (inputManager.isActionPressed("ToggleDebug")) {
+        debugRenderSystem_.setEnabled(!debugRenderSystem_.isEnabled());
+    }
+
+    float horizontalVelocity = 0.0f;
+    float depthVelocity = 0.0f;
+
+	if (inputManager.IsActionActive("MoveLeft")) {
+		horizontalVelocity -= kMoveSpeed;
 	}
-	if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-		transform.position.x += moveStep;
+	if (inputManager.IsActionActive("MoveRight")) {
+		horizontalVelocity += kMoveSpeed;
 	}
-	if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-		transform.position.y += moveStep;
+	if (inputManager.IsActionActive("MoveForward")) {
+		depthVelocity -= kMoveSpeed;
 	}
-	if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-		transform.position.y -= moveStep;
+	if (inputManager.IsActionActive("MoveBackward")) {
+		depthVelocity += kMoveSpeed;
 	}
 
-	const bool lmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    rigidbody.velocity.x = horizontalVelocity;
+    rigidbody.velocity.z = depthVelocity;
+
+    if (inputManager.isActionPressed("Jump") && !rigidbody.useGravity) {
+        rigidbody.velocity.y = std::max(rigidbody.velocity.y, kJumpSpeed);
+    } else if (inputManager.isActionPressed("Jump") && std::abs(transform.position.y) < 0.051f) {
+        rigidbody.velocity.y = kJumpSpeed;
+    }
+
+	const bool lmbNow = inputManager.isMouseButtonDown(KeyCode::MouseLeft);
 	if (lmbNow && !lmbWasPressed_) {
 		transform.scale.x += kScaleStep;
 		transform.scale.y += kScaleStep;
@@ -171,13 +355,13 @@ void GameplayState::handleInput(float dt) {
 	}
 	lmbWasPressed_ = lmbNow;
 
-	const bool rmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-	if (rmbNow && !rmbWasPressed_) {
+	const bool rmbNow = inputManager.isMouseButtonDown(KeyCode::MouseRight);
+	if (rmbNow && !rmbWasPressed_ && !world_.isAlive(cameraEntity_)) {
 		transform.rotation.y += kRotationStep;
 	}
 	rmbWasPressed_ = rmbNow;
 
-	const bool mmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
+	const bool mmbNow = inputManager.isMouseButtonDown(KeyCode::MouseMiddle);
 	if (mmbNow && !mmbWasPressed_) {
 		transform.scale.x = std::max(kMinScale, transform.scale.x - kScaleStep);
 		transform.scale.y = std::max(kMinScale, transform.scale.y - kScaleStep);

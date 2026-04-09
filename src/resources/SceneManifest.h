@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ecs/Components.h"
 #include "math/MathTypes.h"
 
 #include <string>
@@ -22,6 +23,10 @@ struct SceneEntityDescription {
     Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
     float spinSpeed = 0.0f;
     bool controllable = false;
+    bool hasRigidbody = false;
+    Rigidbody rigidbody{};
+    bool hasCollider = false;
+    Collider collider{};
 };
 
 class SceneManifest {
