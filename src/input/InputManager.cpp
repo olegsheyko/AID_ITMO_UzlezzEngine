@@ -15,12 +15,17 @@ constexpr KeyCode kTrackedKeys[] = {
     KeyCode::A,
     KeyCode::S,
     KeyCode::D,
+    KeyCode::Q,
+    KeyCode::E,
+    KeyCode::F,
     KeyCode::I,
     KeyCode::J,
     KeyCode::K,
     KeyCode::L,
     KeyCode::U,
-    KeyCode::O
+    KeyCode::O,
+    KeyCode::LeftShift,
+    KeyCode::LeftAlt
 };
 
 constexpr KeyCode kTrackedMouseButtons[] = {

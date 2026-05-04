@@ -20,6 +20,9 @@ class IRenderAdapter {
 
 	// Clear the framebuffer and prepare for drawing.
 	virtual void beginFrame(float r, float g, float b) = 0;
+	virtual void beginViewportFrame(int width, int height, float r, float g, float b) = 0;
+	virtual void endViewportFrame() = 0;
+	virtual unsigned int getViewportTextureId() const = 0;
 
 	// Draw a primitive using the supplied model transform and color.
 	virtual void drawPrimitive(

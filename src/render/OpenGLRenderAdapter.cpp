@@ -1,6 +1,8 @@
 #include "render/OpenGLRenderAdapter.h"
 #include "core/Logger.h"
 
+#include <algorithm>
+
 namespace {
 void framebufferSizeCallback(GLFWwindow*, int width, int height) {
 	glViewport(0, 0, width, height);
@@ -23,12 +25,24 @@ bool OpenGLRenderAdapter::init(int width, int height, const std::string& title) 
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 
 	window_ = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
 	if (!window_) {
 		LOG_ERROR("OpenGLRenderAdapter: Failed to create GLFW window");
 		shutdown();
 		return false;
+	}
+
+	if (GLFWmonitor* monitor = glfwGetPrimaryMonitor()) {
+		int workX = 0;
+		int workY = 0;
+		int workWidth = width;
+		int workHeight = height;
+		glfwGetMonitorWorkarea(monitor, &workX, &workY, &workWidth, &workHeight);
+		glfwSetWindowPos(window_, workX, workY);
+		glfwSetWindowSize(window_, workWidth, workHeight);
+		glfwMaximizeWindow(window_);
 	}
 
 	glfwMakeContextCurrent(window_);
@@ -67,8 +81,51 @@ void OpenGLRenderAdapter::pollEvents() {
 }
 
 void OpenGLRenderAdapter::beginFrame(float r, float g, float b) {
+	if (window_) {
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		int width = 0;
+		int height = 0;
+		glfwGetFramebufferSize(window_, &width, &height);
+		glViewport(0, 0, width, height);
+	}
+
 	glClearColor(r, g, b, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+void OpenGLRenderAdapter::beginViewportFrame(int width, int height, float r, float g, float b) {
+	width = std::max(1, width);
+	height = std::max(1, height);
+
+	if (!resizeViewportFramebuffer(width, height)) {
+		return;
+	}
+
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer_);
+	glBindFramebuffer(GL_FRAMEBUFFER, viewportFbo_);
+	glViewport(0, 0, viewportWidth_, viewportHeight_);
+	glClearColor(r, g, b, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	renderingViewport_ = true;
+}
+
+void OpenGLRenderAdapter::endViewportFrame() {
+	if (!renderingViewport_) {
+		return;
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFramebuffer_));
+	if (window_) {
+		int width = 0;
+		int height = 0;
+		glfwGetFramebufferSize(window_, &width, &height);
+		glViewport(0, 0, width, height);
+	}
+	renderingViewport_ = false;
+}
+
+unsigned int OpenGLRenderAdapter::getViewportTextureId() const {
+	return viewportColorTexture_;
 }
 
 void OpenGLRenderAdapter::drawPrimitive(
@@ -357,6 +414,11 @@ void OpenGLRenderAdapter::drawIndexed(unsigned int vao, unsigned int indexCount)
 void OpenGLRenderAdapter::getFramebufferSize(int& width, int& height) const {
 	width = 0;
 	height = 0;
+	if (renderingViewport_) {
+		width = viewportWidth_;
+		height = viewportHeight_;
+		return;
+	}
 	if (window_ != nullptr) {
 		glfwGetFramebufferSize(window_, &width, &height);
 	}
@@ -372,6 +434,7 @@ void OpenGLRenderAdapter::shutdown() {
 	bool released = false;
 
 	destroyRenderResources();
+	destroyViewportFramebuffer();
 
 	if (window_) {
 		glfwDestroyWindow(window_);
@@ -486,6 +549,65 @@ void OpenGLRenderAdapter::destroyRenderResources() {
 	projectionLocation_ = -1;
 	colorLocation_ = -1;
 	shader_.destroy();
+}
+
+bool OpenGLRenderAdapter::resizeViewportFramebuffer(int width, int height) {
+	if (viewportFbo_ != 0 && viewportWidth_ == width && viewportHeight_ == height) {
+		return true;
+	}
+
+	destroyViewportFramebuffer();
+
+	viewportWidth_ = width;
+	viewportHeight_ = height;
+
+	glGenFramebuffers(1, &viewportFbo_);
+	glBindFramebuffer(GL_FRAMEBUFFER, viewportFbo_);
+
+	glGenTextures(1, &viewportColorTexture_);
+	glBindTexture(GL_TEXTURE_2D, viewportColorTexture_);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, viewportWidth_, viewportHeight_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, viewportColorTexture_, 0);
+
+	glGenRenderbuffers(1, &viewportDepthRbo_);
+	glBindRenderbuffer(GL_RENDERBUFFER, viewportDepthRbo_);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, viewportWidth_, viewportHeight_);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, viewportDepthRbo_);
+
+	const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	if (!complete) {
+		LOG_ERROR("OpenGLRenderAdapter: Viewport framebuffer is incomplete");
+		destroyViewportFramebuffer();
+		return false;
+	}
+
+	return true;
+}
+
+void OpenGLRenderAdapter::destroyViewportFramebuffer() {
+	if (viewportDepthRbo_ != 0) {
+		glDeleteRenderbuffers(1, &viewportDepthRbo_);
+		viewportDepthRbo_ = 0;
+	}
+	if (viewportColorTexture_ != 0) {
+		glDeleteTextures(1, &viewportColorTexture_);
+		viewportColorTexture_ = 0;
+	}
+	if (viewportFbo_ != 0) {
+		glDeleteFramebuffers(1, &viewportFbo_);
+		viewportFbo_ = 0;
+	}
+	viewportWidth_ = 0;
+	viewportHeight_ = 0;
+	renderingViewport_ = false;
 }
 
 bool OpenGLRenderAdapter::setupMesh(PrimitiveMesh& mesh, const float* vertices, GLsizei vertexCount, GLenum drawMode) {

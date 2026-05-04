@@ -3,6 +3,8 @@
 #include "ecs/System.h"
 #include "math/MathTypes.h"
 
+#include <cstddef>
+
 class IRenderAdapter;
 class World;
 struct SubMesh;
@@ -15,6 +17,7 @@ public:
     explicit RenderSystem(IRenderAdapter& renderer);
 
     void render(World& world) override;
+    std::size_t getLastDrawnMeshCount() const { return lastDrawnMeshCount_; }
 
 private:
     void renderSubMesh(const SubMesh& subMesh, const ShaderData& shaderData, const MeshRenderer& meshRenderer);
@@ -22,4 +25,5 @@ private:
     void setupLighting(unsigned int shaderProgram);
     
     IRenderAdapter& renderer_;
+    std::size_t lastDrawnMeshCount_ = 0;
 };

@@ -51,6 +51,12 @@ int GlfwInputHandler::toGlfwKey(KeyCode key) {
         return GLFW_KEY_S;
     case KeyCode::D:
         return GLFW_KEY_D;
+    case KeyCode::Q:
+        return GLFW_KEY_Q;
+    case KeyCode::E:
+        return GLFW_KEY_E;
+    case KeyCode::F:
+        return GLFW_KEY_F;
     case KeyCode::I:
         return GLFW_KEY_I;
     case KeyCode::J:
@@ -63,6 +69,10 @@ int GlfwInputHandler::toGlfwKey(KeyCode key) {
         return GLFW_KEY_U;
     case KeyCode::O:
         return GLFW_KEY_O;
+    case KeyCode::LeftShift:
+        return GLFW_KEY_LEFT_SHIFT;
+    case KeyCode::LeftAlt:
+        return GLFW_KEY_LEFT_ALT;
     default:
         return GLFW_KEY_UNKNOWN;
     }

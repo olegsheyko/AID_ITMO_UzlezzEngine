@@ -9,6 +9,16 @@ Entity World::createEntity() {
     return entity;
 }
 
+Entity World::createEntityWithId(Entity entity) {
+    if (entity == kInvalidEntity) {
+        return createEntity();
+    }
+
+    aliveEntities_.insert(entity);
+    nextEntity_ = std::max(nextEntity_, entity + 1);
+    return entity;
+}
+
 void World::destroyEntity(Entity entity) {
     if (!isAlive(entity)) {
         return;
@@ -47,6 +57,12 @@ void World::clear() {
 
 bool World::isAlive(Entity entity) const {
     return aliveEntities_.find(entity) != aliveEntities_.end();
+}
+
+std::vector<Entity> World::getEntities() const {
+    std::vector<Entity> entities(aliveEntities_.begin(), aliveEntities_.end());
+    std::sort(entities.begin(), entities.end());
+    return entities;
 }
 
 void World::addUpdateSystem(UpdateSystem& system) {

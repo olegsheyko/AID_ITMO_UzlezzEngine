@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <memory>
 #include <type_traits>
 #include <typeindex>
@@ -17,10 +18,13 @@
 class World {
 public:
     Entity createEntity();
+    Entity createEntityWithId(Entity entity);
     void destroyEntity(Entity entity);
     void clear();
 
     bool isAlive(Entity entity) const;
+    std::vector<Entity> getEntities() const;
+    std::size_t getEntityCount() const { return aliveEntities_.size(); }
 
     void addUpdateSystem(UpdateSystem& system);
     void addRenderSystem(RenderSystemBase& system);

@@ -12,6 +12,9 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual bool isRunning() const override;
 	virtual void pollEvents() override;
 	virtual void beginFrame(float r, float g, float b) override;
+	virtual void beginViewportFrame(int width, int height, float r, float g, float b) override;
+	virtual void endViewportFrame() override;
+	virtual unsigned int getViewportTextureId() const override;
 	virtual void drawPrimitive(
 		PrimitiveType primitive,
 		const Mat4& modelMatrix,
@@ -70,6 +73,8 @@ private:
 
 	bool createRenderResources();
 	void destroyRenderResources();
+	bool resizeViewportFramebuffer(int width, int height);
+	void destroyViewportFramebuffer();
 	bool setupMesh(PrimitiveMesh& mesh, const float* vertices, GLsizei vertexCount, GLenum drawMode);
 	const PrimitiveMesh* getMesh(PrimitiveType primitive) const;
 	bool compileShader(GLenum type, const std::string& source, GLuint& shaderId, std::string& outError) const;
@@ -81,6 +86,13 @@ private:
 	PrimitiveMesh triangleMesh_;
 	PrimitiveMesh quadMesh_;
 	PrimitiveMesh cubeMesh_;
+	GLuint viewportFbo_ = 0;
+	GLuint viewportColorTexture_ = 0;
+	GLuint viewportDepthRbo_ = 0;
+	int viewportWidth_ = 0;
+	int viewportHeight_ = 0;
+	GLint previousFramebuffer_ = 0;
+	bool renderingViewport_ = false;
 	GLint modelLocation_ = -1;
 	GLint viewLocation_ = -1;
 	GLint projectionLocation_ = -1;

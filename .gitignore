@@ -35,3 +35,4 @@ Thumbs.db
 build_local/
 build/
 build_local_debug/
+build_editor/

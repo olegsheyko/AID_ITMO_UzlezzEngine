@@ -5,7 +5,9 @@
 #include "core/Logger.h"
 #include "render/IRenderAdapter.h"
 
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 std::string ResourceManager::makeShaderKey(const std::string& vertexPath, const std::string& fragmentPath) {
     return vertexPath + "|" + fragmentPath;
@@ -165,4 +167,81 @@ void ResourceManager::reloadShadersForFile(const std::string& changedPath) {
             reloadShader(shaderData->vertexPath, shaderData->fragmentPath);
         }
     }
+}
+
+std::vector<std::string> ResourceManager::getMeshIds() const {
+    std::vector<std::string> ids;
+    ids.reserve(meshCache_.size());
+    for (const auto& [id, resource] : meshCache_) {
+        (void)resource;
+        ids.push_back(id);
+    }
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
+std::vector<std::string> ResourceManager::getTextureIds() const {
+    std::vector<std::string> ids;
+    ids.reserve(textureCache_.size());
+    for (const auto& [id, resource] : textureCache_) {
+        (void)resource;
+        ids.push_back(id);
+    }
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
+std::vector<std::string> ResourceManager::getShaderIds() const {
+    std::vector<std::string> ids;
+    ids.reserve(shaderCache_.size());
+    for (const auto& [id, resource] : shaderCache_) {
+        (void)resource;
+        ids.push_back(id);
+    }
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
+size_t ResourceManager::estimateMemoryUsageBytes() const {
+    size_t total = 0;
+
+    for (const auto& [path, resource] : meshCache_) {
+        (void)path;
+        if (!resource || !resource->isLoaded() || resource->getData() == nullptr) {
+            continue;
+        }
+
+        const MeshData& mesh = *resource->getData();
+        total += mesh.vertices.size() * sizeof(Vertex);
+        total += mesh.indices.size() * sizeof(uint32_t);
+        for (const SubMesh& subMesh : mesh.subMeshes) {
+            total += subMesh.vertices.size() * sizeof(Vertex);
+            total += subMesh.indices.size() * sizeof(uint32_t);
+        }
+    }
+
+    for (const auto& [path, resource] : textureCache_) {
+        (void)path;
+        if (!resource || !resource->isLoaded() || resource->getData() == nullptr) {
+            continue;
+        }
+
+        const TextureData& texture = *resource->getData();
+        if (texture.width > 0 && texture.height > 0 && texture.channels > 0) {
+            total += static_cast<size_t>(texture.width) * static_cast<size_t>(texture.height) * static_cast<size_t>(texture.channels);
+        }
+    }
+
+    for (const auto& [path, resource] : shaderCache_) {
+        (void)path;
+        if (!resource || !resource->isLoaded() || resource->getData() == nullptr) {
+            continue;
+        }
+
+        const ShaderData& shader = *resource->getData();
+        total += shader.vertexSource.size();
+        total += shader.fragmentSource.size();
+    }
+
+    return total;
 }

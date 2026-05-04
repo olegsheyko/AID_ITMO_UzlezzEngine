@@ -123,6 +123,7 @@ PhysicsSystem::PhysicsSystem(float gravityStrength)
 }
 
 void PhysicsSystem::update(World& world, float dt) {
+    lastCollisionCount_ = 0;
     if (dt <= 0.0f) {
         return;
     }
@@ -166,6 +167,8 @@ void PhysicsSystem::update(World& world, float dt) {
             if (!intersects(colliders[leftIndex].second, colliders[rightIndex].second, manifold)) {
                 continue;
             }
+
+            ++lastCollisionCount_;
 
             Transform& leftTransform = world.getComponent<Transform>(leftEntity);
             Transform& rightTransform = world.getComponent<Transform>(rightEntity);

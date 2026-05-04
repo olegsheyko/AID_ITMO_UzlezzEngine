@@ -14,18 +14,33 @@ constexpr float kCameraLookSensitivity = 0.003f;
 constexpr float kMaxCameraPitch = 1.4f;
 
 Mat4 buildViewMatrix(const Transform& transform) {
-    const Mat4 inverseTranslation = Math::translation(Vec3{
-        -transform.position.x,
-        -transform.position.y,
-        -transform.position.z
-    });
-    const Mat4 inverseRotation = Math::multiply(
-        Math::rotationZ(-transform.rotation.z),
-        Math::multiply(
-            Math::rotationX(-transform.rotation.x),
-            Math::rotationY(-transform.rotation.y)));
+    const float cosPitch = std::cos(transform.rotation.x);
+    const Vec3 forward{
+        std::sin(transform.rotation.y) * cosPitch,
+        std::sin(transform.rotation.x),
+        -std::cos(transform.rotation.y) * cosPitch
+    };
+    const Vec3 right{std::cos(transform.rotation.y), 0.0f, std::sin(transform.rotation.y)};
+    const Vec3 up{
+        right.y * forward.z - right.z * forward.y,
+        right.z * forward.x - right.x * forward.z,
+        right.x * forward.y - right.y * forward.x
+    };
 
-    return Math::multiply(inverseRotation, inverseTranslation);
+    Mat4 view = Mat4::identity();
+    view.values[0] = right.x;
+    view.values[1] = up.x;
+    view.values[2] = -forward.x;
+    view.values[4] = right.y;
+    view.values[5] = up.y;
+    view.values[6] = -forward.y;
+    view.values[8] = right.z;
+    view.values[9] = up.z;
+    view.values[10] = -forward.z;
+    view.values[12] = -(right.x * transform.position.x + right.y * transform.position.y + right.z * transform.position.z);
+    view.values[13] = -(up.x * transform.position.x + up.y * transform.position.y + up.z * transform.position.z);
+    view.values[14] = forward.x * transform.position.x + forward.y * transform.position.y + forward.z * transform.position.z;
+    return view;
 }
 }
 
@@ -76,7 +91,7 @@ void CameraSystem::update(World& world, float dt) {
 
         if (inputManager.isMouseButtonDown(KeyCode::MouseRight)) {
             const Vec2 mouseDelta = inputManager.getMouseDelta();
-            transform.rotation.y -= mouseDelta.x * kCameraLookSensitivity;
+            transform.rotation.y += mouseDelta.x * kCameraLookSensitivity;
             transform.rotation.x -= mouseDelta.y * kCameraLookSensitivity;
             transform.rotation.x = std::clamp(transform.rotation.x, -kMaxCameraPitch, kMaxCameraPitch);
         }

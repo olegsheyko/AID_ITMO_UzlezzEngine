@@ -20,6 +20,34 @@ set_target_properties(glfw PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/include"
 )
 
+# --- Dear ImGui ---
+add_library(imgui STATIC
+    external/imgui/imgui.cpp
+    external/imgui/imgui_demo.cpp
+    external/imgui/imgui_draw.cpp
+    external/imgui/imgui_tables.cpp
+    external/imgui/imgui_widgets.cpp
+    external/imgui/backends/imgui_impl_glfw.cpp
+    external/imgui/backends/imgui_impl_opengl3.cpp
+)
+target_include_directories(imgui PUBLIC
+    external/imgui
+    external/imgui/backends
+    external/glad/include
+    external/glfw/include
+)
+target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLAD)
+
+# --- ImGuizmo ---
+add_library(ImGuizmo STATIC
+    external/ImGuizmo/ImGuizmo.cpp
+)
+target_include_directories(ImGuizmo PUBLIC
+    external/ImGuizmo
+    external/imgui
+)
+target_link_libraries(ImGuizmo PUBLIC imgui)
+
 # --- Assimp ---
 # Попытка найти Assimp через find_package (если установлен через vcpkg)
 find_package(assimp CONFIG)
@@ -72,6 +100,8 @@ add_executable(GameEngine
     src/input/GlfwInputHandler.cpp
     src/input/InputManager.cpp
     src/render/OpenGLRenderAdapter.cpp
+    src/editor/EditorCamera.cpp
+    src/states/EditorState.cpp
     src/states/StateManager.cpp
     src/states/LoadingState.cpp
     src/states/MenuState.cpp
@@ -90,6 +120,9 @@ target_include_directories(GameEngine PRIVATE
     external
     external/glad/include
     external/glfw/include
+    external/imgui
+    external/imgui/backends
+    external/ImGuizmo
     external/stb_image
     src
 )
@@ -97,6 +130,8 @@ target_include_directories(GameEngine PRIVATE
 target_link_libraries(GameEngine PRIVATE
     glad
     glfw
+    imgui
+    ImGuizmo
     opengl32
 )
 

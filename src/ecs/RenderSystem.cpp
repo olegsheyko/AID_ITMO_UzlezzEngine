@@ -5,6 +5,7 @@
 #include "render/IRenderAdapter.h"
 #include "resources/ResourceManager.h"
 
+#include <cstddef>
 #include <unordered_set>
 
 namespace {
@@ -39,6 +40,7 @@ RenderSystem::RenderSystem(IRenderAdapter& renderer)
 }
 
 void RenderSystem::render(World& world) {
+    lastDrawnMeshCount_ = 0;
     world.forEach<Transform, MeshRenderer>([this, &world](Entity entity, Transform&, MeshRenderer& meshRenderer) {
         if (!meshRenderer.cachedMesh || !meshRenderer.cachedShader) {
             return;
@@ -53,6 +55,8 @@ void RenderSystem::render(World& world) {
         if (meshData == nullptr || shaderData == nullptr || shaderData->programId == 0) {
             return;
         }
+
+        ++lastDrawnMeshCount_;
 
         std::unordered_set<Entity> visited;
         const Mat4 modelMatrix = buildWorldMatrix(world, entity, visited);

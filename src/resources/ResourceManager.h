@@ -7,6 +7,7 @@
 #include <memory>
 #include <type_traits>
 #include <unordered_map>
+#include <vector>
 
 class IRenderAdapter;
 
@@ -52,6 +53,10 @@ public:
     size_t getMeshCount() const { return meshCache_.size(); }
     size_t getTextureCount() const { return textureCache_.size(); }
     size_t getShaderCount() const { return shaderCache_.size(); }
+    std::vector<std::string> getMeshIds() const;
+    std::vector<std::string> getTextureIds() const;
+    std::vector<std::string> getShaderIds() const;
+    size_t estimateMemoryUsageBytes() const;
 
 private:
     static std::string makeShaderKey(const std::string& vertexPath, const std::string& fragmentPath);
