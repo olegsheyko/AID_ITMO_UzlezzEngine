@@ -1,0 +1,1371 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html { color-scheme: light dark; }
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>Uzlezz Engine изнутри</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --ground: #F1F2F7;
+  --surface: #FFFFFF;
+  --surface-2: #F7F8FC;
+  --ink: #12141B;
+  --ink-soft: #565D71;
+  --ink-faint: #676E80;
+  --rule: #D5D9E6;
+  --rule-soft: #E6E9F2;
+  --accent: #39429B;
+  --accent-soft: #5B65C4;
+  --accent-wash: #E9EBF8;
+  --flag: #B33524;
+  --flag-wash: #FAEBE8;
+  --warm: #FFF6E8;
+  --warm-rule: #E8D9BE;
+  --shadow: 0 1px 2px rgba(18, 20, 27, .04), 0 8px 24px -16px rgba(18, 20, 27, .16);
+
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --display: "Archivo", var(--sans);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0D0F14;
+    --surface: #15181F;
+    --surface-2: #1A1E27;
+    --ink: #E5E8F0;
+    --ink-soft: #99A1B5;
+    --ink-faint: #8B93A8;
+    --rule: #262B37;
+    --rule-soft: #1E222C;
+    --accent: #97A3F4;
+    --accent-soft: #7C89E2;
+    --accent-wash: #191D30;
+    --flag: #FF8F7E;
+    --flag-wash: #2A1913;
+    --warm: #1F1B12;
+    --warm-rule: #392F1F;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -16px rgba(0, 0, 0, .6);
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground: #0D0F14;
+  --surface: #15181F;
+  --surface-2: #1A1E27;
+  --ink: #E5E8F0;
+  --ink-soft: #99A1B5;
+  --ink-faint: #8B93A8;
+  --rule: #262B37;
+  --rule-soft: #1E222C;
+  --accent: #97A3F4;
+  --accent-soft: #7C89E2;
+  --accent-wash: #191D30;
+  --flag: #FF8F7E;
+  --flag-wash: #2A1913;
+  --warm: #1F1B12;
+  --warm-rule: #392F1F;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -16px rgba(0, 0, 0, .6);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 16px/1.62 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+code, kbd { font-family: var(--mono); }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+/* ---------- masthead ---------- */
+
+.masthead {
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.mast-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 44px 32px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.eyebrow {
+  margin: 0;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.masthead h1 {
+  margin: 0;
+  font: 700 clamp(34px, 5.2vw, 58px)/1.02 var(--display);
+  letter-spacing: -.026em;
+  text-wrap: balance;
+}
+
+.masthead h1 span { color: var(--accent); }
+
+.lede {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 17px;
+  color: var(--ink-soft);
+}
+
+.spec {
+  margin: 8px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--rule-soft);
+  border: 1px solid var(--rule-soft);
+}
+
+.spec > div {
+  background: var(--surface);
+  padding: 11px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.spec dt {
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.spec dd {
+  margin: 0;
+  font: 500 13.5px/1.3 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- shell ---------- */
+
+.shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 32px 110px;
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: 56px;
+  align-items: start;
+}
+
+.rail {
+  position: sticky;
+  top: 24px;
+  padding-top: 44px;
+  font: 400 13px/1.4 var(--sans);
+}
+
+.rail-title {
+  margin: 0 0 12px;
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.rail ol {
+  margin: 0 0 22px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--rule);
+}
+
+.rail li a {
+  display: flex;
+  gap: 9px;
+  padding: 5px 0 5px 12px;
+  margin-left: -1px;
+  border-left: 1px solid transparent;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.rail li a:hover { color: var(--ink); border-left-color: var(--accent); }
+.rail li a b { font: 500 11px/1.5 var(--mono); color: var(--ink-faint); }
+.rail li a:hover b { color: var(--accent); }
+
+main { padding-top: 44px; min-width: 0; }
+
+/* ---------- prose primitives ---------- */
+
+.prose { max-width: 70ch; }
+
+section + section { margin-top: 56px; }
+
+p { margin: 0 0 15px; }
+p:last-child { margin-bottom: 0; }
+
+h2, h3 { text-wrap: balance; }
+
+h3 {
+  margin: 30px 0 12px;
+  font: 600 17px/1.3 var(--display);
+  letter-spacing: -.012em;
+}
+
+ul.plain, ol.steps { margin: 0 0 16px; padding: 0 0 0 0; list-style: none; }
+
+ul.plain li {
+  position: relative;
+  padding: 0 0 0 18px;
+  margin-bottom: 8px;
+  max-width: 70ch;
+}
+
+ul.plain li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: .68em;
+  width: 5px;
+  height: 1px;
+  background: var(--accent);
+}
+
+ol.steps { counter-reset: st; }
+
+ol.steps li {
+  counter-increment: st;
+  position: relative;
+  padding: 0 0 0 34px;
+  margin-bottom: 11px;
+  max-width: 70ch;
+}
+
+ol.steps li::before {
+  content: counter(st);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 21px;
+  height: 21px;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  font: 500 11px/20px var(--mono);
+  text-align: center;
+  color: var(--ink-faint);
+  background: var(--surface);
+}
+
+p code, li code, td code, dd code {
+  font-size: .855em;
+  background: var(--surface-2);
+  border: 1px solid var(--rule-soft);
+  padding: .06em .34em;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* ---------- question sections ---------- */
+
+.q-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.q-num {
+  flex: none;
+  font: 700 13px/1 var(--mono);
+  color: var(--accent);
+  letter-spacing: .04em;
+  padding-top: 6px;
+}
+
+.q-head h2 {
+  margin: 0;
+  font: 600 clamp(21px, 2.5vw, 27px)/1.2 var(--display);
+  letter-spacing: -.018em;
+}
+
+.answer {
+  display: block;
+  margin: 0 0 18px;
+  padding: 13px 16px;
+  background: var(--accent-wash);
+  border-left: 2px solid var(--accent);
+  font-size: 15.5px;
+  color: var(--ink);
+  max-width: 70ch;
+}
+
+.answer b { font-weight: 600; }
+
+.src {
+  margin: 20px 0 0;
+  padding-top: 13px;
+  border-top: 1px dotted var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font: 400 11.5px/1.5 var(--mono);
+  color: var(--ink-faint);
+}
+
+.src > span {
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  font-size: 10px;
+  margin-right: 3px;
+}
+
+.src code {
+  background: var(--surface-2);
+  border: 1px solid var(--rule-soft);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* ---------- tables ---------- */
+
+.tw { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--rule); background: var(--surface); }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+th {
+  text-align: left;
+  font: 500 10px/1.4 var(--mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+
+td { padding: 10px 14px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; line-height: 1.5; }
+tr:last-child td { border-bottom: 0; }
+td:first-child { white-space: nowrap; }
+td.wrap, th.wrap { white-space: normal; }
+.mono-cell { font: 400 13px/1.5 var(--mono); }
+
+/* ---------- stat tiles ---------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+
+.stats div { background: var(--surface); padding: 15px 16px; }
+
+.stats .n {
+  display: block;
+  font: 600 24px/1.1 var(--display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+}
+
+.stats .k {
+  display: block;
+  margin-top: 5px;
+  font: 400 11.5px/1.35 var(--mono);
+  color: var(--ink-faint);
+}
+
+/* ---------- callouts ---------- */
+
+.pitch {
+  background: var(--warm);
+  border: 1px solid var(--warm-rule);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pitch h2 {
+  margin: 0;
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.pitch p { margin: 0; font-size: 16.5px; max-width: 74ch; }
+
+.flagnote {
+  margin: 18px 0;
+  padding: 12px 15px;
+  background: var(--flag-wash);
+  border-left: 2px solid var(--flag);
+  font-size: 14.5px;
+  max-width: 70ch;
+}
+
+.flagnote b { color: var(--flag); font-weight: 600; }
+
+/* ---------- figures ---------- */
+
+figure {
+  margin: 26px 0;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.fig-scroll { overflow-x: auto; padding: 18px 18px 6px; }
+
+figcaption {
+  border-top: 1px solid var(--rule-soft);
+  padding: 11px 18px 13px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  background: var(--surface-2);
+}
+
+figcaption b {
+  display: block;
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 5px;
+}
+
+.dg { display: block; width: 100%; min-width: 620px; height: auto; color: var(--ink); }
+
+.dg .bx { fill: var(--surface-2); stroke: currentColor; stroke-opacity: .3; stroke-width: 1; }
+.dg .bx-a { fill: var(--accent-wash); stroke: var(--accent); stroke-opacity: .6; stroke-width: 1.2; }
+.dg .bx-f { fill: var(--flag-wash); stroke: var(--flag); stroke-opacity: .55; stroke-width: 1; stroke-dasharray: 5 3; }
+.dg .bx-o { fill: none; stroke: currentColor; stroke-opacity: .3; stroke-width: 1; }
+.dg .grp { fill: none; stroke: currentColor; stroke-opacity: .16; stroke-width: 1; stroke-dasharray: 2 4; }
+.dg .ln { stroke: currentColor; stroke-opacity: .45; stroke-width: 1; fill: none; }
+.dg .ln-a { stroke: var(--accent); stroke-opacity: .9; stroke-width: 1.4; fill: none; }
+.dg .ln-f { stroke: var(--flag); stroke-opacity: .95; stroke-width: 1.4; fill: none; stroke-dasharray: 5 3; }
+.dg .ln-d { stroke: currentColor; stroke-opacity: .38; stroke-width: 1; fill: none; stroke-dasharray: 3 3; }
+
+.dg text { font: 500 12px var(--mono); fill: currentColor; }
+.dg .t-h { font: 600 12.5px var(--sans); }
+.dg .t-s { font-size: 10.5px; fill-opacity: .6; font-weight: 400; }
+.dg .t-a { fill: var(--accent); }
+.dg .t-f { fill: var(--flag); font-size: 10.5px; }
+.dg .t-lbl { font-size: 10.5px; fill-opacity: .72; font-weight: 400; }
+.dg .mk { fill: currentColor; fill-opacity: .45; }
+.dg .mk-a { fill: var(--accent); }
+.dg .mk-f { fill: var(--flag); }
+.dg .dim { fill-opacity: .45; }
+
+/* ---------- ranked list (q9) ---------- */
+
+.ranked { margin: 0; padding: 0; list-style: none; counter-reset: rk; }
+
+.ranked > li {
+  counter-increment: rk;
+  border-top: 1px solid var(--rule);
+  padding: 16px 0 16px 42px;
+  position: relative;
+  max-width: 74ch;
+}
+
+.ranked > li:last-child { border-bottom: 1px solid var(--rule); }
+
+.ranked > li::before {
+  content: counter(rk, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 17px;
+  font: 500 12px/1.4 var(--mono);
+  color: var(--ink-faint);
+}
+
+.ranked h3 {
+  margin: 0 0 6px;
+  font: 600 16px/1.35 var(--display);
+  letter-spacing: -.008em;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ranked p { margin: 0; font-size: 14.8px; color: var(--ink-soft); }
+.ranked p + p { margin-top: 7px; }
+.ranked p b { color: var(--ink); font-weight: 500; }
+
+.chip {
+  flex: none;
+  font: 500 9.5px/1 var(--mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 4px 7px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+
+.chip-now { color: var(--flag); }
+.chip-scale { color: var(--accent); }
+.chip-hyg { color: var(--ink-faint); }
+
+/* ---------- prep ---------- */
+
+.prep { margin: 0; }
+
+.prep > div {
+  border-top: 1px solid var(--rule);
+  padding: 15px 0;
+  max-width: 74ch;
+}
+
+.prep > div:last-child { border-bottom: 1px solid var(--rule); }
+
+.prep dt {
+  font: 600 15.5px/1.4 var(--display);
+  letter-spacing: -.008em;
+  margin-bottom: 6px;
+}
+
+.prep dt::before { content: "— "; color: var(--accent); }
+
+.prep dd { margin: 0; font-size: 14.8px; color: var(--ink-soft); }
+
+/* ---------- footer ---------- */
+
+.foot {
+  margin-top: 64px;
+  padding-top: 22px;
+  border-top: 1px solid var(--rule);
+  font-size: 13.5px;
+  color: var(--ink-faint);
+  max-width: 74ch;
+}
+
+.foot p { margin: 0 0 9px; }
+.foot code { font-size: .86em; }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; gap: 0; padding: 0 22px 80px; }
+  .rail { position: static; padding-top: 32px; }
+  .rail ol { flex-flow: row wrap; border-left: 0; gap: 0 4px; }
+  .rail li a { border-left: 0; padding: 4px 8px; background: var(--surface); border: 1px solid var(--rule); margin: 0 0 4px; }
+  .mast-inner { padding: 32px 22px 26px; }
+  main { padding-top: 28px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+
+/* ---------- печать и экспорт в PDF ---------- */
+
+@media print {
+  /* печатаем всегда в светлой палитре, чем бы ни была тема экрана */
+  :root, :root[data-theme="dark"], :root[data-theme="light"] {
+    --ground: #FFFFFF;
+    --surface: #FFFFFF;
+    --surface-2: #F6F7FA;
+    --ink: #0E1015;
+    --ink-soft: #3F4557;
+    --ink-faint: #5A6072;
+    --rule: #C9CDDB;
+    --rule-soft: #E2E5EE;
+    --accent: #2C3480;
+    --accent-wash: #EDEEF8;
+    --flag: #94271A;
+    --flag-wash: #FAEEEB;
+    --warm: #FFFAF1;
+    --warm-rule: #DDCFB5;
+    --shadow: none;
+  }
+
+  @page { margin: 14mm 12mm; }
+
+  body { font-size: 10.5pt; }
+
+  .rail { display: none; }
+  .shell { grid-template-columns: 1fr; gap: 0; max-width: none; padding: 0; }
+  .mast-inner { max-width: none; padding: 0 0 18px; }
+  main { padding-top: 22px; }
+  .masthead { border-bottom-width: 1px; }
+
+  figure { box-shadow: none; break-inside: avoid; }
+  .fig-scroll { overflow: visible; padding: 12px 12px 4px; }
+  .dg { min-width: 0; }
+
+  .q-head { break-after: avoid; }
+  h3 { break-after: avoid; }
+  .ranked > li, .prep > div, .stats, .pitch, .flagnote, .tw { break-inside: avoid; }
+  .src { break-inside: avoid; }
+
+  a { text-decoration: none; }
+}
+</style>
+</head>
+<body>
+
+
+<header class="masthead">
+  <div class="mast-inner">
+    <p class="eyebrow">Практика 04.09 · разбор движка по коду</p>
+    <h1>Uzlezz&nbsp;Engine <span>изнутри</span></h1>
+    <p class="lede">Девять ответов на вопросы к практике, шесть схем механизмов и ссылка на файл со строкой под каждым блоком — чтобы любое утверждение можно было проверить прямо в репозитории.</p>
+    <dl class="spec">
+      <div><dt>Ревизия</dt><dd>756bd6b · ПЗ_5</dd></div>
+      <div><dt>Язык / API</dt><dd>C++17 · OpenGL 3.3</dd></div>
+      <div><dt>Объём src/</dt><dd>6 801 строка · 65 файлов</dd></div>
+      <div><dt>Потоков</dt><dd>1</dd></div>
+      <div><dt>Сборка</dt><dd>CMake · MSVC x64</dd></div>
+    </dl>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="rail" aria-label="Содержание">
+    <p class="rail-title">Вопросы</p>
+    <ol>
+      <li><a href="#q1"><b>01</b> Модули</a></li>
+      <li><a href="#q2"><b>02</b> Точка входа и цикл</a></li>
+      <li><a href="#q3"><b>03</b> Инициализация</a></li>
+      <li><a href="#q4"><b>04</b> Игровые объекты</a></li>
+      <li><a href="#q5"><b>05</b> Чем вдохновлялись</a></li>
+      <li><a href="#q6"><b>06</b> Ресурсы</a></li>
+      <li><a href="#q7"><b>07</b> Материалы и GPU</a></li>
+      <li><a href="#q8"><b>08</b> Многопоточность</a></li>
+      <li><a href="#q9"><b>09</b> Что переделать</a></li>
+    </ol>
+    <p class="rail-title">Ещё</p>
+    <ol>
+      <li><a href="#prep">Вероятные вопросы</a></li>
+      <li><a href="#foot">Как это собрано</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <section class="pitch">
+      <h2>Если нужно уложиться в 30 секунд</h2>
+      <p>Uzlezz Engine — учебный 3D-движок на C++17 и OpenGL 3.3. Внутри: ECS, где компоненты — чистые данные, а поведение вынесено в системы; стек состояний приложения; кэширующий менеджер ресурсов с горячей перезагрузкой шейдеров; рендер спрятан за интерфейсом-адаптером; поверх всего — ImGui-редактор с режимом Play/Stop, гизмо и выбором объекта мышью через луч. Всё это работает в одном потоке.</p>
+    </section>
+
+    <section class="stats" aria-label="Показатели проекта">
+      <div><span class="n">9</span><span class="k">модулей в src/</span></div>
+      <div><span class="n">8</span><span class="k">компонентов ECS</span></div>
+      <div><span class="n">5</span><span class="k">систем</span></div>
+      <div><span class="n">8</span><span class="k">внешних библиотек</span></div>
+      <div><span class="n">4</span><span class="k">состояния (2 живых)</span></div>
+      <div><span class="n">0</span><span class="k">тестов</span></div>
+    </section>
+
+    <!-- ======================= 01 ======================= -->
+    <section class="q" id="q1">
+      <header class="q-head">
+        <span class="q-num">01</span>
+        <h2>Из каких модулей состоит движок?</h2>
+      </header>
+
+      <p class="answer">Один исполняемый таргет <b>GameEngine</b> и девять папок в <code>src/</code>, разделённых по слоям. Отдельных проектов нет, но три внешние библиотеки собираются как статические: <code>glad</code>, <code>imgui</code>, <code>ImGuizmo</code>.</p>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Модуль</th><th>Строк</th><th class="wrap">Что внутри</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono-cell">core/</td><td class="mono-cell">271</td><td class="wrap"><code>Application</code> — цикл и dt, <code>StateManager</code> — стек состояний, <code>Logger</code> и <code>ServiceLocator</code> — синглтоны</td></tr>
+            <tr><td class="mono-cell">states/</td><td class="mono-cell">2 202</td><td class="wrap">Loading → Editor → Menu → Gameplay. <code>EditorState</code> — 1 489 строк, самый большой файл проекта</td></tr>
+            <tr><td class="mono-cell">ecs/</td><td class="mono-cell">1 035</td><td class="wrap"><code>World</code>, <code>Entity</code>, 8 компонентов, 5 систем, <code>CollisionUtils</code></td></tr>
+            <tr><td class="mono-cell">render/</td><td class="mono-cell">990</td><td class="wrap"><code>IRenderAdapter</code> — 25 виртуальных методов, <code>OpenGLRenderAdapter</code>, <code>ShaderProgram</code></td></tr>
+            <tr><td class="mono-cell">resources/</td><td class="mono-cell">1 402</td><td class="wrap"><code>ResourceManager</code> с кэшем, три загрузчика, <code>SceneManifest</code>, <code>HotReload</code></td></tr>
+            <tr><td class="mono-cell">input/</td><td class="mono-cell">479</td><td class="wrap"><code>KeyCode</code> → <code>IInputHandler</code> → <code>GlfwInputHandler</code>, поверх — <code>InputManager</code> с action mapping</td></tr>
+            <tr><td class="mono-cell">math/</td><td class="mono-cell">129</td><td class="wrap"><code>Vec2/3/4</code>, <code>Mat4</code> в column-major, перспектива и композиция трансформа — руками, без GLM</td></tr>
+            <tr><td class="mono-cell">editor/</td><td class="mono-cell">207</td><td class="wrap"><code>EditorCamera</code> — орбитальная камера вьюпорта</td></tr>
+            <tr><td class="mono-cell">events/</td><td class="mono-cell">66</td><td class="wrap"><code>EventDispatcher</code> на <code>type_index</code> → колбэки, <code>CollisionEvent</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Внешние зависимости</h3>
+      <ul class="plain">
+        <li><b>Из исходников:</b> glad, Dear ImGui (+ backends glfw/opengl3), ImGuizmo — собираются как статические библиотеки в том же CMake.</li>
+        <li><b>Готовыми бинарниками:</b> <code>glfw3.lib</code> (vc2022) и <code>assimp-vc143-mt.lib</code> лежат в репозитории; assimp-DLL копируется рядом с exe после сборки.</li>
+        <li><b>Header-only:</b> stb_image (с отдельным <code>stb_image_impl.cpp</code>) и nlohmann/json.</li>
+        <li><code>external/tinyobjloader</code> — <b>мёртвый груз</b>: не подключён ни в CMake, ни в коде.</li>
+      </ul>
+
+      <p>Из-за предсобранных <code>.lib</code> под MSVC и прямого линка <code>opengl32</code> сборка сейчас возможна только под Windows.</p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg class="dg" viewBox="0 0 880 400" role="img" aria-label="Схема: движок общается с графикой только через интерфейс IRenderAdapter, но Application обходит его через dynamic_cast к OpenGLRenderAdapter">
+            <defs>
+              <marker id="f1a" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk" points="0,0 7,3.5 0,7"/></marker>
+              <marker id="f1b" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk mk-a" points="0,0 7,3.5 0,7"/></marker>
+              <marker id="f1c" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk mk-f" points="0,0 7,3.5 0,7"/></marker>
+            </defs>
+
+            <rect class="bx" x="14" y="18" width="300" height="50"/>
+            <text class="t-h" x="28" y="40">core / Application::init</text>
+            <text class="t-s" x="28" y="57">нужен GLFWwindow* для ImGui и ввода</text>
+
+            <rect class="bx" x="14" y="100" width="300" height="46"/>
+            <text x="28" y="120">EditorState</text>
+            <text class="t-s" x="28" y="136">рисует вьюпорт в отдельный FBO</text>
+
+            <rect class="bx" x="14" y="158" width="300" height="46"/>
+            <text x="28" y="178">Render / DebugRenderSystem</text>
+            <text class="t-s" x="28" y="194">шейдеры, drawIndexed, debug-AABB</text>
+
+            <rect class="bx" x="14" y="216" width="300" height="46"/>
+            <text x="28" y="236">CameraSystem</text>
+            <text class="t-s" x="28" y="252">размер фреймбуфера</text>
+
+            <rect class="bx" x="14" y="274" width="300" height="46"/>
+            <text x="28" y="294">Mesh / Texture / ShaderLoader</text>
+            <text class="t-s" x="28" y="310">заливка меша, текстуры, шейдера</text>
+
+            <line class="ln" x1="314" y1="123" x2="336" y2="150" marker-end="url(#f1a)"/>
+            <line class="ln" x1="314" y1="181" x2="336" y2="190" marker-end="url(#f1a)"/>
+            <line class="ln" x1="314" y1="239" x2="336" y2="230" marker-end="url(#f1a)"/>
+            <line class="ln" x1="314" y1="297" x2="336" y2="270" marker-end="url(#f1a)"/>
+            <text class="t-lbl" x="14" y="348">все вызовы графики — только через интерфейс</text>
+
+            <rect class="bx-a" x="340" y="100" width="150" height="220"/>
+            <text class="t-h t-a" x="415" y="200" text-anchor="middle">IRenderAdapter</text>
+            <text class="t-s t-a" x="415" y="220" text-anchor="middle">25 виртуальных</text>
+            <text class="t-s t-a" x="415" y="235" text-anchor="middle">методов</text>
+
+            <line class="ln-a" x1="490" y1="200" x2="546" y2="200" marker-end="url(#f1b)"/>
+            <text class="t-lbl" x="494" y="192">реализует</text>
+
+            <rect class="bx" x="550" y="170" width="270" height="60"/>
+            <text class="t-h" x="565" y="196">OpenGLRenderAdapter</text>
+            <text class="t-s" x="565" y="214">единственная реализация</text>
+
+            <line class="ln" x1="685" y1="230" x2="685" y2="266" marker-end="url(#f1a)"/>
+
+            <rect class="bx" x="550" y="270" width="270" height="50"/>
+            <text x="565" y="291">GLFW · GLAD</text>
+            <text class="t-s" x="565" y="308">OpenGL 3.3 core</text>
+
+            <path class="ln-f" d="M314 43 C 460 30, 540 60, 665 166" marker-end="url(#f1c)"/>
+            <text class="t-f" x="392" y="62">dynamic_cast к реализации</text>
+            <text class="t-f" x="392" y="78">— шов протекает</text>
+          </svg>
+        </div>
+        <figcaption><b>схема 1 · слои</b>Абстракция графики держится по всему движку: и системы ECS, и загрузчики ресурсов знают только <code>IRenderAdapter</code>. Единственное исключение — <code>Application::init</code>, который делает <code>dynamic_cast</code> к <code>OpenGLRenderAdapter</code>, чтобы достать нативное окно GLFW для ImGui и обработчика ввода.</figcaption>
+      </figure>
+
+      <p class="src"><span>код</span><code>CMakeLists.txt</code><code>src/render/IRenderAdapter.h</code><code>src/core/Application.cpp:26</code></p>
+    </section>
+
+    <!-- ======================= 02 ======================= -->
+    <section class="q" id="q2">
+      <header class="q-head">
+        <span class="q-num">02</span>
+        <h2>Где точка входа и как выглядит главный цикл?</h2>
+      </header>
+
+      <p class="answer">Точка входа — <code>src/main.cpp</code>, ровно 20 строк: открыть лог, создать <code>Application</code>, <code>init</code> → <code>run</code> → <code>shutdown</code>. Цикл живёт в <code>Application::run</code> и за кадр дёргает четыре вещи: <b>окно, ввод, состояние, рендер</b>. Сцену <code>Application</code> не знает — он общается только со <code>StateManager</code>.</p>
+
+      <p>Цепочка ответственности за кадр получается такая: <code>Application</code> считает dt и вызывает текущее состояние → состояние (<code>EditorState</code>) вызывает системы → системы обходят <code>World</code> и рисуют через адаптер. <code>World</code> в этой цепочке — просто хранилище, он ничего не инициирует.</p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg class="dg" viewBox="0 0 880 570" role="img" aria-label="Схема одного кадра: dt, pollEvents, обновление ввода, update с горячей перезагрузкой и системами, render с отрисовкой сцены во отдельный FBO внутри пасса ImGui, затем SwapBuffers">
+            <defs>
+              <marker id="f2a" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk" points="0,0 7,3.5 0,7"/></marker>
+            </defs>
+
+            <text class="t-h" x="14" y="20">Application::run — один кадр</text>
+
+            <line class="ln-d" x1="34" y1="34" x2="34" y2="534"/>
+
+            <circle class="bx-o" cx="34" cy="52" r="10"/><text class="t-s" x="34" y="56" text-anchor="middle">1</text>
+            <rect class="bx" x="58" y="34" width="806" height="38"/>
+            <text x="72" y="58">dt = now − lastFrame, обрезается до 0.1 c</text>
+
+            <circle class="bx-o" cx="34" cy="102" r="10"/><text class="t-s" x="34" y="106" text-anchor="middle">2</text>
+            <rect class="bx" x="58" y="84" width="806" height="38"/>
+            <text x="72" y="108">renderer_-&gt;pollEvents()</text>
+            <text class="t-s" x="330" y="108">→ glfwPollEvents</text>
+
+            <circle class="bx-o" cx="34" cy="152" r="10"/><text class="t-s" x="34" y="156" text-anchor="middle">3</text>
+            <rect class="bx" x="58" y="134" width="806" height="38"/>
+            <text x="72" y="158">InputManager::updateState()</text>
+            <text class="t-s" x="330" y="158">→ previous ← current по 22 клавишам и 3 кнопкам мыши</text>
+
+            <circle class="bx-o" cx="34" cy="216" r="10"/><text class="t-s" x="34" y="220" text-anchor="middle">4</text>
+            <rect class="bx-o" x="58" y="184" width="806" height="106"/>
+            <text class="t-h" x="72" y="205">update(dt) — три шага, строго по порядку</text>
+            <rect class="bx" x="74" y="213" width="774" height="24"/>
+            <text class="t-s" x="86" y="229">1 · HotReload: stat() по watched-файлам → перекомпиляция изменённых шейдеров</text>
+            <rect class="bx-a" x="74" y="240" width="774" height="24"/>
+            <text class="t-s t-a" x="86" y="256">2 · state-&gt;update(dt) — в EditorState только в режиме Play: physics → spin → gameCamera</text>
+            <rect class="bx" x="74" y="267" width="774" height="24"/>
+            <text class="t-s" x="86" y="283">3 · проверка перехода состояния через dynamic_cast к конкретному типу</text>
+
+            <circle class="bx-o" cx="34" cy="350" r="10"/><text class="t-s" x="34" y="354" text-anchor="middle">5</text>
+            <rect class="bx-o" x="58" y="302" width="806" height="196"/>
+            <text class="t-h" x="72" y="323">render()</text>
+            <rect class="bx" x="74" y="333" width="774" height="28"/>
+            <text class="t-s" x="86" y="352">beginFrame(0.1, 0.1, 0.2) — очистка бэкбуфера</text>
+            <rect class="bx" x="74" y="367" width="774" height="28"/>
+            <text class="t-s" x="86" y="386">ImGui NewFrame + ImGuizmo::BeginFrame</text>
+            <rect class="bx" x="74" y="401" width="774" height="56"/>
+            <text class="t-s" x="86" y="420">state-&gt;render() — DockSpace, MainMenu, Toolbar, Hierarchy, Inspector, Statistics, Viewport</text>
+            <rect class="bx-a" x="330" y="426" width="510" height="24"/>
+            <text class="t-s t-a" x="342" y="443">FBO: RenderSystem.render(world) + DebugRenderSystem.render(world)</text>
+            <rect class="bx" x="74" y="463" width="774" height="28"/>
+            <text class="t-s" x="86" y="482">ImGui::Render → ImplOpenGL3_RenderDrawData</text>
+
+            <circle class="bx-o" cx="34" cy="528" r="10"/><text class="t-s" x="34" y="532" text-anchor="middle">6</text>
+            <rect class="bx" x="58" y="510" width="806" height="38"/>
+            <text x="72" y="534">endFrame() → glfwSwapBuffers</text>
+            <text class="t-s" x="330" y="534">→ vsync включён: glfwSwapInterval(1)</text>
+
+            <path class="ln" d="M34 548 L 14 548 L 14 34 L 30 34" marker-end="url(#f2a)"/>
+          </svg>
+        </div>
+        <figcaption><b>схема 2 · кадр</b>Ключевая особенность шага 5: сцена рисуется не в бэкбуфер, а в собственный FBO — и попадает в кадр как текстура внутри ImGui-панели <code>Viewport</code>. То есть отрисовка сцены вложена в пасс интерфейса, а не идёт до него.</figcaption>
+      </figure>
+
+      <h3>Две неочевидности, о которых стоит сказать первым</h3>
+      <ul class="plain">
+        <li><b>Редактор не использует реестр систем <code>World</code>.</b> <code>EditorState</code> вызывает <code>physicsSystem_.update(world_, dt)</code> напрямую, а <code>World::addUpdateSystem</code> / <code>updateSystems</code> есть только в <code>GameplayState</code> — который недостижим. В текущей сборке реестр систем не исполняется ни разу.</li>
+        <li><b>Камера редактора обновляется в фазе рендера.</b> <code>editorCamera_.update(...)</code> вызывается из <code>renderViewportPanel()</code>, потому что размеры вьюпорта известны только во время построения ImGui-панели.</li>
+      </ul>
+
+      <p>Фиксированного шага у физики нет: dt переменный, ограничен сверху 0.1 c, а снизу его держит вертикальная синхронизация.</p>
+
+      <p class="src"><span>код</span><code>src/main.cpp:10</code><code>src/core/Application.cpp:48</code><code>src/states/EditorState.cpp:634</code><code>src/states/EditorState.cpp:1214</code></p>
+    </section>
+
+    <!-- ======================= 03 ======================= -->
+    <section class="q" id="q3">
+      <header class="q-head">
+        <span class="q-num">03</span>
+        <h2>Как происходит инициализация?</h2>
+      </header>
+
+      <p class="answer">Строго по порядку в <code>Application::init</code>, и порядок здесь важен: <b>сначала контекст OpenGL</b>, потом всё остальное — потому что любой загруженный ресурс сразу заливается на GPU и без живого контекста загрузка бессмысленна.</p>
+
+      <ol class="steps">
+        <li><code>Logger::openFile("engine.log")</code> — единственное, что делается до <code>Application</code>.</li>
+        <li><code>OpenGLRenderAdapter::init</code>: <code>glfwInit</code> → хинты (GL 3.3 core, maximized) → создание окна → растягивание по рабочей области монитора → <code>glfwMakeContextCurrent</code> → <code>gladLoadGLLoader</code> → колбэк ресайза → <code>glfwSwapInterval(1)</code> → <code>glEnable(GL_DEPTH_TEST, GL_BLEND)</code> + blend func.</li>
+        <li><code>createRenderResources()</code> внутри адаптера: грузит собственный шейдер <code>vertex.glsl</code> + <code>fragment.glsl</code>, достаёт локации четырёх юниформов и создаёт VAO для примитивов Line / Triangle / Quad / Cube.</li>
+        <li><code>InputManager::initialize(GlfwInputHandler(window))</code> — здесь и происходит тот самый <code>dynamic_cast</code>, чтобы получить <code>GLFWwindow*</code>.</li>
+        <li>ImGui: <code>CreateContext</code>, флаги клавиатурной навигации и docking, тёмная тема, скругления, затем <code>ImGui_ImplGlfw_InitForOpenGL</code> и <code>ImGui_ImplOpenGL3_Init("#version 330")</code>.</li>
+        <li><code>ResourceManager::init(renderer)</code> — менеджер запоминает сырой указатель на адаптер и держит его до конца процесса.</li>
+        <li><code>stateManager_.push(LoadingState)</code> и <code>lastFrameTime_ = Clock::now()</code>.</li>
+      </ol>
+
+      <p>Сцена на этом этапе ещё не существует: ресурсы и сущности создаются в <code>onEnter()</code> состояния, то есть после того, как <code>LoadingState</code> отсчитает свои две секунды и сменится на <code>EditorState</code>.</p>
+
+      <h3>Выключение — в обратном порядке</h3>
+      <p><code>ResourceManager::clearCache()</code> проходит по трём кэшам и удаляет GPU-объекты через адаптер → снимаются все состояния со стека → ImGui shutdown → адаптер закрывает окно и вызывает <code>glfwTerminate</code> → <code>InputManager::shutdown</code>.</p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg class="dg" viewBox="0 0 880 210" role="img" aria-label="Схема состояний: LoadingState через две секунды меняется на EditorState, а MenuState и GameplayState недостижимы, потому что никто не вызывает push">
+            <defs>
+              <marker id="f3a" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk" points="0,0 7,3.5 0,7"/></marker>
+              <marker id="f3b" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk mk-a" points="0,0 7,3.5 0,7"/></marker>
+            </defs>
+
+            <text class="t-lbl" x="14" y="20">живой путь</text>
+            <circle class="bx" cx="30" cy="56" r="7"/>
+            <line class="ln-a" x1="41" y1="56" x2="86" y2="56" marker-end="url(#f3b)"/>
+            <rect class="bx" x="90" y="34" width="180" height="46"/>
+            <text x="104" y="55">LoadingState</text>
+            <text class="t-s" x="104" y="70">таймер, рендер пустой</text>
+
+            <line class="ln-a" x1="270" y1="56" x2="376" y2="56" marker-end="url(#f3b)"/>
+            <text class="t-lbl" x="286" y="48">2 c истекли</text>
+
+            <rect class="bx-a" x="380" y="34" width="200" height="46"/>
+            <text class="t-a" x="394" y="55">EditorState</text>
+            <text class="t-s t-a" x="394" y="70">точка входа с ПЗ_5</text>
+
+            <text class="t-lbl dim" x="604" y="52">весь кадр идёт</text>
+            <text class="t-lbl dim" x="604" y="67">через это состояние</text>
+
+            <line class="ln-d" x1="14" y1="106" x2="866" y2="106"/>
+
+            <text class="t-f" x="14" y="130">недостижимо в текущей сборке</text>
+
+            <rect class="bx-f" x="90" y="146" width="180" height="42"/>
+            <text class="dim" x="104" y="172">MenuState</text>
+
+            <line class="ln-d" x1="270" y1="167" x2="376" y2="167" marker-end="url(#f3a)"/>
+            <text class="t-lbl dim" x="298" y="160">Enter</text>
+
+            <rect class="bx-f" x="380" y="146" width="200" height="42"/>
+            <text class="dim" x="394" y="172">GameplayState</text>
+
+            <text class="t-f" x="604" y="163">никто не вызывает push():</text>
+            <text class="t-f" x="604" y="178">Loading сразу меняется на Editor</text>
+          </svg>
+        </div>
+        <figcaption><b>схема 3 · состояния</b>Переходы прописаны не в состояниях, а в <code>Application::update</code>, через <code>dynamic_cast</code> к конкретному типу. Само состояние запросить переход не может — поэтому цепочка «меню → игра» из ПЗ 1–4 осталась в коде, но кадр через неё уже не проходит.</figcaption>
+      </figure>
+
+      <p class="src"><span>код</span><code>src/core/Application.cpp:17</code><code>src/render/OpenGLRenderAdapter.cpp:16</code><code>src/render/OpenGLRenderAdapter.cpp:455</code><code>src/core/Application.cpp:80</code></p>
+    </section>
+
+    <!-- ======================= 04 ======================= -->
+    <section class="q" id="q4">
+      <header class="q-head">
+        <span class="q-num">04</span>
+        <h2>Как устроены игровые объекты? Компонент — это данные или поведение?</h2>
+      </header>
+
+      <p class="answer">Наследования у игровых объектов нет вообще: сущность — это <code>uint32_t</code>. Компонент — <b>строго данные</b>: ни у одного из восьми компонентов нет ни единого метода. Поведение целиком в системах, которых две разновидности: <code>UpdateSystem::update(World&amp;, float)</code> и <code>RenderSystemBase::render(World&amp;)</code>.</p>
+
+      <p>Интересная деталь: «быть компонентом» здесь проверяется не наследованием, а трейтом. Есть пустая структура <code>Component</code> и шаблон <code>IsComponent&lt;T&gt;</code>, но компоненты от <code>Component</code> не наследуются — вместо этого на каждый тип пишется явная специализация <code>IsComponent</code>, а каждый шаблонный метод <code>World</code> начинается со <code>static_assert(kIsComponent&lt;T&gt;)</code>. Контракт проверяется на этапе компиляции и ничего не стоит в рантайме.</p>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th>Компонент</th><th class="wrap">Поля</th><th class="wrap">Кто читает</th></tr></thead>
+          <tbody>
+            <tr><td class="mono-cell">Transform</td><td class="wrap">position, rotation (углы Эйлера), scale</td><td class="wrap">все системы</td></tr>
+            <tr><td class="mono-cell">MeshRenderer</td><td class="wrap">8 строковых id ресурсов + 8 <code>shared_ptr</code> на кэшированные ресурсы</td><td class="wrap">RenderSystem</td></tr>
+            <tr><td class="mono-cell">Rigidbody</td><td class="wrap">velocity, acceleration, mass, useGravity</td><td class="wrap">PhysicsSystem</td></tr>
+            <tr><td class="mono-cell">Collider</td><td class="wrap">type (Box / Sphere), halfExtents, offset, radius</td><td class="wrap">Physics, DebugRender</td></tr>
+            <tr><td class="mono-cell">Camera</td><td class="wrap">fov, near, far, aspect, active + готовые view и projection</td><td class="wrap">CameraSystem, RenderSystem</td></tr>
+            <tr><td class="mono-cell">Hierarchy</td><td class="wrap">parent, children</td><td class="wrap">RenderSystem, destroyEntity</td></tr>
+            <tr><td class="mono-cell">Tag</td><td class="wrap">name</td><td class="wrap">редактор, логи столкновений</td></tr>
+            <tr><td class="mono-cell">Spin</td><td class="wrap">speed</td><td class="wrap">SpinSystem</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Иерархия объектов — это тоже компонент. Мировая матрица собирается рекурсией по <code>Hierarchy</code> в <code>RenderSystem</code>, а <code>World::destroyEntity</code> аккуратно отвязывает удаляемую сущность и от родителя, и от детей.</p>
+
+      <h3>Как хранятся компоненты — и почему это главный кандидат на переделку</h3>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg class="dg" viewBox="0 0 880 350" role="img" aria-label="Схема forEach: итерация по хеш-таблице первого компонента и дополнительный хеш-поиск по каждому следующему типу, сущности без второго компонента проходятся впустую">
+            <defs>
+              <marker id="f4a" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk" points="0,0 7,3.5 0,7"/></marker>
+              <marker id="f4b" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk mk-a" points="0,0 7,3.5 0,7"/></marker>
+            </defs>
+
+            <rect class="bx-a" x="14" y="14" width="330" height="38"/>
+            <text class="t-a" x="28" y="38">forEach&lt;Transform, MeshRenderer&gt;(func)</text>
+
+            <line class="ln-a" x1="120" y1="52" x2="120" y2="82" marker-end="url(#f4b)"/>
+
+            <rect class="bx" x="14" y="86" width="380" height="104"/>
+            <text class="t-h" x="28" y="108">Storage&lt;Transform&gt;</text>
+            <text class="t-s" x="28" y="124">unordered_map&lt;Entity, Transform&gt;</text>
+            <rect class="bx-o" x="28" y="136" width="62" height="30"/><text class="t-s" x="59" y="156" text-anchor="middle">e7</text>
+            <rect class="bx-o" x="98" y="136" width="62" height="30"/><text class="t-s" x="129" y="156" text-anchor="middle">e3</text>
+            <rect class="bx-o" x="168" y="136" width="62" height="30"/><text class="t-s" x="199" y="156" text-anchor="middle">e12</text>
+            <rect class="bx-o" x="238" y="136" width="62" height="30"/><text class="t-s" x="269" y="156" text-anchor="middle">e5</text>
+            <rect class="bx-o" x="308" y="136" width="62" height="30"/><text class="t-s" x="339" y="156" text-anchor="middle">e9</text>
+            <text class="t-s" x="28" y="182">порядок обхода = порядок бакетов, не порядок создания</text>
+
+            <rect class="bx" x="486" y="86" width="380" height="104"/>
+            <text class="t-h" x="500" y="108">Storage&lt;MeshRenderer&gt;</text>
+            <text class="t-s" x="500" y="124">unordered_map&lt;Entity, MeshRenderer&gt;</text>
+            <rect class="bx-o" x="500" y="136" width="62" height="30"/><text class="t-s" x="531" y="156" text-anchor="middle">e3</text>
+            <rect class="bx-o" x="570" y="136" width="62" height="30"/><text class="t-s" x="601" y="156" text-anchor="middle">e12</text>
+            <rect class="bx-o" x="640" y="136" width="62" height="30"/><text class="t-s" x="671" y="156" text-anchor="middle">e5</text>
+            <text class="t-s" x="500" y="182">e7 и e9 здесь отсутствуют</text>
+
+            <line class="ln-d" x1="394" y1="151" x2="482" y2="151" marker-end="url(#f4a)"/>
+            <text class="t-lbl" x="440" y="74" text-anchor="middle">на каждый ключ — hasComponent&lt;MeshRenderer&gt;: ещё один хеш-поиск</text>
+
+            <rect class="bx" x="14" y="216" width="852" height="46"/>
+            <text x="28" y="238">колбэк вызывается для e3, e12, e5</text>
+            <text class="t-s" x="28" y="254">e7 и e9 пройдены впустую: поиск выполнен, совпадения нет</text>
+
+            <rect class="bx-f" x="14" y="278" width="852" height="56"/>
+            <text class="t-f" x="28" y="300">Ни архетипов, ни плотных массивов, ни версий сущностей.</text>
+            <text class="t-f" x="28" y="320">Компоненты одного объекта разбросаны по разным хеш-таблицам — обход не кэш-локален.</text>
+          </svg>
+        </div>
+        <figcaption><b>схема 4 · ECS</b><code>World</code> хранит <code>unordered_map&lt;type_index, unique_ptr&lt;IStorage&gt;&gt;</code>, а внутри каждого хранилища — ещё один <code>unordered_map&lt;Entity, T&gt;</code>. Отсюда два следствия: порядок обхода непредсказуем, а каждый дополнительный тип компонента в <code>forEach</code> стоит отдельного хеш-поиска на сущность.</figcaption>
+      </figure>
+
+      <p class="src"><span>код</span><code>src/ecs/Entity.h</code><code>src/ecs/Component.h</code><code>src/ecs/Components.h:81</code><code>src/ecs/World.h:77</code><code>src/ecs/World.cpp:22</code></p>
+    </section>
+
+    <!-- ======================= 05 ======================= -->
+    <section class="q" id="q5">
+      <header class="q-head">
+        <span class="q-num">05</span>
+        <h2>Каким движком вдохновлялись?</h2>
+      </header>
+
+      <p class="answer">По коду — <b>Unity</b>, и почти дословно: имена компонентов, набор панелей редактора, режим Play со снапшотом сцены и откатом по Stop, хоткеи гизмо. Но в одном принципиальном месте движок ближе к Unity DOTS, чем к классическому Unity: здесь компонент не содержит поведения.</p>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th>В движке</th><th>Аналог в Unity</th></tr></thead>
+          <tbody>
+            <tr><td class="mono-cell">Transform: position / rotation / scale</td><td class="wrap">Transform, тоже углы Эйлера в инспекторе</td></tr>
+            <tr><td class="mono-cell">MeshRenderer</td><td class="wrap">MeshRenderer</td></tr>
+            <tr><td class="mono-cell">Rigidbody: mass, useGravity</td><td class="wrap">Rigidbody с теми же полями</td></tr>
+            <tr><td class="mono-cell">Collider: Box / Sphere, halfExtents</td><td class="wrap">BoxCollider / SphereCollider</td></tr>
+            <tr><td class="mono-cell">Tag, Hierarchy (parent / children)</td><td class="wrap">tag и родительские связи в Hierarchy</td></tr>
+            <tr><td class="mono-cell">панели Hierarchy · Inspector · Statistics · Viewport</td><td class="wrap">те же четыре окна</td></tr>
+            <tr><td class="mono-cell">Play / Stop со снапшотом и откатом сцены</td><td class="wrap">Play Mode: правки в игре откатываются</td></tr>
+            <tr><td class="mono-cell">гизмо T / R / S, локально ↔ глобально, <code>F</code> — сфокусироваться</td><td class="wrap">ровно те же хоткеи</td></tr>
+            <tr><td class="mono-cell">меш <code>primitive:cube</code></td><td class="wrap">GameObject → 3D Object → Cube</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Из общей практики движков — а не конкретно из Unity — взяты: адаптер рендера в духе RHI (движок не знает, что под ним OpenGL), стек состояний приложения, локатор сервисов и горячая перезагрузка шейдеров.</p>
+
+      <p class="src"><span>код</span><code>src/ecs/Components.h</code><code>src/states/EditorState.h:30</code><code>src/states/EditorState.cpp:1350</code></p>
+    </section>
+
+    <!-- ======================= 06 ======================= -->
+    <section class="q" id="q6">
+      <header class="q-head">
+        <span class="q-num">06</span>
+        <h2>Как грузятся ресурсы: синхронно или асинхронно, и кто ими владеет?</h2>
+      </header>
+
+      <p class="answer">Полностью <b>синхронно</b>, в главном потоке, во время <code>onEnter()</code> состояния: ни очереди, ни фоновой загрузки, ни стриминга. Владеет <code>ResourceManager</code> — синглтон с тремя кэшами <code>unordered_map&lt;путь, shared_ptr&lt;Resource&lt;T&gt;&gt;&gt;</code>. Но владение фактически двойное, и это важная деталь.</p>
+
+      <p>Путь такой: <code>demo_scene.json</code> → <code>SceneManifest</code> разбирает его через nlohmann/json на словари meshes / textures / shaders и массив entities → состояние на каждую сущность просит у менеджера ресурсы по id → <code>ResourceManager::load&lt;T&gt;</code> смотрит в кэш по пути и либо возвращает готовый <code>shared_ptr</code>, либо зовёт нужный загрузчик. Ключ для шейдера — склейка <code>vertex|fragment</code>. Если манифест не прочитался, есть fallback-сцена, собранная прямо в коде.</p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg class="dg" viewBox="0 0 880 330" role="img" aria-label="Схема владения ресурсом: загрузчик создаёт объект Resource, GPU-хендл лежит внутри него, а shared_ptr на него держат одновременно кэш менеджера и компонент MeshRenderer">
+            <defs>
+              <marker id="f5a" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk" points="0,0 7,3.5 0,7"/></marker>
+              <marker id="f5b" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk mk-a" points="0,0 7,3.5 0,7"/></marker>
+            </defs>
+
+            <rect class="bx" x="14" y="14" width="852" height="30"/>
+            <text class="t-s" x="28" y="34">синхронно · главный поток · во время onEnter() состояния · ни одной фоновой задачи</text>
+
+            <rect class="bx" x="14" y="70" width="212" height="120"/>
+            <text class="t-h" x="28" y="92">Загрузчик</text>
+            <text class="t-s" x="28" y="112">MeshLoader → Assimp</text>
+            <text class="t-s" x="28" y="130">TextureLoader → свой DXT</text>
+            <text class="t-s" x="28" y="144">или stb_image</text>
+            <text class="t-s" x="28" y="164">ShaderLoader → ifstream</text>
+            <text class="t-s" x="28" y="182">SceneManifest → json</text>
+
+            <line class="ln-a" x1="226" y1="130" x2="286" y2="130" marker-end="url(#f5b)"/>
+            <text class="t-lbl" x="232" y="122">создаёт</text>
+
+            <rect class="bx-a" x="290" y="70" width="250" height="120"/>
+            <text class="t-h t-a" x="304" y="92">Resource&lt;T&gt;</text>
+            <text class="t-s t-a" x="304" y="110">MeshData / TextureData / ShaderData</text>
+            <rect class="bx-o" x="300" y="122" width="232" height="52"/>
+            <text class="t-s" x="310" y="141">внутри лежит GPU-хендл:</text>
+            <text class="t-s" x="310" y="160">vao/vbo/ebo · textureId · programId</text>
+
+            <line class="ln" x1="415" y1="70" x2="415" y2="46" marker-end="url(#f5a)"/>
+            <line class="ln" x1="540" y1="130" x2="596" y2="130" marker-end="url(#f5a)"/>
+            <text class="t-lbl" x="546" y="122">заливка</text>
+
+            <rect class="bx" x="600" y="98" width="266" height="64"/>
+            <text class="t-h" x="614" y="120">IRenderAdapter → GPU</text>
+            <text class="t-s" x="614" y="140">uploadMesh · createTexture</text>
+            <text class="t-s" x="614" y="154">createShaderProgram</text>
+
+            <path class="ln-a" d="M340 190 L 340 226" marker-end="url(#f5b)"/>
+            <path class="ln-a" d="M490 190 L 490 226" marker-end="url(#f5b)"/>
+            <text class="t-lbl" x="352" y="212">shared_ptr #1</text>
+            <text class="t-lbl" x="502" y="212">shared_ptr #2</text>
+
+            <rect class="bx" x="190" y="228" width="230" height="50"/>
+            <text x="204" y="250">кэш менеджера</text>
+            <text class="t-s" x="204" y="268">три кэша, ключ — путь к файлу</text>
+
+            <rect class="bx" x="450" y="228" width="230" height="50"/>
+            <text x="464" y="250">MeshRenderer</text>
+            <text class="t-s" x="464" y="268">компонент сущности</text>
+
+            <rect class="bx-f" x="14" y="292" width="852" height="28"/>
+            <text class="t-f" x="28" y="311">refcount никогда не падает до нуля во время работы: выгрузка только в clearCache() при выходе</text>
+          </svg>
+        </div>
+        <figcaption><b>схема 5 · владение ресурсом</b>GPU-хендл лежит <em>внутри</em> CPU-структуры данных, то есть «данные ресурса» и «объект на GPU» — это один и тот же объект. Ссылку на него держат одновременно кэш и компонент, поэтому кэш ничего не освобождает по счётчику ссылок: единственная выгрузка — <code>clearCache()</code> при завершении.</figcaption>
+      </figure>
+
+      <h3>Форматы и что остаётся в памяти</h3>
+      <ul class="plain">
+        <li><b>Модели</b> — Assimp с флагами <code>Triangulate | GenNormals | CalcTangentSpace | JoinIdenticalVertices</code>; дерево узлов разворачивается в плоский список подмешей, у каждого свой материал. Плюс есть процедурный <code>primitive:cube</code> с правильными UV, чтобы не зависеть от внешней модели.</li>
+        <li><b>Текстуры</b> — <code>.dds</code> разбирает собственный декодер DXT1 / DXT5 (около 250 строк, включая распаковку блоков RGB565), всё остальное отдаёт stb_image.</li>
+        <li><b>Пиксели текстуры освобождаются сразу после заливки</b> (<code>free(pixels)</code>), CPU-копии не остаётся. А вот вершины меша остаются в памяти навсегда — по ним потом считаются bounds для автоподгонки коллайдера.</li>
+        <li><b>Hot reload</b> — <code>HotReload</code> каждый кадр делает <code>stat()</code> по всем зарегистрированным файлам и сравнивает mtime. Работает только для шейдеров: модели и текстуры не перезагружаются.</li>
+      </ul>
+
+      <p class="src"><span>код</span><code>src/resources/ResourceManager.cpp:26</code><code>src/resources/MeshLoader.cpp:75</code><code>src/resources/TextureLoader.cpp:265</code><code>src/resources/HotReload.cpp:43</code><code>src/resources/SceneManifest.cpp:54</code></p>
+    </section>
+
+    <!-- ======================= 07 ======================= -->
+    <section class="q" id="q7">
+      <header class="q-head">
+        <span class="q-num">07</span>
+        <h2>Что с материалами и шейдерами? Как идёт отрисовка и обновление данных на GPU?</h2>
+      </header>
+
+      <p class="answer">Материала как сущности движка <b>нет</b>. Есть структура <code>Material</code>, которую заполняет Assimp — имя, diffuseColor и шесть путей к текстурам, — но рендер использует из неё только diffuse. Шейдер, наоборот, полноценный ресурс: с id, кэшем и выбором на каждую сущность через <code>shaderId</code>.</p>
+
+      <p>В <code>assets/shaders</code> лежат девять файлов, включая <code>mesh_fragment.glsl</code> с параметрами PBR-вида — metallic, roughness, AO, height и упрощённый Blinn-Phong. Но демо-сцена использует <code>mesh_fragment_simple_texture.glsl</code>: направленный свет, ambient + diffuse и <code>discard</code> при alpha &lt; 0.1. Сам свет не является ни ресурсом, ни компонентом — направление и цвет захардкожены в <code>RenderSystem::setupLighting</code> и отправляются юниформами заново для каждой сущности каждый кадр.</p>
+
+      <figure>
+        <div class="fig-scroll">
+          <svg class="dg" viewBox="0 0 880 430" role="img" aria-label="Схема пути отрисовки одной сущности с отмеченными узкими местами и пятью текстурными каналами, которые объявлены но не биндятся">
+            <defs>
+              <marker id="f6a" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk" points="0,0 7,3.5 0,7"/></marker>
+              <marker id="f6b" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon class="mk mk-a" points="0,0 7,3.5 0,7"/></marker>
+            </defs>
+
+            <rect class="bx-a" x="14" y="14" width="540" height="38"/>
+            <text class="t-a" x="28" y="38">RenderSystem::render → forEach&lt;Transform, MeshRenderer&gt;</text>
+
+            <line class="ln" x1="120" y1="52" x2="120" y2="70" marker-end="url(#f6a)"/>
+
+            <rect class="bx" x="14" y="74" width="540" height="42"/>
+            <text x="28" y="94">buildWorldMatrix — рекурсия по Hierarchy</text>
+            <text class="t-f" x="28" y="110">новый unordered_set на каждую сущность каждый кадр</text>
+
+            <line class="ln" x1="120" y1="116" x2="120" y2="130" marker-end="url(#f6a)"/>
+
+            <rect class="bx" x="14" y="134" width="540" height="30"/>
+            <text x="28" y="154">useShaderProgram(programId)</text>
+
+            <line class="ln" x1="120" y1="164" x2="120" y2="178" marker-end="url(#f6a)"/>
+
+            <rect class="bx" x="14" y="182" width="540" height="42"/>
+            <text x="28" y="202">setupMatrices — model, view, projection</text>
+            <text class="t-f" x="28" y="218">активная камера ищется полным обходом внутри каждой сущности → O(N×M)</text>
+
+            <line class="ln" x1="120" y1="224" x2="120" y2="238" marker-end="url(#f6a)"/>
+
+            <rect class="bx" x="14" y="242" width="540" height="42"/>
+            <text x="28" y="262">setupLighting — 4 юниформа направленного света</text>
+            <text class="t-s" x="28" y="278">значения захардкожены в коде системы</text>
+
+            <line class="ln" x1="120" y1="284" x2="120" y2="298" marker-end="url(#f6a)"/>
+
+            <rect class="bx-a" x="14" y="302" width="540" height="42"/>
+            <text class="t-a" x="28" y="322">на каждый подмеш: bind baseColor в слот 0 → drawIndexed</text>
+            <text class="t-s t-a" x="28" y="338">glDrawElements, GL_TRIANGLES</text>
+
+            <line class="ln" x1="120" y1="344" x2="120" y2="358" marker-end="url(#f6a)"/>
+
+            <rect class="bx" x="14" y="362" width="540" height="42"/>
+            <text x="28" y="382">useShaderProgram(0) · bindTexture2D(0, 0)</text>
+            <text class="t-f" x="28" y="398">состояние сбрасывается после каждой сущности: ни сортировки, ни батчинга</text>
+
+            <rect class="bx-o" x="596" y="74" width="270" height="330"/>
+            <text class="t-h" x="610" y="96">Текстурные каналы</text>
+            <text class="t-s" x="610" y="112">объявлены в Material и в MeshRenderer</text>
+
+            <rect class="bx-a" x="610" y="126" width="242" height="34"/>
+            <text class="t-s t-a" x="624" y="147">baseColor → слот 0 · биндится</text>
+            <line class="ln-a" x1="554" y1="323" x2="606" y2="150" marker-end="url(#f6b)"/>
+
+            <rect class="bx-f" x="610" y="176" width="242" height="30"/>
+            <text class="t-s dim" x="624" y="195">normal</text>
+            <rect class="bx-f" x="610" y="212" width="242" height="30"/>
+            <text class="t-s dim" x="624" y="231">metallic</text>
+            <rect class="bx-f" x="610" y="248" width="242" height="30"/>
+            <text class="t-s dim" x="624" y="267">roughness</text>
+            <rect class="bx-f" x="610" y="284" width="242" height="30"/>
+            <text class="t-s dim" x="624" y="303">ambient occlusion</text>
+            <rect class="bx-f" x="610" y="320" width="242" height="30"/>
+            <text class="t-s dim" x="624" y="339">height</text>
+
+            <text class="t-f" x="610" y="370">эти пять никуда не биндятся:</text>
+            <text class="t-f" x="610" y="385">поля есть, юниформы в шейдере</text>
+            <text class="t-f" x="610" y="400">тоже есть — кода передачи нет</text>
+          </svg>
+        </div>
+        <figcaption><b>схема 6 · путь отрисовки</b>На каждую сущность приходится полный набор операций: смена программы, три матрицы, четыре юниформа света, биндинг текстуры и вызов отрисовки — после чего состояние сбрасывается. Пять из шести текстурных каналов объявлены на всех уровнях, но данные в них не попадают.</figcaption>
+      </figure>
+
+      <h3>Как данные попадают на GPU</h3>
+      <ul class="plain">
+        <li><b>Геометрия:</b> <code>uploadMesh</code> создаёт VAO / VBO / EBO, заливает <code>GL_STATIC_DRAW</code> и настраивает три атрибута — позиция, нормаль, UV — со шагом <code>sizeof(Vertex)</code> = 32 байта.</li>
+        <li><b>Текстуры:</b> <code>glTexImage2D</code> + <code>glGenerateMipmap</code>, фильтрация <code>LINEAR_MIPMAP_LINEAR</code>, обёртка <code>REPEAT</code>; формат выбирается по числу каналов (1 → RED, 4 → RGBA, иначе RGB).</li>
+        <li><b>Обновления после загрузки нет вообще:</b> вершинные буферы статичны, за кадр меняются только юниформы. Ни одного <code>glBufferSubData</code> или мапинга в проекте.</li>
+        <li><b>Второй, независимый путь отрисовки</b> живёт в самом адаптере: <code>drawPrimitive</code> и <code>drawDebugAABB</code> используют собственный шейдер (<code>vertex.glsl</code> + <code>fragment.glsl</code>) и собственные VAO примитивов, созданные при инициализации. Им пользуется только <code>DebugRenderSystem</code>, рисующий 12 рёбер AABB по клавише <kbd>F3</kbd>.</li>
+        <li><b>Целевой буфер в редакторе</b> — собственный FBO с color-текстурой и depth-RBO, который затем отдаётся ImGui как <code>ImGui::Image</code>.</li>
+      </ul>
+
+      <p class="src"><span>код</span><code>src/ecs/RenderSystem.cpp:42</code><code>src/ecs/RenderSystem.cpp:86</code><code>src/render/OpenGLRenderAdapter.cpp:203</code><code>src/render/OpenGLRenderAdapter.cpp:258</code><code>assets/shaders/mesh_fragment_simple_texture.glsl</code></p>
+    </section>
+
+    <!-- ======================= 08 ======================= -->
+    <section class="q" id="q8">
+      <header class="q-head">
+        <span class="q-num">08</span>
+        <h2>Есть ли многопоточность?</h2>
+      </header>
+
+      <p class="answer">Нет. Ни одного потока, ни одного примитива синхронизации: <code>grep</code> по <code>std::thread</code>, <code>std::mutex</code>, <code>std::async</code>, <code>std::future</code>, <code>std::atomic</code>, <code>lock_guard</code> и <code>condition_variable</code> в <code>src/</code> даёт <b>ноль совпадений</b>. Синхронизировать нечего.</p>
+
+      <p>В одном потоке идёт всё: обработка событий окна, опрос ввода, физика, обход ECS, вызовы OpenGL, построение ImGui и загрузка ресурсов.</p>
+
+      <h3>Почему так вышло — и что мешает это изменить</h3>
+      <p>Контекст OpenGL привязан к потоку, а загрузка ресурсов в этом движке — это один неразделимый шаг: каждый загрузчик и читает файл, и сразу заливает данные на GPU через адаптер. Значит, вынести загрузку в фоновый поток нельзя, пока эти две фазы не разделены.</p>
+
+      <p>Порядок действий, если бы понадобилось распараллелить: сначала разрезать загрузчики на «прочитать и распарсить в CPU-буфер» и «залить готовый буфер на GPU»; затем отдать первую фазу — разбор Assimp, декодирование DDS и PNG — в пул потоков с очередью готовых буферов; заливку оставить на главном потоке. Физика и обход ECS в текущем виде параллелятся плохо: и потому что сущностей единицы, и потому что компоненты лежат в хеш-таблицах — но это уже следствие вопроса 09.</p>
+
+      <p class="src"><span>проверка</span><code>grep -rn "std::thread\|std::mutex\|std::async\|std::atomic" src/</code></p>
+    </section>
+
+    <!-- ======================= 09 ======================= -->
+    <section class="q" id="q9">
+      <header class="q-head">
+        <span class="q-num">09</span>
+        <h2>Что в архитектуре бесит и что бы переделали с нуля?</h2>
+      </header>
+
+      <p class="answer">Ранжировано по тому, что реально мешает, а не по тому, что проще исправить. Метки: <span class="chip chip-now">мешает сейчас</span> <span class="chip chip-scale">выстрелит на масштабе</span> <span class="chip chip-hyg">гигиена</span></p>
+
+      <ol class="ranked">
+        <li>
+          <h3>ECS на хеш-таблицах <span class="chip chip-scale">выстрелит на масштабе</span></h3>
+          <p>На каждый тип компонента — свой <code>unordered_map&lt;Entity, T&gt;</code>, а <code>forEach</code> по нескольким типам делает дополнительный хеш-поиск на каждую сущность. Порядок обхода — порядок бакетов, кэш-локальности нет никакой.</p>
+          <p><b>Переделал бы:</b> плотные массивы компонентов + sparse set для отображения сущность → индекс, или полноценные архетипы. Тогда <code>forEach</code> становится линейным проходом по непрерывной памяти.</p>
+        </li>
+        <li>
+          <h3>Реестр систем в <code>World</code> — мёртвый код <span class="chip chip-now">мешает сейчас</span></h3>
+          <p><code>addUpdateSystem</code> / <code>updateSystems</code> вызываются только из <code>GameplayState</code>, который недостижим. Редактор вызывает системы напрямую. Получилось два способа делать одно и то же, причём работает только второй.</p>
+          <p><b>Переделал бы:</b> оставить один — либо реестр с явным порядком и приоритетами, либо честный прямой вызов, но тогда убрать реестр из <code>World</code>.</p>
+        </li>
+        <li>
+          <h3>Переходы состояний решает <code>Application</code> через <code>dynamic_cast</code> <span class="chip chip-now">мешает сейчас</span></h3>
+          <p><code>Application::update</code> кастует текущее состояние к <code>LoadingState</code> и <code>MenuState</code>, чтобы понять, пора ли переключаться. Само состояние запросить переход не может. Побочный эффект уже налицо: <code>MenuState</code> и <code>GameplayState</code> остались в коде, но недостижимы.</p>
+          <p><b>Переделал бы:</b> <code>update</code> возвращает запрос перехода, <code>StateManager</code> его исполняет — тогда <code>Application</code> вообще не знает про конкретные состояния.</p>
+        </li>
+        <li>
+          <h3>Рендер пересчитывает то, что можно было посчитать один раз <span class="chip chip-scale">выстрелит на масштабе</span></h3>
+          <p>Активная камера ищется полным обходом сущностей внутри обработки каждой сущности. Мировая матрица собирается рекурсией с выделением <code>unordered_set</code> на каждую сущность каждый кадр. Программа и текстура сбрасываются после каждого объекта, так что ни сортировки, ни батчинга нет в принципе.</p>
+          <p><b>Переделал бы:</b> один проход в начале кадра — найти камеру и посчитать мировые матрицы по иерархии; затем список отрисовки, отсортированный по паре «шейдер, текстура»; инстансинг для одинаковых мешей.</p>
+        </li>
+        <li>
+          <h3>Материалы объявлены, но не подключены <span class="chip chip-now">мешает сейчас</span></h3>
+          <p>Каналы normal, metallic, roughness, AO и height есть в <code>Material</code>, в <code>MeshRenderer</code> и даже в <code>mesh_fragment.glsl</code> — но кода, который бы забиндил их в слоты, нет. Модель выглядит богаче, чем работает.</p>
+          <p><b>Переделал бы:</b> материал становится настоящим ресурсом — набор текстур плюс параметры плюс шейдер, — а <code>MeshRenderer</code> ссылается на один <code>materialId</code> вместо восьми строк и восьми <code>shared_ptr</code>.</p>
+        </li>
+        <li>
+          <h3>Физика упрощена сильнее, чем кажется <span class="chip chip-scale">выстрелит на масштабе</span></h3>
+          <p>Broadphase — двойной цикл по всем коллайдерам, то есть O(n²). Только AABB, и он не поворачивается вместе с мешем. Коэффициент восстановления захардкожен в <code>1.0</code> — абсолютно упругий отскок, причём одновременно с гравитацией. Шаг интегрирования переменный.</p>
+          <p><b>Переделал бы:</b> фиксированный шаг с накопителем, spatial hash или сетка для broadphase, материал столкновения с настоящим restitution и трением.</p>
+        </li>
+        <li>
+          <h3>Сцена собирается двумя копиями одного кода <span class="chip chip-hyg">гигиена</span></h3>
+          <p><code>createSceneFromManifest</code>, <code>fitColliderToMeshBounds</code>, <code>extractMeshBounds</code> и <code>buildViewMatrix</code> скопированы между <code>GameplayState</code> и <code>EditorState</code> почти дословно. Любая правка загрузки сцены — это правка в двух местах.</p>
+          <p><b>Переделал бы:</b> отдельный <code>SceneLoader</code>, которым пользуются оба состояния.</p>
+        </li>
+        <li>
+          <h3>Четыре синглтона и локатор сервисов <span class="chip chip-hyg">гигиена</span></h3>
+          <p><code>Logger</code>, <code>ResourceManager</code>, <code>HotReload</code>, <code>InputManager</code> плюс <code>ServiceLocator</code> со статическим <code>EventDispatcher</code>. Глобальное состояние, неявный порядок разрушения, невозможность подменить зависимость в тесте.</p>
+          <p><b>Переделал бы:</b> один объект контекста движка, который передаётся состояниям и системам явно.</p>
+        </li>
+        <li>
+          <h3>Редактор ничего не сохраняет <span class="chip chip-now">мешает сейчас</span></h3>
+          <p>Сцену можно править — двигать гизмо, переименовывать, дублировать, — но записать результат обратно в JSON нельзя: в <code>EditorState</code> нет ни функции сохранения, ни единого <code>ofstream</code>. Сериализация работает только в одну сторону.</p>
+          <p><b>Переделал бы:</b> симметричный <code>SceneManifest::saveToFile</code> — это самая дешёвая по трудозатратам и самая заметная для пользователя доработка.</p>
+        </li>
+        <li>
+          <h3>Сборка только под MSVC, и ни одного теста <span class="chip chip-hyg">гигиена</span></h3>
+          <p><code>glfw3.lib</code> и <code>assimp-vc143-mt.lib</code> лежат предсобранными в репозитории, линкуется <code>opengl32</code> — под Linux или macOS проект не соберётся. Тестов нет ни одного, CI нет. При этом <code>Math</code>, <code>CollisionUtils</code>, <code>EventDispatcher</code> и <code>SceneManifest</code> — чистые функции, которые тестируются без окна и без контекста.</p>
+          <p><b>Переделал бы:</b> зависимости через FetchContent или vcpkg, плюс небольшой набор тестов именно на эти четыре модуля.</p>
+        </li>
+      </ol>
+
+      <div class="flagnote">
+        <p><b>Мелочи, которые всё равно стоит признать:</b> <code>Mat4</code> и перспектива написаны руками вместо GLM; повороты только углами Эйлера, кватернионов нет — отсюда и невращающийся коллайдер; <code>estimateMemoryUsageBytes</code> в панели статистики считает размер CPU-данных, а не занятую видеопамять; <code>external/tinyobjloader</code> лежит в репозитории, но не подключён нигде.</p>
+      </div>
+
+      <p class="src"><span>код</span><code>src/ecs/World.h:77</code><code>src/core/Application.cpp:78</code><code>src/ecs/RenderSystem.cpp:109</code><code>src/ecs/PhysicsSystem.cpp:157</code><code>src/states/EditorState.cpp:388</code></p>
+    </section>
+
+    <!-- ======================= prep ======================= -->
+    <section class="q" id="prep">
+      <header class="q-head">
+        <span class="q-num">+</span>
+        <h2>Вопросы, которые скорее всего зададут дальше</h2>
+      </header>
+
+      <p>Короткие честные ответы — по одному-двум предложениям, чтобы не зависнуть.</p>
+
+      <dl class="prep">
+        <div>
+          <dt>Что будет на десяти тысячах сущностей?</dt>
+          <dd>Упрёмся в три конкретных места, и я знаю в какие: O(n²) в broadphase физики, поиск активной камеры внутри обработки каждой сущности в рендере и выделение <code>unordered_set</code> на сущность каждый кадр. Деградация предсказуемая, лечится по порядку из вопроса 09.</dd>
+        </div>
+        <div>
+          <dt>Почему компоненты в хеш-таблице, а не в массиве?</dt>
+          <dd>Потому что так было проще написать и на десятке объектов разница незаметна. Знаю, как переделать — sparse set плюс плотный массив, — просто это не входило в объём ПЗ.</dd>
+        </div>
+        <div>
+          <dt>Зачем в <code>Application</code> нужен <code>dynamic_cast</code>?</dt>
+          <dd>Чтобы достать <code>GLFWwindow*</code>: он нужен и бэкенду ImGui, и <code>GlfwInputHandler</code>. Правильнее было бы либо добавить в интерфейс метод получения нативного хендла, либо вынести создание GUI-бэкенда внутрь адаптера.</dd>
+        </div>
+        <div>
+          <dt>Почему AABB не поворачивается вместе с объектом?</dt>
+          <dd>Коллайдер строится из позиции, смещения и масштаба, а <code>rotation</code> просто игнорируется. Это осознанное ограничение, оно записано в отчёте по ПЗ_4 — для OBB нужен другой тест пересечения.</dd>
+        </div>
+        <div>
+          <dt>Restitution равный единице — это осознанно?</dt>
+          <dd>Нет, это заглушка. Вместе с гравитацией она даёт вечный отскок; в норме коэффициент должен приходить из материала столкновения.</dd>
+        </div>
+        <div>
+          <dt>Почему <code>MenuState</code> и <code>GameplayState</code> недостижимы?</dt>
+          <dd>После ПЗ_5 точкой входа стал редактор, и <code>LoadingState</code> начал меняться сразу на него. Старую цепочку не убрали — её стоит либо вернуть через меню редактора, либо удалить.</dd>
+        </div>
+        <div>
+          <dt>Где сохранение сцены?</dt>
+          <dd>Его нет. Манифест читается, но не пишется — все правки в редакторе живут только до закрытия приложения.</dd>
+        </div>
+        <div>
+          <dt>Как выбирается объект мышью?</dt>
+          <dd>По лучу: из позиции курсора внутри панели <code>Viewport</code> строится направление через камеру редактора, дальше <code>rayIntersectsAABB</code> по всем коллайдерам и выбор ближайшего попадания.</dd>
+        </div>
+      </dl>
+    </section>
+
+    <footer class="foot" id="foot">
+      <p><b>Как собран этот разбор.</b> Все утверждения получены чтением исходников ревизии <code>756bd6b</code>; под каждым разделом указаны файлы и строки, по которым можно проверить. Метрики посчитаны по <code>src/</code> целиком, без <code>external/</code>.</p>
+      <p><b>Диаграммы для репозитория.</b> Восемь диаграмм в формате Mermaid — модули, инициализация, кадр, состояния, ECS, ресурсы, отрисовка — лежат в <code>docs/ARCHITECTURE.md</code>. Все восемь проверены на реальный рендер, GitHub отобразит их прямо в файле.</p>
+    </footer>
+
+  </main>
+</div>
+</body>
+</html>
