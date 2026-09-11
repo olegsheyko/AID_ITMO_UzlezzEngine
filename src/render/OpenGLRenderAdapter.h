@@ -27,6 +27,12 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 		const Vec4& color,
 		const Mat4& viewMatrix,
 		const Mat4& projectionMatrix) override;
+	virtual void drawDebugSphere(
+		const Vec3& center,
+		float radius,
+		const Vec4& color,
+		const Mat4& viewMatrix,
+		const Mat4& projectionMatrix) override;
 	virtual bool uploadMesh(
 		const void* vertexData,
 		std::size_t vertexStride,
@@ -86,6 +92,7 @@ private:
 	PrimitiveMesh triangleMesh_;
 	PrimitiveMesh quadMesh_;
 	PrimitiveMesh cubeMesh_;
+	PrimitiveMesh wireSphereMesh_;
 	GLuint viewportFbo_ = 0;
 	GLuint viewportColorTexture_ = 0;
 	GLuint viewportDepthRbo_ = 0;

@@ -37,6 +37,12 @@ class IRenderAdapter {
 		const Vec4& color,
 		const Mat4& viewMatrix,
 		const Mat4& projectionMatrix) = 0;
+	virtual void drawDebugSphere(
+		const Vec3& center,
+		float radius,
+		const Vec4& color,
+		const Mat4& viewMatrix,
+		const Mat4& projectionMatrix) = 0;
 
 	// Upload a mesh to GPU buffers.
 	virtual bool uploadMesh(

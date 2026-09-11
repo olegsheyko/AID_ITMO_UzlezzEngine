@@ -5,5 +5,6 @@ enum class PrimitiveType {
     Triangle,
     Quad,
     Square = Quad,
-    Cube
+    Cube,
+    WireSphere
 };

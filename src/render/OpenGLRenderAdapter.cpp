@@ -2,6 +2,8 @@
 #include "core/Logger.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 
 namespace {
 void framebufferSizeCallback(GLFWwindow*, int width, int height) {
@@ -197,6 +199,32 @@ void OpenGLRenderAdapter::drawDebugAABB(
 		for (float y : {minY, maxY}) {
 			drawEdge(Vec3{x, y, center.z}, Vec3{0.0f, -kHalfPi, 0.0f}, sizeZ);
 		}
+	}
+}
+
+void OpenGLRenderAdapter::drawDebugSphere(
+	const Vec3& center,
+	float radius,
+	const Vec4& color,
+	const Mat4& viewMatrix,
+	const Mat4& projectionMatrix) {
+	if (radius <= 0.0f) {
+		return;
+	}
+
+	// A sphere can be completely inside its mesh; show its wireframe through it.
+	const GLboolean depthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
+	GLboolean depthWriteEnabled = GL_TRUE;
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteEnabled);
+	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
+
+	const Mat4 modelMatrix = Math::composeTransform(center, Vec3{}, Vec3{radius, radius, radius});
+	drawPrimitive(PrimitiveType::WireSphere, modelMatrix, color, viewMatrix, projectionMatrix);
+
+	glDepthMask(depthWriteEnabled);
+	if (depthTestEnabled) {
+		glEnable(GL_DEPTH_TEST);
 	}
 }
 
@@ -523,6 +551,30 @@ bool OpenGLRenderAdapter::createRenderResources() {
 		return false;
 	}
 
+	// Three perpendicular great circles, uploaded once and reused by all colliders.
+	constexpr int kSegments = 64;
+	constexpr int kVertexCount = 3 * kSegments * 2;
+	constexpr float kTwoPi = 6.28318530718f;
+	std::array<float, kVertexCount * 3> sphereVertices{};
+	std::size_t next = 0;
+	for (int plane = 0; plane < 3; ++plane) {
+		for (int segment = 0; segment < kSegments; ++segment) {
+			for (int endpoint = 0; endpoint < 2; ++endpoint) {
+				const float angle = kTwoPi * static_cast<float>(segment + endpoint) / kSegments;
+				const float c = std::cos(angle);
+				const float s = std::sin(angle);
+				const Vec3 point = plane == 0 ? Vec3{c, s, 0.0f}
+					: plane == 1 ? Vec3{c, 0.0f, s} : Vec3{0.0f, c, s};
+				sphereVertices[next++] = point.x;
+				sphereVertices[next++] = point.y;
+				sphereVertices[next++] = point.z;
+			}
+		}
+	}
+	if (!setupMesh(wireSphereMesh_, sphereVertices.data(), kVertexCount, GL_LINES)) {
+		return false;
+	}
+
 	return true;
 }
 
@@ -544,6 +596,7 @@ void OpenGLRenderAdapter::destroyRenderResources() {
 	destroyMesh(triangleMesh_);
 	destroyMesh(quadMesh_);
 	destroyMesh(cubeMesh_);
+	destroyMesh(wireSphereMesh_);
 	modelLocation_ = -1;
 	viewLocation_ = -1;
 	projectionLocation_ = -1;
@@ -640,6 +693,8 @@ const OpenGLRenderAdapter::PrimitiveMesh* OpenGLRenderAdapter::getMesh(Primitive
 		return &quadMesh_;
 	case PrimitiveType::Cube:
 		return &cubeMesh_;
+	case PrimitiveType::WireSphere:
+		return &wireSphereMesh_;
 	default:
 		return nullptr;
 	}

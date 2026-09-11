@@ -1324,13 +1324,10 @@ void EditorState::selectEntityAtViewportPosition(const ImVec2& viewportMin, cons
             if (collider.type == ColliderType::Box) {
                 bounds = CollisionUtils::buildAABB(transform, collider);
             } else {
+                const Sphere sphere = CollisionUtils::buildSphere(transform, collider);
                 bounds = AABB{
-                    Vec3{
-                        transform.position.x + collider.offset.x,
-                        transform.position.y + collider.offset.y,
-                        transform.position.z + collider.offset.z
-                    },
-                    Vec3{collider.radius, collider.radius, collider.radius}
+                    sphere.center,
+                    Vec3{sphere.radius, sphere.radius, sphere.radius}
                 };
             }
         }

@@ -9,12 +9,11 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
-#include <utility>
 #include <vector>
 
 namespace {
 struct CollisionManifold {
+    // Points from the right collider toward the left collider.
     Vec3 normal{};
     float penetration = 0.0f;
 };
@@ -71,6 +70,87 @@ bool intersects(const AABB& left, const AABB& right, CollisionManifold& outManif
     }
 
     return true;
+}
+
+bool intersects(const Sphere& left, const Sphere& right, CollisionManifold& outManifold) {
+    if (left.radius <= 0.0f || right.radius <= 0.0f) {
+        return false;
+    }
+
+    const Vec3 delta = subtract(left.center, right.center);
+    const float distanceSquared = dot(delta, delta);
+    const float radii = left.radius + right.radius;
+    if (distanceSquared >= radii * radii) {
+        return false;
+    }
+
+    const float distance = std::sqrt(distanceSquared);
+    outManifold.normal = distance > 0.0f ? scale(delta, 1.0f / distance) : Vec3{1.0f, 0.0f, 0.0f};
+    outManifold.penetration = radii - distance;
+    return true;
+}
+
+bool intersects(const Sphere& sphere, const AABB& box, CollisionManifold& outManifold) {
+    if (sphere.radius <= 0.0f) {
+        return false;
+    }
+
+    const Vec3 closest{
+        std::clamp(sphere.center.x, box.center.x - box.halfSize.x, box.center.x + box.halfSize.x),
+        std::clamp(sphere.center.y, box.center.y - box.halfSize.y, box.center.y + box.halfSize.y),
+        std::clamp(sphere.center.z, box.center.z - box.halfSize.z, box.center.z + box.halfSize.z)
+    };
+    const Vec3 delta = subtract(sphere.center, closest);
+    const float distanceSquared = dot(delta, delta);
+    if (distanceSquared >= sphere.radius * sphere.radius) {
+        return false;
+    }
+
+    if (distanceSquared > 0.0f) {
+        const float distance = std::sqrt(distanceSquared);
+        outManifold.normal = scale(delta, 1.0f / distance);
+        outManifold.penetration = sphere.radius - distance;
+        return true;
+    }
+
+    // The center is inside/on the box: exit through the nearest face.
+    const Vec3 relative = subtract(sphere.center, box.center);
+    float faceDistance = box.halfSize.x - std::fabs(relative.x);
+    outManifold.normal = Vec3{relative.x >= 0.0f ? 1.0f : -1.0f, 0.0f, 0.0f};
+    const float yDistance = box.halfSize.y - std::fabs(relative.y);
+    if (yDistance < faceDistance) {
+        faceDistance = yDistance;
+        outManifold.normal = Vec3{0.0f, relative.y >= 0.0f ? 1.0f : -1.0f, 0.0f};
+    }
+    const float zDistance = box.halfSize.z - std::fabs(relative.z);
+    if (zDistance < faceDistance) {
+        faceDistance = zDistance;
+        outManifold.normal = Vec3{0.0f, 0.0f, relative.z >= 0.0f ? 1.0f : -1.0f};
+    }
+    outManifold.penetration = sphere.radius + faceDistance;
+    return true;
+}
+
+bool intersects(
+    const Transform& leftTransform, const Collider& left,
+    const Transform& rightTransform, const Collider& right,
+    CollisionManifold& outManifold) {
+    if (left.type == ColliderType::Box && right.type == ColliderType::Box) {
+        return intersects(CollisionUtils::buildAABB(leftTransform, left), CollisionUtils::buildAABB(rightTransform, right), outManifold);
+    }
+    if (left.type == ColliderType::Sphere && right.type == ColliderType::Sphere) {
+        return intersects(CollisionUtils::buildSphere(leftTransform, left), CollisionUtils::buildSphere(rightTransform, right), outManifold);
+    }
+    if (left.type == ColliderType::Sphere && right.type == ColliderType::Box) {
+        return intersects(CollisionUtils::buildSphere(leftTransform, left), CollisionUtils::buildAABB(rightTransform, right), outManifold);
+    }
+    if (left.type == ColliderType::Box && right.type == ColliderType::Sphere) {
+        if (intersects(CollisionUtils::buildSphere(rightTransform, right), CollisionUtils::buildAABB(leftTransform, left), outManifold)) {
+            outManifold.normal = scale(outManifold.normal, -1.0f);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool isDynamic(const Rigidbody* rigidbody) {
@@ -141,37 +221,35 @@ void PhysicsSystem::update(World& world, float dt) {
         transform.position = add(transform.position, scale(rigidbody.velocity, dt));
     });
 
-    std::vector<std::pair<Entity, AABB>> colliders;
-    world.forEach<Transform, Collider>([&world, &colliders](Entity entity, Transform& transform, Collider& collider) {
-        if (collider.type != ColliderType::Box) {
-            return;
-        }
-
+    std::vector<Entity> colliders;
+    world.forEach<Transform, Collider>([&world, &colliders](Entity entity, Transform&, Collider&) {
         if (!world.isAlive(entity)) {
             return;
         }
 
-        colliders.emplace_back(entity, CollisionUtils::buildAABB(transform, collider));
+        colliders.push_back(entity);
     });
 
     for (std::size_t leftIndex = 0; leftIndex < colliders.size(); ++leftIndex) {
         for (std::size_t rightIndex = leftIndex + 1; rightIndex < colliders.size(); ++rightIndex) {
-            const Entity leftEntity = colliders[leftIndex].first;
-            const Entity rightEntity = colliders[rightIndex].first;
+            const Entity leftEntity = colliders[leftIndex];
+            const Entity rightEntity = colliders[rightIndex];
 
             if (!world.isAlive(leftEntity) || !world.isAlive(rightEntity)) {
                 continue;
             }
 
+            Transform& leftTransform = world.getComponent<Transform>(leftEntity);
+            Transform& rightTransform = world.getComponent<Transform>(rightEntity);
+            const Collider& leftCollider = world.getComponent<Collider>(leftEntity);
+            const Collider& rightCollider = world.getComponent<Collider>(rightEntity);
+
             CollisionManifold manifold;
-            if (!intersects(colliders[leftIndex].second, colliders[rightIndex].second, manifold)) {
+            if (!intersects(leftTransform, leftCollider, rightTransform, rightCollider, manifold)) {
                 continue;
             }
 
             ++lastCollisionCount_;
-
-            Transform& leftTransform = world.getComponent<Transform>(leftEntity);
-            Transform& rightTransform = world.getComponent<Transform>(rightEntity);
 
             Rigidbody* leftBody = world.hasComponent<Rigidbody>(leftEntity) ? &world.getComponent<Rigidbody>(leftEntity) : nullptr;
             Rigidbody* rightBody = world.hasComponent<Rigidbody>(rightEntity) ? &world.getComponent<Rigidbody>(rightEntity) : nullptr;
@@ -182,9 +260,6 @@ void PhysicsSystem::update(World& world, float dt) {
                 manifold.normal,
                 manifold.penetration
             });
-
-            colliders[leftIndex].second = CollisionUtils::buildAABB(leftTransform, world.getComponent<Collider>(leftEntity));
-            colliders[rightIndex].second = CollisionUtils::buildAABB(rightTransform, world.getComponent<Collider>(rightEntity));
         }
     }
 }

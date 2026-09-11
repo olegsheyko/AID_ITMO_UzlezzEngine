@@ -47,12 +47,13 @@ void DebugRenderSystem::render(World& world) {
     resolveCameraMatrices(world, renderer_, viewMatrix, projectionMatrix);
 
     world.forEach<Transform, Collider>([this, &viewMatrix, &projectionMatrix](Entity, Transform& transform, Collider& collider) {
-        if (collider.type != ColliderType::Box) {
-            return;
+        const Vec4 color{1.0f, 0.0f, 0.0f, 0.5f};
+        if (collider.type == ColliderType::Sphere) {
+            const Sphere sphere = CollisionUtils::buildSphere(transform, collider);
+            renderer_.drawDebugSphere(sphere.center, sphere.radius, color, viewMatrix, projectionMatrix);
+        } else if (collider.type == ColliderType::Box) {
+            const AABB aabb = CollisionUtils::buildAABB(transform, collider);
+            renderer_.drawDebugAABB(aabb.center, aabb.halfSize, color, viewMatrix, projectionMatrix);
         }
-
-        const AABB aabb = CollisionUtils::buildAABB(transform, collider);
-
-        renderer_.drawDebugAABB(aabb.center, aabb.halfSize, Vec4{1.0f, 0.0f, 0.0f, 0.5f}, viewMatrix, projectionMatrix);
     });
 }

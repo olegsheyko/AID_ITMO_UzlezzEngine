@@ -87,6 +87,17 @@ if(NOT assimp_FOUND)
     endif()
 endif()
 
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(PhysicsSystemTests
+        tests/PhysicsSystemTests.cpp
+        src/ecs/PhysicsSystem.cpp
+        src/ecs/World.cpp
+    )
+    target_include_directories(PhysicsSystemTests PRIVATE src)
+    add_test(NAME PhysicsSystemTests COMMAND PhysicsSystemTests)
+endif()
+
 # --- Game target ---
 add_executable(GameEngine
     src/main.cpp
