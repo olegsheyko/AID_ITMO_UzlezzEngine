@@ -11,6 +11,7 @@ struct SubMesh;
 struct MeshData;
 struct ShaderData;
 struct MeshRenderer;
+struct Material;
 
 class RenderSystem : public RenderSystemBase {
 public:
@@ -20,6 +21,7 @@ public:
     std::size_t getLastDrawnMeshCount() const { return lastDrawnMeshCount_; }
 
 private:
+    void bindMaterial(const Material& material, const ShaderData& shaderData, const MeshRenderer& meshRenderer);
     void renderSubMesh(const SubMesh& subMesh, const ShaderData& shaderData, const MeshRenderer& meshRenderer);
     void setupMatrices(World& world, unsigned int shaderProgram, const Mat4& modelMatrix);
     void setupLighting(unsigned int shaderProgram);

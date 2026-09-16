@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.16)
 project(GameEngine VERSION 1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -60,32 +60,57 @@ if(NOT assimp_FOUND)
     set(ASSIMP_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp" CACHE PATH "Assimp include directory")
     set(ASSIMP_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/lib" CACHE PATH "Assimp library directory")
     
-    if(EXISTS "${ASSIMP_INCLUDE_DIR}/assimp/Importer.hpp")
-        message(STATUS "Found Assimp headers at: ${ASSIMP_INCLUDE_DIR}")
-        
-        # Ищем .lib файл
-        if(EXISTS "${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.lib")
-            message(STATUS "Found Assimp library at: ${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.lib")
-            add_library(assimp STATIC IMPORTED)
-            set_target_properties(assimp PROPERTIES
-                IMPORTED_LOCATION "${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.lib"
-                INTERFACE_INCLUDE_DIRECTORIES "${ASSIMP_INCLUDE_DIR}"
-            )
-        else()
-            message(WARNING "Assimp .lib file not found! Looking for DLL to use as import library...")
-            # Если .lib нет, пробуем использовать DLL напрямую (не рекомендуется)
-            if(EXISTS "${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.dll")
-                message(STATUS "Found Assimp DLL, but .lib file is missing. Please add assimp-vc143-mt.lib to lib/ folder")
-                add_library(assimp INTERFACE)
-                target_include_directories(assimp INTERFACE "${ASSIMP_INCLUDE_DIR}")
-            else()
-                message(FATAL_ERROR "Assimp library files not found! Please add assimp-vc143-mt.lib to external/assimp/lib/")
-            endif()
-        endif()
-    else()
-        message(FATAL_ERROR "Assimp headers not found! Please install via vcpkg or manually. See ASSIMP_SETUP.md")
+    if(NOT EXISTS "${ASSIMP_INCLUDE_DIR}/assimp/Importer.hpp")
+        message(FATAL_ERROR "Assimp headers not found. See ASSIMP_SETUP.md")
     endif()
+    if(NOT EXISTS "${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.lib")
+        message(FATAL_ERROR "Assimp import library missing: ${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.lib")
+    endif()
+    set(ASSIMP_RUNTIME_DLL "${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.dll")
+    if(NOT EXISTS "${ASSIMP_RUNTIME_DLL}")
+        set(ASSIMP_RUNTIME_DLL "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/assimp-vc143-mt.dll")
+    endif()
+    if(NOT EXISTS "${ASSIMP_RUNTIME_DLL}")
+        message(FATAL_ERROR "Assimp runtime DLL missing. Add assimp-vc143-mt.dll next to the import library.")
+    endif()
+    # The .lib is an import library; Assimp itself is a DLL.
+    add_library(assimp SHARED IMPORTED)
+    set_target_properties(assimp PROPERTIES
+        IMPORTED_IMPLIB "${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.lib"
+        IMPORTED_LOCATION "${ASSIMP_RUNTIME_DLL}"
+        INTERFACE_INCLUDE_DIRECTORIES "${ASSIMP_INCLUDE_DIR}"
+    )
 endif()
+
+if(assimp_FOUND)
+    set(ENGINE_ASSIMP_TARGET assimp::assimp)
+else()
+    set(ENGINE_ASSIMP_TARGET assimp)
+endif()
+
+function(deploy_assimp_runtime target)
+    get_target_property(assimp_type ${ENGINE_ASSIMP_TARGET} TYPE)
+    if(WIN32 AND assimp_type STREQUAL "SHARED_LIBRARY")
+        # Generate the paths separately so they do not create a dependency cycle
+        # between the executable and its always-run runtime preparation target.
+        set(copy_script "${CMAKE_CURRENT_BINARY_DIR}/${target}-assimp-$<CONFIG>.cmake")
+        file(GENERATE OUTPUT "${copy_script}" CONTENT
+"file(MAKE_DIRECTORY [==[$<TARGET_FILE_DIR:${target}>]==])
+execute_process(COMMAND [==[${CMAKE_COMMAND}]==] -E copy_if_different
+    [==[$<TARGET_FILE:${ENGINE_ASSIMP_TARGET}>]==] [==[$<TARGET_FILE_DIR:${target}>]==]
+    RESULT_VARIABLE result)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR \"Failed to deploy Assimp runtime for ${target}\")
+endif()
+")
+        add_custom_target(${target}Runtime
+            COMMAND "${CMAKE_COMMAND}" -P "${copy_script}"
+            COMMENT "Ensuring Assimp runtime is present for ${target}"
+            VERBATIM
+        )
+        add_dependencies(${target} ${target}Runtime)
+    endif()
+endfunction()
 
 include(CTest)
 if(BUILD_TESTING)
@@ -96,6 +121,19 @@ if(BUILD_TESTING)
     )
     target_include_directories(PhysicsSystemTests PRIVATE src)
     add_test(NAME PhysicsSystemTests COMMAND PhysicsSystemTests)
+
+    add_executable(CoordinateSystemTests
+        tests/CoordinateSystemTests.cpp
+        src/editor/EditorCamera.cpp
+        src/input/InputManager.cpp
+        src/ecs/PhysicsSystem.cpp
+        src/ecs/SpinSystem.cpp
+        src/ecs/World.cpp
+        src/resources/SceneManifest.cpp
+    )
+    target_include_directories(CoordinateSystemTests PRIVATE src external)
+    add_test(NAME CoordinateSystemTests COMMAND CoordinateSystemTests)
+    set_tests_properties(CoordinateSystemTests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 # --- Game target ---
@@ -112,6 +150,7 @@ add_executable(GameEngine
     src/input/InputManager.cpp
     src/render/OpenGLRenderAdapter.cpp
     src/editor/EditorCamera.cpp
+    src/editor/TexturePicker.cpp
     src/states/EditorState.cpp
     src/states/StateManager.cpp
     src/states/LoadingState.cpp
@@ -146,12 +185,8 @@ target_link_libraries(GameEngine PRIVATE
     opengl32
 )
 
-# Линкуем Assimp
-if(assimp_FOUND)
-    target_link_libraries(GameEngine PRIVATE assimp::assimp)
-else()
-    target_link_libraries(GameEngine PRIVATE assimp)
-endif()
+target_link_libraries(GameEngine PRIVATE ${ENGINE_ASSIMP_TARGET})
+deploy_assimp_runtime(GameEngine)
 
 add_custom_target(CopyAssets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -160,17 +195,26 @@ add_custom_target(CopyAssets ALL
 )
 add_dependencies(CopyAssets GameEngine)
 
-# Копируем DLL Assimp если нужно
-if(EXISTS "${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.dll")
-    add_custom_command(TARGET GameEngine POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${ASSIMP_LIBRARY_DIR}/assimp-vc143-mt.dll"
-        "$<TARGET_FILE_DIR:GameEngine>"
+if(BUILD_TESTING)
+    add_executable(TextureResourceTests
+        tests/TextureResourceTests.cpp
+        src/ecs/World.cpp
+        src/ecs/RenderSystem.cpp
+        src/render/OpenGLRenderAdapter.cpp
+        src/render/ShaderProgram.cpp
+        src/resources/ResourceManager.cpp
+        src/resources/MeshLoader.cpp
+        src/resources/TextureLoader.cpp
+        src/resources/ShaderLoader.cpp
+        src/resources/stb_image_impl.cpp
     )
-elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/assimp-vc143-mt.dll")
-    add_custom_command(TARGET GameEngine POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/assimp-vc143-mt.dll"
-        "$<TARGET_FILE_DIR:GameEngine>"
+    target_include_directories(TextureResourceTests PRIVATE src external/stb_image)
+    target_link_libraries(TextureResourceTests PRIVATE glad glfw opengl32)
+    target_link_libraries(TextureResourceTests PRIVATE ${ENGINE_ASSIMP_TARGET})
+    deploy_assimp_runtime(TextureResourceTests)
+    add_test(NAME TextureResourceTests COMMAND TextureResourceTests "${CMAKE_CURRENT_BINARY_DIR}/texture-test-fixtures")
+    set_tests_properties(TextureResourceTests PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        SKIP_RETURN_CODE 77
     )
 endif()

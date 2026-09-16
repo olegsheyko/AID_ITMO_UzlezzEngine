@@ -194,7 +194,7 @@ void GameplayState::createCamera() {
     cameraEntity_ = world_.createEntity();
     world_.addComponent<Tag>(cameraEntity_, Tag{"MainCamera"});
     world_.addComponent<Transform>(cameraEntity_, Transform{
-        Vec3{0.0f, 4.0f, 10.0f},
+        Vec3{0.0f, -10.0f, 4.0f},
         Vec3{-0.3f, 0.0f, 0.0f},
         Vec3{1.0f, 1.0f, 1.0f}
     });
@@ -339,12 +339,12 @@ void GameplayState::handleInput(float dt) {
 	}
 
     rigidbody.velocity.x = horizontalVelocity;
-    rigidbody.velocity.z = depthVelocity;
+    rigidbody.velocity.y = depthVelocity;
 
     if (inputManager.isActionPressed("Jump") && !rigidbody.useGravity) {
-        rigidbody.velocity.y = std::max(rigidbody.velocity.y, kJumpSpeed);
-    } else if (inputManager.isActionPressed("Jump") && std::abs(transform.position.y) < 0.051f) {
-        rigidbody.velocity.y = kJumpSpeed;
+        rigidbody.velocity.z = std::max(rigidbody.velocity.z, kJumpSpeed);
+    } else if (inputManager.isActionPressed("Jump") && std::abs(transform.position.z) < 0.051f) {
+        rigidbody.velocity.z = kJumpSpeed;
     }
 
 	const bool lmbNow = inputManager.isMouseButtonDown(KeyCode::MouseLeft);
@@ -357,7 +357,7 @@ void GameplayState::handleInput(float dt) {
 
 	const bool rmbNow = inputManager.isMouseButtonDown(KeyCode::MouseRight);
 	if (rmbNow && !rmbWasPressed_ && !world_.isAlive(cameraEntity_)) {
-		transform.rotation.y += kRotationStep;
+		transform.rotation.z += kRotationStep;
 	}
 	rmbWasPressed_ = rmbNow;
 

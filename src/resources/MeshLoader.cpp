@@ -5,6 +5,8 @@
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <algorithm>
+#include <filesystem>
 
 namespace {
 std::string buildAssetPath(const std::string& directory, const aiString& texturePath) {
@@ -13,11 +15,10 @@ std::string buildAssetPath(const std::string& directory, const aiString& texture
         return {};
     }
 
-    if (path.find(':') != std::string::npos || path.rfind('/', 0) == 0 || path.rfind('\\', 0) == 0) {
-        return path;
-    }
-
-    return directory + "/" + path;
+    std::replace(path.begin(), path.end(), '\\', '/');
+    const std::filesystem::path textureFile(path);
+    const auto resolved = textureFile.is_absolute() ? textureFile : std::filesystem::path(directory) / textureFile;
+    return resolved.lexically_normal().generic_string();
 }
 
 MeshData createProceduralCubeMesh() {
@@ -173,7 +174,10 @@ Material MeshLoader::processMaterial(aiMaterial* material, const std::string& di
         }
     };
 
-    readTexture(aiTextureType_DIFFUSE, mat.diffuseTexturePath);
+    readTexture(aiTextureType_BASE_COLOR, mat.diffuseTexturePath);
+    if (mat.diffuseTexturePath.empty()) {
+        readTexture(aiTextureType_DIFFUSE, mat.diffuseTexturePath);
+    }
     readTexture(aiTextureType_NORMALS, mat.normalTexturePath);
     readTexture(aiTextureType_METALNESS, mat.metallicTexturePath);
     readTexture(aiTextureType_DIFFUSE_ROUGHNESS, mat.roughnessTexturePath);

@@ -6,7 +6,7 @@ in vec3 FragPos;
 
 out vec4 FragColor;
 
-uniform vec4 color;
+uniform vec3 materialColor;
 uniform sampler2D baseColorTexture;
 uniform sampler2D normalTexture;
 uniform sampler2D metallicTexture;
@@ -45,7 +45,7 @@ vec3 calculateLighting(vec3 normal, vec3 albedo, float metallic, float roughness
 
 void main() {
     // Base Color
-    vec4 baseColor = color;
+    vec4 baseColor = vec4(materialColor, 1.0);
     if (useBaseColorTexture) {
         vec4 texColor = texture(baseColorTexture, TexCoord);
         // Если текстура загрузилась, используем её

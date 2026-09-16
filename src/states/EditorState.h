@@ -1,6 +1,7 @@
 #pragma once
 
 #include "editor/EditorCamera.h"
+#include "editor/TexturePicker.h"
 #include "ecs/Components.h"
 #include "ecs/DebugRenderSystem.h"
 #include "ecs/Entity.h"
@@ -105,6 +106,7 @@ private:
     IRenderAdapter& renderer_;
     World world_;
     EditorCamera editorCamera_;
+    TexturePicker texturePicker_;
     PhysicsSystem physicsSystem_;
     SpinSystem spinSystem_;
     RenderSystem renderSystem_;

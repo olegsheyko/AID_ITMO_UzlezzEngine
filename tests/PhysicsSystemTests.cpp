@@ -45,13 +45,13 @@ void fallingSphereHitsBox(bool sphereCreatedFirst) {
     Entity sphere;
     Entity ground;
     if (sphereCreatedFirst) {
-        sphere = addCollider(world, ColliderType::Sphere, Vec3{0.0f, 2.0f, 0.0f}, true);
-        ground = addCollider(world, ColliderType::Box, Vec3{0.0f, -0.5f, 0.0f}, false);
+        sphere = addCollider(world, ColliderType::Sphere, Vec3{0.0f, 0.0f, 2.0f}, true);
+        ground = addCollider(world, ColliderType::Box, Vec3{0.0f, 0.0f, -0.5f}, false);
     } else {
-        ground = addCollider(world, ColliderType::Box, Vec3{0.0f, -0.5f, 0.0f}, false);
-        sphere = addCollider(world, ColliderType::Sphere, Vec3{0.0f, 2.0f, 0.0f}, true);
+        ground = addCollider(world, ColliderType::Box, Vec3{0.0f, 0.0f, -0.5f}, false);
+        sphere = addCollider(world, ColliderType::Sphere, Vec3{0.0f, 0.0f, 2.0f}, true);
     }
-    world.getComponent<Transform>(ground).scale = Vec3{8.0f, 1.0f, 8.0f};
+    world.getComponent<Transform>(ground).scale = Vec3{8.0f, 8.0f, 1.0f};
     world.getComponent<Rigidbody>(sphere).useGravity = true;
     world.getComponent<Transform>(sphere).scale = Vec3{0.8f, 0.8f, 0.8f};
 
@@ -61,16 +61,16 @@ void fallingSphereHitsBox(bool sphereCreatedFirst) {
     PhysicsSystem physics;
     for (int frame = 0; frame < 600; ++frame) {
         physics.update(world, 1.0f / 120.0f);
-        require(world.getComponent<Transform>(sphere).position.y >= 0.4f - kTolerance,
+        require(world.getComponent<Transform>(sphere).position.z >= 0.4f - kTolerance,
             "Sphere fell through the box floor");
     }
     require(!events.empty(), "Sphere-box collision event was not emitted");
     for (const auto& event : events) {
-        require(near(event.normal.y, event.first == sphere ? 1.0f : -1.0f),
+        require(near(event.normal.z, event.first == sphere ? 1.0f : -1.0f),
             "Collision normal points in the wrong direction");
         require(event.penetration > 0.0f, "Collision penetration must be positive");
     }
-    require(near(world.getComponent<Transform>(ground).position.y, -0.5f),
+    require(near(world.getComponent<Transform>(ground).position.z, -0.5f),
         "Static floor moved");
 }
 

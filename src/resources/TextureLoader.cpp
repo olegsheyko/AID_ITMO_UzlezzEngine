@@ -278,20 +278,23 @@ bool TextureLoader::load(const std::string& path, TextureData& textureData, IRen
             return false;
         }
     } else {
-        stbi_set_flip_vertically_on_load(false);
+        // Imported mesh UVs use a bottom-left origin. Keep the legacy DDS path unchanged.
+        stbi_set_flip_vertically_on_load_thread(true);
 
         int width = 0;
         int height = 0;
         int channels = 0;
-        unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 0);
+        unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
         if (pixels == nullptr) {
-            LOG_ERROR("stb_image failed to load texture: " + path);
+            const char* reason = stbi_failure_reason();
+            LOG_ERROR("Texture decode failed: " + path + " (" + (reason ? reason : "unknown error") + ")");
             return false;
         }
 
         textureData.width = width;
         textureData.height = height;
-        textureData.channels = channels;
+        // Normalize grayscale, grayscale-alpha, RGB and RGBA files for GPU upload.
+        textureData.channels = STBI_rgb_alpha;
         textureData.pixels = pixels;
     }
 

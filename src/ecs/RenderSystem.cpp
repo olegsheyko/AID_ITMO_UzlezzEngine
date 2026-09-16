@@ -2,8 +2,8 @@
 #include "ecs/Components.h"
 #include "ecs/World.h"
 #include "math/MathTypes.h"
+#include "math/CameraMath.h"
 #include "render/IRenderAdapter.h"
-#include "resources/ResourceManager.h"
 
 #include <cstddef>
 #include <unordered_set>
@@ -70,10 +70,7 @@ void RenderSystem::render(World& world) {
                 renderSubMesh(subMesh, *shaderData, meshRenderer);
             }
         } else if (meshData->vao != 0 && meshData->indexCount > 0) {
-            if (meshRenderer.cachedBaseColorTexture && meshRenderer.cachedBaseColorTexture->isLoaded()) {
-                renderer_.bindTexture2D(meshRenderer.cachedBaseColorTexture->getData()->textureId, 0);
-                renderer_.setInt(shaderData->programId, "baseColorTexture", 0);
-            }
+            bindMaterial(Material{}, *shaderData, meshRenderer);
 
             renderer_.drawIndexed(meshData->vao, meshData->indexCount);
         }
@@ -84,25 +81,27 @@ void RenderSystem::render(World& world) {
 }
 
 void RenderSystem::setupLighting(unsigned int shaderProgram) {
-    renderer_.setVec3(shaderProgram, "light.direction", Vec3{-0.5f, -1.0f, -0.3f});
+    renderer_.setVec3(shaderProgram, "light.direction", Vec3{-0.5f, 0.3f, -1.0f});
     renderer_.setVec3(shaderProgram, "light.color", Vec3{1.0f, 0.96f, 0.9f});
     renderer_.setFloat(shaderProgram, "light.ambientStrength", 0.35f);
     renderer_.setFloat(shaderProgram, "light.diffuseStrength", 0.95f);
 }
 
-void RenderSystem::renderSubMesh(const SubMesh& subMesh, const ShaderData& shaderData, const MeshRenderer& meshRenderer) {
+void RenderSystem::bindMaterial(const Material& material, const ShaderData& shaderData, const MeshRenderer& meshRenderer) {
     std::shared_ptr<Resource<TextureData>> texture = meshRenderer.cachedBaseColorTexture;
-    if ((!texture || !texture->isLoaded()) && !subMesh.material.diffuseTexturePath.empty()) {
-        texture = ResourceManager::getInstance().load<TextureData>(subMesh.material.diffuseTexturePath);
+    if (!texture || !texture->isLoaded()) {
+        texture = material.cachedDiffuseTexture;
     }
 
-    if (texture && texture->isLoaded()) {
-        renderer_.bindTexture2D(texture->getData()->textureId, 0);
-        renderer_.setInt(shaderData.programId, "baseColorTexture", 0);
-    } else {
-        renderer_.bindTexture2D(0, 0);
-    }
+    const bool hasTexture = texture && texture->isLoaded() && texture->getData()->textureId != 0;
+    renderer_.bindTexture2D(hasTexture ? texture->getData()->textureId : 0, 0);
+    renderer_.setInt(shaderData.programId, "baseColorTexture", 0);
+    renderer_.setInt(shaderData.programId, "useBaseColorTexture", hasTexture ? 1 : 0);
+    renderer_.setVec3(shaderData.programId, "materialColor", material.diffuseColor);
+}
 
+void RenderSystem::renderSubMesh(const SubMesh& subMesh, const ShaderData& shaderData, const MeshRenderer& meshRenderer) {
+    bindMaterial(subMesh.material, shaderData, meshRenderer);
     renderer_.drawIndexed(subMesh.vao, subMesh.indexCount);
 }
 
@@ -125,7 +124,7 @@ void RenderSystem::setupMatrices(World& world, unsigned int shaderProgram, const
     });
 
     if (!cameraFound) {
-        viewMatrix.data()[14] = -5.0f;
+        viewMatrix = CameraMath::view(Vec3{0.0f, -5.0f, 0.0f}, 0.0f, 0.0f);
         int width = 0;
         int height = 0;
         renderer_.getFramebufferSize(width, height);

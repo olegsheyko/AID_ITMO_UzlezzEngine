@@ -4,6 +4,7 @@
 #include "ecs/Components.h"
 #include "ecs/World.h"
 #include "math/MathTypes.h"
+#include "math/CameraMath.h"
 #include "render/IRenderAdapter.h"
 
 namespace {
@@ -23,7 +24,7 @@ void resolveCameraMatrices(World& world, IRenderAdapter& renderer, Mat4& viewMat
     });
 
     if (!cameraFound) {
-        viewMatrix.data()[14] = -5.0f;
+        viewMatrix = CameraMath::view(Vec3{0.0f, -5.0f, 0.0f}, 0.0f, 0.0f);
         int width = 0;
         int height = 0;
         renderer.getFramebufferSize(width, height);

@@ -5,6 +5,7 @@
 #include "ecs/CollisionUtils.h"
 #include "events/CollisionEvent.h"
 #include "input/InputManager.h"
+#include "math/CameraMath.h"
 #include "input/KeyCode.h"
 #include "render/IRenderAdapter.h"
 #include "resources/HotReload.h"
@@ -110,36 +111,6 @@ void fitColliderToMeshBounds(const MeshRenderer& renderer, Collider& collider) {
 
     collider.offset = boundsCenter;
     collider.halfExtents = boundsHalfExtents;
-}
-
-Mat4 buildViewMatrix(const Transform& transform) {
-    const float cosPitch = std::cos(transform.rotation.x);
-    const Vec3 forward{
-        std::sin(transform.rotation.y) * cosPitch,
-        std::sin(transform.rotation.x),
-        -std::cos(transform.rotation.y) * cosPitch
-    };
-    const Vec3 right{std::cos(transform.rotation.y), 0.0f, std::sin(transform.rotation.y)};
-    const Vec3 up{
-        right.y * forward.z - right.z * forward.y,
-        right.z * forward.x - right.x * forward.z,
-        right.x * forward.y - right.y * forward.x
-    };
-
-    Mat4 view = Mat4::identity();
-    view.values[0] = right.x;
-    view.values[1] = up.x;
-    view.values[2] = -forward.x;
-    view.values[4] = right.y;
-    view.values[5] = up.y;
-    view.values[6] = -forward.y;
-    view.values[8] = right.z;
-    view.values[9] = up.z;
-    view.values[10] = -forward.z;
-    view.values[12] = -(right.x * transform.position.x + right.y * transform.position.y + right.z * transform.position.z);
-    view.values[13] = -(up.x * transform.position.x + up.y * transform.position.y + up.z * transform.position.z);
-    view.values[14] = forward.x * transform.position.x + forward.y * transform.position.y + forward.z * transform.position.z;
-    return view;
 }
 
 float toDegrees(float radians) {
@@ -531,7 +502,7 @@ Entity EditorState::duplicateEntity(Entity source) {
     if (world_.hasComponent<Transform>(source)) {
         Transform transform = world_.getComponent<Transform>(source);
         transform.position.x += 1.0f;
-        transform.position.z += 1.0f;
+        transform.position.y -= 1.0f;
         world_.addComponent<Transform>(entity, transform);
     }
     if (world_.hasComponent<MeshRenderer>(source)) {
@@ -593,7 +564,7 @@ void EditorState::createGameCamera() {
     gameCameraEntity_ = world_.createEntity();
     world_.addComponent<Tag>(gameCameraEntity_, Tag{"MainCamera"});
     world_.addComponent<Transform>(gameCameraEntity_, Transform{
-        Vec3{0.0f, 4.0f, 10.0f},
+        Vec3{0.0f, -10.0f, 4.0f},
         Vec3{-0.3f, 0.0f, 0.0f},
         Vec3{1.0f, 1.0f, 1.0f}
     });
@@ -664,19 +635,19 @@ void EditorState::updateGameCamera(float dt, bool allowInput) {
         if (inputManager.isActionDown("CameraUp")) moveUp += 1.0f;
         if (inputManager.isActionDown("CameraDown")) moveUp -= 1.0f;
 
-        const float yaw = transform.rotation.y;
-        const float forwardX = std::sin(yaw);
-        const float forwardZ = -std::cos(yaw);
+        const float yaw = transform.rotation.z;
+        const float forwardX = -std::sin(yaw);
+        const float forwardY = std::cos(yaw);
         const float rightX = std::cos(yaw);
-        const float rightZ = std::sin(yaw);
+        const float rightY = std::sin(yaw);
         constexpr float cameraMoveSpeed = 3.5f;
         transform.position.x += (forwardX * moveForward + rightX * moveRight) * cameraMoveSpeed * dt;
-        transform.position.y += moveUp * cameraMoveSpeed * dt;
-        transform.position.z += (forwardZ * moveForward + rightZ * moveRight) * cameraMoveSpeed * dt;
+        transform.position.z += moveUp * cameraMoveSpeed * dt;
+        transform.position.y += (forwardY * moveForward + rightY * moveRight) * cameraMoveSpeed * dt;
 
         if (inputManager.isMouseButtonDown(KeyCode::MouseRight)) {
             const Vec2 mouseDelta = inputManager.getMouseDelta();
-            transform.rotation.y += mouseDelta.x * 0.003f;
+            transform.rotation.z -= mouseDelta.x * 0.003f;
             transform.rotation.x -= mouseDelta.y * 0.003f;
             transform.rotation.x = std::clamp(transform.rotation.x, -1.4f, 1.4f);
         }
@@ -684,7 +655,7 @@ void EditorState::updateGameCamera(float dt, bool allowInput) {
 
     camera.active = mode_ == EditorMode::Play;
     camera.aspectRatio = viewportHeight_ > 0 ? static_cast<float>(viewportWidth_) / static_cast<float>(viewportHeight_) : 800.0f / 600.0f;
-    camera.viewMatrix = buildViewMatrix(transform);
+    camera.viewMatrix = CameraMath::view(transform.position, transform.rotation.x, transform.rotation.z);
     camera.projectionMatrix = Math::perspective(camera.fovDegrees * kPi / 180.0f, camera.aspectRatio, camera.nearClip, camera.farClip);
 }
 
@@ -706,10 +677,10 @@ void EditorState::processGameplayInput(float) {
     if (inputManager.isActionDown("MoveBackward")) depthVelocity += kMoveSpeed;
 
     rigidbody.velocity.x = horizontalVelocity;
-    rigidbody.velocity.z = depthVelocity;
+    rigidbody.velocity.y = depthVelocity;
 
-    if (inputManager.isActionPressed("Jump") && std::abs(transform.position.y) < 0.051f) {
-        rigidbody.velocity.y = kJumpSpeed;
+    if (inputManager.isActionPressed("Jump") && std::abs(transform.position.z) < 0.051f) {
+        rigidbody.velocity.z = kJumpSpeed;
     }
 
     const bool lmbNow = inputManager.isMouseButtonDown(KeyCode::MouseLeft);
@@ -722,7 +693,7 @@ void EditorState::processGameplayInput(float) {
 
     const bool rmbNow = inputManager.isMouseButtonDown(KeyCode::MouseRight);
     if (rmbNow && !rmbWasPressed_) {
-        transform.rotation.y += kRotationStep;
+        transform.rotation.z += kRotationStep;
     }
     rmbWasPressed_ = rmbNow;
 
@@ -843,6 +814,8 @@ void EditorState::renderMainMenu() {
     if (ImGui::BeginMenu("Help")) {
         ImGui::TextUnformatted("ITMO Uzlezz Engine Editor");
         ImGui::TextUnformatted("RMB+WASD fly, MMB pan, Alt+LMB orbit, F focus.");
+        ImGui::TextUnformatted("Viewport tools: W Translate, E Scale, R Rotate.");
+        ImGui::TextUnformatted("World axes: +X right, -Y forward, +Z up. E/Q: up/down.");
         ImGui::EndMenu();
     }
 
@@ -885,15 +858,15 @@ void EditorState::renderToolbar() {
     ImGui::SameLine();
 
     ImGui::BeginDisabled(playing);
-    if (ImGui::Selectable("Translate", gizmoOperation_ == GizmoOperation::Translate, 0, ImVec2(82.0f, 0.0f))) {
+    if (ImGui::Selectable("Translate (W)", gizmoOperation_ == GizmoOperation::Translate, 0, ImVec2(110.0f, 0.0f))) {
         gizmoOperation_ = GizmoOperation::Translate;
     }
     ImGui::SameLine();
-    if (ImGui::Selectable("Rotate", gizmoOperation_ == GizmoOperation::Rotate, 0, ImVec2(64.0f, 0.0f))) {
+    if (ImGui::Selectable("Rotate (R)", gizmoOperation_ == GizmoOperation::Rotate, 0, ImVec2(90.0f, 0.0f))) {
         gizmoOperation_ = GizmoOperation::Rotate;
     }
     ImGui::SameLine();
-    if (ImGui::Selectable("Scale", gizmoOperation_ == GizmoOperation::Scale, 0, ImVec2(58.0f, 0.0f))) {
+    if (ImGui::Selectable("Scale (E)", gizmoOperation_ == GizmoOperation::Scale, 0, ImVec2(82.0f, 0.0f))) {
         gizmoOperation_ = GizmoOperation::Scale;
     }
     ImGui::SameLine();
@@ -1070,6 +1043,15 @@ void EditorState::renderInspectorPanel() {
                 if (ImGui::Selectable(id.c_str(), selected)) {
                     meshRenderer.meshId = id;
                     meshRenderer.cachedMesh = resources.load<MeshData>(id);
+                    if (meshRenderer.cachedMesh) {
+                        const auto& subMeshes = meshRenderer.cachedMesh->getData()->subMeshes;
+                        if (std::any_of(subMeshes.begin(), subMeshes.end(), [](const SubMesh& subMesh) {
+                            return !subMesh.material.diffuseTexturePath.empty();
+                        })) {
+                            meshRenderer.baseColorTextureId.clear();
+                            meshRenderer.cachedBaseColorTexture.reset();
+                        }
+                    }
                     if (world_.hasComponent<Collider>(selectedEntity_)) {
                         fitColliderToMeshBounds(meshRenderer, world_.getComponent<Collider>(selectedEntity_));
                     }
@@ -1081,24 +1063,7 @@ void EditorState::renderInspectorPanel() {
             ImGui::EndCombo();
         }
 
-        const auto textureIds = resources.getTextureIds();
-        if (ImGui::BeginCombo("Base Texture", meshRenderer.baseColorTextureId.empty() ? "<none>" : meshRenderer.baseColorTextureId.c_str())) {
-            if (ImGui::Selectable("<none>", meshRenderer.baseColorTextureId.empty())) {
-                meshRenderer.baseColorTextureId.clear();
-                meshRenderer.cachedBaseColorTexture.reset();
-            }
-            for (const std::string& id : textureIds) {
-                const bool selected = meshRenderer.baseColorTextureId == id;
-                if (ImGui::Selectable(id.c_str(), selected)) {
-                    meshRenderer.baseColorTextureId = id;
-                    meshRenderer.cachedBaseColorTexture = resources.load<TextureData>(id);
-                }
-                if (selected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-            ImGui::EndCombo();
-        }
+        texturePicker_.render(meshRenderer);
 
         const auto shaderIds = resources.getShaderIds();
         if (ImGui::BeginCombo("Shader", meshRenderer.shaderId.empty() ? "<none>" : meshRenderer.shaderId.c_str())) {
@@ -1202,6 +1167,21 @@ void EditorState::renderViewportPanel() {
         !ImGuizmo::IsUsing();
 
     if (mode_ == EditorMode::Edit) {
+        const bool toolShortcutsEnabled =
+            (viewportFocused_ || (viewportHovered_ && ImGui::IsWindowHovered())) &&
+            !io.WantTextInput && !ImGui::IsAnyItemActive() &&
+            !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) &&
+            !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && !io.KeySuper &&
+            !ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+            !ImGui::IsMouseDown(ImGuiMouseButton_Right) &&
+            !ImGui::IsMouseDown(ImGuiMouseButton_Middle) &&
+            !ImGuizmo::IsUsing();
+        if (toolShortcutsEnabled) {
+            if (ImGui::IsKeyPressed(ImGuiKey_W, false)) gizmoOperation_ = GizmoOperation::Translate;
+            if (ImGui::IsKeyPressed(ImGuiKey_E, false)) gizmoOperation_ = GizmoOperation::Scale;
+            if (ImGui::IsKeyPressed(ImGuiKey_R, false)) gizmoOperation_ = GizmoOperation::Rotate;
+        }
+
         if (viewportInputActive_ &&
             InputManager::getInstance().isKeyPressed(KeyCode::F) &&
             world_.isAlive(selectedEntity_) &&

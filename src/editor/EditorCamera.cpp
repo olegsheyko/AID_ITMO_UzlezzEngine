@@ -2,6 +2,7 @@
 
 #include "input/InputManager.h"
 #include "input/KeyCode.h"
+#include "math/CameraMath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -53,7 +54,7 @@ void EditorCamera::update(float dt, int viewportWidth, int viewportHeight, bool 
         const bool shift = input.isKeyDown(KeyCode::LeftShift);
 
         if (rmb) {
-            yaw_ += mouseDelta.x * kLookSensitivity;
+            yaw_ -= mouseDelta.x * kLookSensitivity;
             pitch_ -= mouseDelta.y * kLookSensitivity;
             pitch_ = std::clamp(pitch_, -kMaxPitch, kMaxPitch);
 
@@ -69,16 +70,16 @@ void EditorCamera::update(float dt, int viewportWidth, int viewportHeight, bool 
 
             const float speed = kBaseMoveSpeed * (shift ? kFastMoveMultiplier : 1.0f);
             Vec3 flatForward = getForward();
-            flatForward.y = 0.0f;
+            flatForward.z = 0.0f;
             flatForward = normalize(flatForward);
             if (length(flatForward) <= 0.0001f) {
-                flatForward = Vec3{0.0f, 0.0f, -1.0f};
+                flatForward = Vec3{0.0f, 1.0f, 0.0f};
             }
 
             Vec3 movement{};
             movement = add(movement, scale(flatForward, moveForward * speed * dt));
             movement = add(movement, scale(getRight(), moveRight * speed * dt));
-            movement = add(movement, Vec3{0.0f, moveUp * speed * dt, 0.0f});
+            movement = add(movement, Vec3{0.0f, 0.0f, moveUp * speed * dt});
             position_ = add(position_, movement);
             pivot_ = add(pivot_, movement);
             distance_ = std::max(kMinDistance, std::sqrt(
@@ -86,7 +87,7 @@ void EditorCamera::update(float dt, int viewportWidth, int viewportHeight, bool 
                 std::pow(position_.y - pivot_.y, 2.0f) +
                 std::pow(position_.z - pivot_.z, 2.0f)));
         } else if (alt && input.isMouseButtonDown(KeyCode::MouseLeft)) {
-            yaw_ += mouseDelta.x * kOrbitSensitivity;
+            yaw_ -= mouseDelta.x * kOrbitSensitivity;
             pitch_ -= mouseDelta.y * kOrbitSensitivity;
             pitch_ = std::clamp(pitch_, -kMaxPitch, kMaxPitch);
             position_ = subtract(pivot_, scale(getForward(), distance_));
@@ -118,23 +119,7 @@ void EditorCamera::focus(const Vec3& target, float radius) {
 }
 
 void EditorCamera::updateMatrices(int viewportWidth, int viewportHeight) {
-    const Vec3 f = normalize(getForward());
-    const Vec3 r = normalize(getRight());
-    const Vec3 u = normalize(getUp());
-
-    viewMatrix_ = Mat4::identity();
-    viewMatrix_.values[0] = r.x;
-    viewMatrix_.values[1] = u.x;
-    viewMatrix_.values[2] = -f.x;
-    viewMatrix_.values[4] = r.y;
-    viewMatrix_.values[5] = u.y;
-    viewMatrix_.values[6] = -f.y;
-    viewMatrix_.values[8] = r.z;
-    viewMatrix_.values[9] = u.z;
-    viewMatrix_.values[10] = -f.z;
-    viewMatrix_.values[12] = -(r.x * position_.x + r.y * position_.y + r.z * position_.z);
-    viewMatrix_.values[13] = -(u.x * position_.x + u.y * position_.y + u.z * position_.z);
-    viewMatrix_.values[14] = f.x * position_.x + f.y * position_.y + f.z * position_.z;
+    viewMatrix_ = CameraMath::view(position_, pitch_, yaw_);
 
     const float aspect = (viewportWidth > 0 && viewportHeight > 0)
         ? static_cast<float>(viewportWidth) / static_cast<float>(viewportHeight)
@@ -143,26 +128,15 @@ void EditorCamera::updateMatrices(int viewportWidth, int viewportHeight) {
 }
 
 Vec3 EditorCamera::getForward() const {
-    const float cosPitch = std::cos(pitch_);
-    return normalize(Vec3{
-        std::sin(yaw_) * cosPitch,
-        std::sin(pitch_),
-        -std::cos(yaw_) * cosPitch
-    });
+    return CameraMath::forward(pitch_, yaw_);
 }
 
 Vec3 EditorCamera::getRight() const {
-    return normalize(Vec3{std::cos(yaw_), 0.0f, std::sin(yaw_)});
+    return CameraMath::right(yaw_);
 }
 
 Vec3 EditorCamera::getUp() const {
-    const Vec3 f = getForward();
-    const Vec3 r = getRight();
-    return normalize(Vec3{
-        r.y * f.z - r.z * f.y,
-        r.z * f.x - r.x * f.z,
-        r.x * f.y - r.y * f.x
-    });
+    return CameraMath::up(pitch_, yaw_);
 }
 
 Vec3 EditorCamera::getRayDirection(float normalizedX, float normalizedY, float aspect) const {

@@ -312,7 +312,11 @@ bool OpenGLRenderAdapter::createTexture(
 	}
 
 	glBindTexture(GL_TEXTURE_2D, outTextureId);
+	GLint unpackAlignment = 4;
+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpackAlignment);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, dataFormat, GL_UNSIGNED_BYTE, pixels);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, unpackAlignment);
 	glGenerateMipmap(GL_TEXTURE_2D);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);

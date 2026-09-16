@@ -5,6 +5,10 @@
 #include <string>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
+
+template <typename T> class Resource;
+struct TextureData;
 
 // Структура для хранения данных вершины
 struct Vertex {
@@ -23,6 +27,7 @@ struct Material {
     std::string aoTexturePath;
     std::string heightTexturePath;
     Vec3 diffuseColor{1.0f, 1.0f, 1.0f};
+    std::shared_ptr<Resource<TextureData>> cachedDiffuseTexture;
 };
 
 // Подмеш (часть модели с одним материалом)

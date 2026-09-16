@@ -214,7 +214,7 @@ void PhysicsSystem::update(World& world, float dt) {
         }
 
         if (rigidbody.useGravity) {
-            rigidbody.velocity.y -= gravityStrength_ * dt;
+            rigidbody.velocity.z -= gravityStrength_ * dt;
         }
 
         rigidbody.velocity = add(rigidbody.velocity, scale(rigidbody.acceleration, dt));

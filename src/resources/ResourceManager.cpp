@@ -6,6 +6,8 @@
 #include "render/IRenderAdapter.h"
 
 #include <algorithm>
+#include <cctype>
+#include <filesystem>
 #include <utility>
 #include <vector>
 
@@ -34,6 +36,13 @@ std::shared_ptr<Resource<MeshData>> ResourceManager::loadMesh(const std::string&
     // Загружаем новый меш
     auto resource = std::make_shared<Resource<MeshData>>(path);
     if (MeshLoader::load(path, *resource->getData(), renderer_)) {
+        // Resolve material textures once, not during every draw of every submesh.
+        for (auto& subMesh : resource->getData()->subMeshes) {
+            auto& material = subMesh.material;
+            if (!material.diffuseTexturePath.empty()) {
+                material.cachedDiffuseTexture = loadTexture(material.diffuseTexturePath);
+            }
+        }
         resource->setLoaded(true);
         meshCache_[path] = resource;
         LOG_INFO("Mesh loaded: " + path);
@@ -189,6 +198,40 @@ std::vector<std::string> ResourceManager::getTextureIds() const {
     }
     std::sort(ids.begin(), ids.end());
     return ids;
+}
+
+std::vector<std::string> ResourceManager::getAvailableTexturePaths() const {
+    auto paths = getTextureIds();
+    std::error_code error;
+    std::filesystem::recursive_directory_iterator files(
+        ".", std::filesystem::directory_options::skip_permission_denied, error);
+    const std::filesystem::recursive_directory_iterator end;
+    for (; !error && files != end; files.increment(error)) {
+        if (files->is_directory(error)) {
+            const std::string name = files->path().filename().string();
+            // Search project content, excluding dependencies, metadata and build copies.
+            if ((!name.empty() && name.front() == '.') || name == "external" || name == "build" ||
+                name.rfind("build_", 0) == 0 || name == "out" || name == "tests" ||
+                name == "docs" || name == "screenshotes") {
+                files.disable_recursion_pending();
+            }
+            continue;
+        }
+        if (!files->is_regular_file(error)) {
+            continue;
+        }
+        std::string extension = files->path().extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (extension == ".dds" || extension == ".png" || extension == ".jpg" || extension == ".jpeg" ||
+            extension == ".bmp" || extension == ".tga" || extension == ".gif" || extension == ".hdr" ||
+            extension == ".psd" || extension == ".pic") {
+            paths.push_back(files->path().lexically_normal().generic_string());
+        }
+    }
+    std::sort(paths.begin(), paths.end());
+    paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+    return paths;
 }
 
 std::vector<std::string> ResourceManager::getShaderIds() const {

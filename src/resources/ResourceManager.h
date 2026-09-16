@@ -55,6 +55,7 @@ public:
     size_t getShaderCount() const { return shaderCache_.size(); }
     std::vector<std::string> getMeshIds() const;
     std::vector<std::string> getTextureIds() const;
+    std::vector<std::string> getAvailableTexturePaths() const;
     std::vector<std::string> getShaderIds() const;
     size_t estimateMemoryUsageBytes() const;
 

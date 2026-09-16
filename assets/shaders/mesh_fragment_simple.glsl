@@ -6,13 +6,13 @@ in vec3 FragPos;
 
 out vec4 FragColor;
 
-uniform vec4 color;
+uniform vec3 materialColor;
 uniform sampler2D baseColorTexture;
 uniform bool useBaseColorTexture;
 
 void main() {
     // Сначала просто показываем базовую текстуру без освещения
-    vec4 finalColor = color;
+    vec4 finalColor = vec4(materialColor, 1.0);
     
     if (useBaseColorTexture) {
         finalColor = texture(baseColorTexture, TexCoord);

@@ -7,6 +7,8 @@ in vec3 FragPos;
 out vec4 FragColor;
 
 uniform sampler2D baseColorTexture;
+uniform bool useBaseColorTexture;
+uniform vec3 materialColor;
 
 struct DirectionalLight {
     vec3 direction;
@@ -18,7 +20,7 @@ struct DirectionalLight {
 uniform DirectionalLight light;
 
 void main() {
-    vec4 texColor = texture(baseColorTexture, TexCoord);
+    vec4 texColor = useBaseColorTexture ? texture(baseColorTexture, TexCoord) : vec4(materialColor, 1.0);
     if (texColor.a < 0.1) {
         discard;
     }

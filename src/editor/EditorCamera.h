@@ -20,7 +20,7 @@ public:
 private:
     void updateMatrices(int viewportWidth, int viewportHeight);
 
-    Vec3 position_{0.0f, 3.5f, 8.0f};
+    Vec3 position_{0.0f, -8.0f, 3.5f};
     Vec3 pivot_{0.0f, 0.0f, 0.0f};
     float yaw_ = 0.0f;
     float pitch_ = -0.35f;
