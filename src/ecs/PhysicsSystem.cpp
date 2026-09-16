@@ -1,5 +1,6 @@
 #include "core/ServiceLocator.h"
 #include "ecs/PhysicsSystem.h"
+#include <tracy/Tracy.hpp>
 
 #include "ecs/CollisionUtils.h"
 #include "ecs/Components.h"
@@ -203,6 +204,7 @@ PhysicsSystem::PhysicsSystem(float gravityStrength)
 }
 
 void PhysicsSystem::update(World& world, float dt) {
+    ZoneScopedN("Physics");
     lastCollisionCount_ = 0;
     if (dt <= 0.0f) {
         return;

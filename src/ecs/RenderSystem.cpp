@@ -1,4 +1,5 @@
 #include "ecs/RenderSystem.h"
+#include <tracy/Tracy.hpp>
 #include "ecs/Components.h"
 #include "ecs/World.h"
 #include "math/MathTypes.h"
@@ -40,6 +41,7 @@ RenderSystem::RenderSystem(IRenderAdapter& renderer)
 }
 
 void RenderSystem::render(World& world) {
+    ZoneScopedN("Scene render");
     lastDrawnMeshCount_ = 0;
     world.forEach<Transform, MeshRenderer>([this, &world](Entity entity, Transform&, MeshRenderer& meshRenderer) {
         if (!meshRenderer.cachedMesh || !meshRenderer.cachedShader) {

@@ -15,6 +15,7 @@
 #include <imgui.h>
 #include <ImGuizmo.h>
 #include <imgui_internal.h>
+#include <tracy/Tracy.hpp>
 
 #include <algorithm>
 #include <array>
@@ -265,6 +266,7 @@ void EditorState::onExit() {
 }
 
 void EditorState::update(float dt) {
+    ZoneScoped;
     lastDt_ = dt;
     fpsAccumulator_ += dt;
     ++fpsFrames_;
@@ -290,6 +292,7 @@ void EditorState::update(float dt) {
 }
 
 void EditorState::render() {
+    ZoneScopedN("Editor UI");
     renderDockSpace();
     renderMainMenu();
     renderToolbar();
@@ -603,6 +606,7 @@ void EditorState::setCameraMode() {
 }
 
 void EditorState::updateGameplay(float dt, bool allowInput) {
+    ZoneScopedN("Simulation");
     if (allowInput) {
         processGameplayInput(dt);
     }
@@ -1217,6 +1221,7 @@ void EditorState::renderViewportPanel() {
 }
 
 void EditorState::renderViewportScene(int width, int height) {
+    ZoneScopedN("Viewport");
     renderer_.beginViewportFrame(width, height, 0.08f, 0.09f, 0.11f);
     renderSystem_.render(world_);
     debugRenderSystem_.render(world_);

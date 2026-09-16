@@ -13,8 +13,10 @@
 #include <ImGuizmo.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
+#include <tracy/Tracy.hpp>
 
 bool Application::init(int width, int height, const char* title) {
+    ZoneScoped;
 	LOG_INFO("Application: Initializing application");
 	renderer_ = std::make_unique<OpenGLRenderAdapter>();
 	
@@ -47,21 +49,30 @@ bool Application::init(int width, int height, const char* title) {
 
 void Application::run() {
 	LOG_INFO("Application: starting main loop");
+#ifdef TRACY_ENABLE
+    tracy::SetThreadName("Main");
+#endif
 
 	while (renderer_ && renderer_->isRunning()) {
+        ZoneScopedN("Frame");
 		auto now = Clock::now();
 		float dt = std::chrono::duration<float>(now - lastFrameTime_).count();
 		lastFrameTime_ = now;
 		if (dt > 0.1f) dt = 0.1f;
 
-		renderer_->pollEvents();
-        InputManager::getInstance().updateState();
+        {
+            ZoneScopedN("Input");
+            renderer_->pollEvents();
+            InputManager::getInstance().updateState();
+        }
 		update(dt);
 		render();
+        FrameMark;
 	}
 }
 
 void Application::update(float dt) {
+    ZoneScoped;
 	// Проверяем изменения файлов для горячей замены
 	if (HotReload::getInstance().update()) {
 		const auto& changedFiles = HotReload::getInstance().getChangedFiles();
@@ -87,6 +98,7 @@ void Application::update(float dt) {
 }
 
 void Application::render() {
+    ZoneScoped;
 	auto* current = stateManager_.current();
 
 	renderer_->beginFrame(0.1f, 0.1f, 0.2f);
@@ -95,7 +107,10 @@ void Application::render() {
 		current->render();
 	}
 	renderEditorGuiFrame();
-	renderer_->endFrame();
+    {
+        ZoneScopedN("Present");
+        renderer_->endFrame();
+    }
 }
 
 void Application::shutdown() {
@@ -160,6 +175,7 @@ void Application::beginEditorGuiFrame() {
 }
 
 void Application::renderEditorGuiFrame() {
+    ZoneScopedN("ImGui draw");
 	if (!editorGuiInitialized_) {
 		return;
 	}

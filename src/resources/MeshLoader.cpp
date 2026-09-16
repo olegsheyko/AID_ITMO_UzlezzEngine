@@ -1,4 +1,5 @@
 #include "MeshLoader.h"
+#include <tracy/Tracy.hpp>
 #include "render/IRenderAdapter.h"
 #include "core/Logger.h"
 
@@ -74,6 +75,7 @@ MeshData createProceduralCubeMesh() {
 }
 
 bool MeshLoader::load(const std::string& path, MeshData& meshData, IRenderAdapter* renderer) {
+    ZoneScopedN("Load mesh");
     LOG_INFO("Loading mesh from: " + path);
 
     if (path == "primitive:cube") {

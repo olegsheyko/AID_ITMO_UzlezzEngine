@@ -1,4 +1,5 @@
 #include "ShaderLoader.h"
+#include <tracy/Tracy.hpp>
 #include "render/IRenderAdapter.h"
 #include "core/Logger.h"
 
@@ -6,6 +7,7 @@
 #include <sstream>
 
 bool ShaderLoader::load(const std::string& vertexPath, const std::string& fragmentPath, ShaderData& shaderData, IRenderAdapter* renderer) {
+    ZoneScopedN("Load shader");
     shaderData.vertexPath = vertexPath;
     shaderData.fragmentPath = fragmentPath;
 

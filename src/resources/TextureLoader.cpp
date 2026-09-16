@@ -1,4 +1,5 @@
 #include "TextureLoader.h"
+#include <tracy/Tracy.hpp>
 #include "render/IRenderAdapter.h"
 #include "core/Logger.h"
 
@@ -263,6 +264,7 @@ bool loadDdsTexture(const std::string& path, TextureData& textureData) {
 }
 
 bool TextureLoader::load(const std::string& path, TextureData& textureData, IRenderAdapter* renderer) {
+    ZoneScopedN("Load texture");
     LOG_INFO("Loading texture from disk: " + path);
 
     FILE* testFile = std::fopen(path.c_str(), "rb");

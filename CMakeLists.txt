@@ -4,6 +4,34 @@ project(GameEngine VERSION 1.0 LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# --- Tracy (vendored client, no network or vcpkg required) ---
+option(ENGINE_ENABLE_TRACY "Enable Tracy in Release and RelWithDebInfo" ON)
+set(ENGINE_TRACY_SAMPLING_HZ "4000" CACHE STRING "Tracy sampling frequency in Hz")
+option(ENGINE_TRACY_MANUAL_SAMPLING "Start Tracy sampling explicitly from demo controls" OFF)
+option(ENGINE_TRACY_NO_SAMPLING "Disable Tracy stack sampling" OFF)
+if(NOT ENGINE_TRACY_SAMPLING_HZ MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "ENGINE_TRACY_SAMPLING_HZ must be a positive integer")
+endif()
+add_library(TracyHeaders INTERFACE)
+target_include_directories(TracyHeaders SYSTEM INTERFACE external/tracy/public)
+add_library(TracyClient STATIC external/tracy/public/TracyClient.cpp)
+add_library(Tracy::TracyClient ALIAS TracyClient)
+target_link_libraries(TracyClient PUBLIC TracyHeaders)
+find_package(Threads REQUIRED)
+target_link_libraries(TracyClient PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+if(WIN32)
+    target_link_libraries(TracyClient PRIVATE ws2_32 dbghelp secur32)
+endif()
+# PUBLIC keeps the client and all instrumented translation units consistent.
+set(ENGINE_TRACY_ACTIVE "$<AND:$<BOOL:${ENGINE_ENABLE_TRACY}>,$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>>")
+target_compile_definitions(TracyClient PUBLIC
+    "$<${ENGINE_TRACY_ACTIVE}:TRACY_ENABLE>"
+    "$<${ENGINE_TRACY_ACTIVE}:TRACY_ON_DEMAND>"
+    "$<${ENGINE_TRACY_ACTIVE}:TRACY_SAMPLING_HZ=${ENGINE_TRACY_SAMPLING_HZ}>"
+    "$<$<AND:${ENGINE_TRACY_ACTIVE},$<BOOL:${ENGINE_TRACY_MANUAL_SAMPLING}>>:TRACY_SAMPLING_PROFILER_MANUAL_START>"
+    "$<$<AND:${ENGINE_TRACY_ACTIVE},$<BOOL:${ENGINE_TRACY_NO_SAMPLING}>>:TRACY_NO_SAMPLING>"
+)
+
 # --- GLAD ---
 add_library(glad STATIC external/glad/src/glad.c)
 set_target_properties(glad PROPERTIES
@@ -47,6 +75,11 @@ target_include_directories(ImGuizmo PUBLIC
     external/imgui
 )
 target_link_libraries(ImGuizmo PUBLIC imgui)
+
+option(ENGINE_BUILD_TRACY_DEMOS "Build the five ImGui + D3D12 Tracy demos" ON)
+if(ENGINE_BUILD_TRACY_DEMOS AND WIN32)
+    add_subdirectory(demos/tracy)
+endif()
 
 # --- Assimp ---
 # Попытка найти Assimp через find_package (если установлен через vcpkg)
@@ -109,6 +142,12 @@ endif()
             VERBATIM
         )
         add_dependencies(${target} ${target}Runtime)
+        # MSBuild can remove stale outputs while relinking. Restore the runtime
+        # after linking as well as on builds where the executable is up to date.
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -P "${copy_script}"
+            VERBATIM
+        )
     endif()
 endfunction()
 
@@ -120,6 +159,7 @@ if(BUILD_TESTING)
         src/ecs/World.cpp
     )
     target_include_directories(PhysicsSystemTests PRIVATE src)
+    target_link_libraries(PhysicsSystemTests PRIVATE TracyHeaders)
     add_test(NAME PhysicsSystemTests COMMAND PhysicsSystemTests)
 
     add_executable(CoordinateSystemTests
@@ -132,6 +172,7 @@ if(BUILD_TESTING)
         src/resources/SceneManifest.cpp
     )
     target_include_directories(CoordinateSystemTests PRIVATE src external)
+    target_link_libraries(CoordinateSystemTests PRIVATE TracyHeaders)
     add_test(NAME CoordinateSystemTests COMMAND CoordinateSystemTests)
     set_tests_properties(CoordinateSystemTests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
@@ -183,6 +224,7 @@ target_link_libraries(GameEngine PRIVATE
     imgui
     ImGuizmo
     opengl32
+    Tracy::TracyClient
 )
 
 target_link_libraries(GameEngine PRIVATE ${ENGINE_ASSIMP_TARGET})
@@ -210,6 +252,7 @@ if(BUILD_TESTING)
     )
     target_include_directories(TextureResourceTests PRIVATE src external/stb_image)
     target_link_libraries(TextureResourceTests PRIVATE glad glfw opengl32)
+    target_link_libraries(TextureResourceTests PRIVATE TracyHeaders)
     target_link_libraries(TextureResourceTests PRIVATE ${ENGINE_ASSIMP_TARGET})
     deploy_assimp_runtime(TextureResourceTests)
     add_test(NAME TextureResourceTests COMMAND TextureResourceTests "${CMAKE_CURRENT_BINARY_DIR}/texture-test-fixtures")
