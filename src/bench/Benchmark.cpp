@@ -115,6 +115,7 @@ bool Benchmark::writeCsv(bool complete) const {
          << "# batch_ms=" << scenario_.elapsedMs() << "\n"
          << "# complete=" << (complete ? 1 : 0) << "\n"
          << "# exit_during_load=" << (config_.exitDuringLoad ? 1 : 0) << "\n"
+         << "# upload_budget_ms=" << ResourceManager::getInstance().uploadBudgetMs() << "\n"
          << "frame,phase,frame_ms,main_load_ms\n";
 
     char line[96];

@@ -4,6 +4,7 @@
 #include "core/Logger.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -314,7 +315,14 @@ bool TextureLoader::upload(TextureData& textureData, IRenderAdapter* renderer, c
     if (!debugName.empty()) {
         ZoneText(debugName.c_str(), debugName.size());
     }
+    const auto start = std::chrono::steady_clock::now();
     const bool uploaded = uploadToGPU(textureData, renderer);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    if (uploaded) {
+        char details[96];
+        std::snprintf(details, sizeof(details), " (%dx%d, %.2f ms)", textureData.width, textureData.height, ms);
+        LOG_INFO("Texture uploaded to GPU: ID=" + std::to_string(textureData.textureId) + details);
+    }
     // После заливки CPU-копия не нужна: 2K-текстура — это 16 МБ пикселей.
     std::free(textureData.pixels);
     textureData.pixels = nullptr;
@@ -332,10 +340,6 @@ bool TextureLoader::uploadToGPU(TextureData& textureData, IRenderAdapter* render
         textureData.channels,
         textureData.pixels,
         textureData.textureId);
-
-    if (uploaded) {
-        LOG_INFO("Texture uploaded to GPU: ID=" + std::to_string(textureData.textureId));
-    }
 
     return uploaded;
 }

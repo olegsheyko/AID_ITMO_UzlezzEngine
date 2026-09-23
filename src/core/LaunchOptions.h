@@ -7,11 +7,13 @@
 
 struct LaunchOptions {
     bool vsync = true;
+    // Бюджет пампа заливки на кадр, мс; отрицательное — оставить значение по умолчанию.
+    double uploadBudgetMs = -1.0;
     std::optional<Benchmark::Config> bench;
 };
 
 // Аргументы запуска: --no-vsync, --bench burst|stream, --bench-out <файл.csv>, --load-mode async|sync,
-// --exit-during-load.
+// --exit-during-load, --upload-budget-ms <мс>.
 // Режим --bench всегда выключает vsync — иначе время кадра прилипает к частоте экрана.
 bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::string& outError);
 

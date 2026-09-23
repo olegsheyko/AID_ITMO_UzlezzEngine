@@ -50,6 +50,10 @@ bool Application::init(int width, int height, const char* title, const LaunchOpt
 
 	// Инициализируем менеджер ресурсов
 	ResourceManager::getInstance().init(renderer_.get());
+	if (options.uploadBudgetMs >= 0.0) {
+		ResourceManager::getInstance().setUploadBudget(options.uploadBudgetMs);
+	}
+	LOG_INFO("Application: upload budget " + std::to_string(ResourceManager::getInstance().uploadBudgetMs()) + " ms per frame");
 	LOG_INFO("Application: ResourceManager initialized");
 
 	LOG_INFO("Application: HotReload initialized");

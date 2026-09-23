@@ -1,5 +1,7 @@
 #include "core/LaunchOptions.h"
 
+#include <cstdlib>
+
 bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::string& outError) {
     outOptions = LaunchOptions{};
     std::string benchOut;
@@ -29,6 +31,17 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
             loadMode = argv[++i];
             if (loadMode != "async" && loadMode != "sync") {
                 outError = "unknown load mode: " + loadMode;
+                return false;
+            }
+        } else if (arg == "--upload-budget-ms") {
+            if (i + 1 >= argc) {
+                outError = "--upload-budget-ms expects a number of milliseconds";
+                return false;
+            }
+            char* end = nullptr;
+            outOptions.uploadBudgetMs = std::strtod(argv[++i], &end);
+            if (end == argv[i] || *end != '\0' || outOptions.uploadBudgetMs < 0.0) {
+                outError = std::string("invalid upload budget: ") + argv[i];
                 return false;
             }
         } else if (arg == "--exit-during-load") {
@@ -61,5 +74,5 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
 }
 
 const char* launchUsage() {
-    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]]";
+    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--upload-budget-ms ms]";
 }

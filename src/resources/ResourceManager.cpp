@@ -30,11 +30,6 @@ private:
     double& accumulatorMs_;
     std::chrono::steady_clock::time_point start_;
 };
-
-std::size_t pixelBytes(const TextureData& texture) {
-    return static_cast<std::size_t>(texture.width) * static_cast<std::size_t>(texture.height) *
-        static_cast<std::size_t>(texture.channels);
-}
 }
 
 std::string ResourceManager::makeShaderKey(const std::string& vertexPath, const std::string& fragmentPath) {
@@ -167,22 +162,22 @@ std::shared_ptr<Resource<TextureData>> ResourceManager::loadTextureAsync(const s
 void ResourceManager::pumpUploads() {
     ZoneScopedN("Resource upload pump");
     const auto start = std::chrono::steady_clock::now();
+    const auto elapsedMs = [&start] {
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    };
     std::size_t uploads = 0;
-    std::size_t bytes = 0;
 
     while (uploads < maxUploadsPerFrame_) {
+        // Первая текстура проходит всегда, иначе дорогая застряла бы в очереди навсегда.
+        if (uploads > 0 && elapsedMs() >= maxUploadMsPerFrame_) {
+            break;
+        }
         std::shared_ptr<Resource<TextureData>> next;
         {
             std::lock_guard<std::mutex> lock(uploadMutex_);
             if (uploadQueue_.empty()) {
                 break;
             }
-            const std::size_t size = pixelBytes(*uploadQueue_.front()->getData());
-            // Бюджет кадра; первая текстура проходит всегда, иначе огромная застряла бы в очереди навсегда.
-            if (uploads > 0 && bytes + size > maxUploadBytesPerFrame_) {
-                break;
-            }
-            bytes += size;
             next = std::move(uploadQueue_.front());
             uploadQueue_.pop_front();
         }
@@ -194,14 +189,14 @@ void ResourceManager::pumpUploads() {
     }
 
     if (uploads > 0) {
-        addMainThreadLoadTime(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+        addMainThreadLoadTime(elapsedMs());
     }
     TracyPlot("Loads pending", static_cast<int64_t>(pendingLoads_.load(std::memory_order_relaxed)));
 }
 
-void ResourceManager::setUploadBudget(std::size_t maxUploads, std::size_t maxBytes) {
+void ResourceManager::setUploadBudget(double maxMs, std::size_t maxUploads) {
+    maxUploadMsPerFrame_ = std::max(0.0, maxMs);
     maxUploadsPerFrame_ = std::max<std::size_t>(1, maxUploads);
-    maxUploadBytesPerFrame_ = maxBytes;
 }
 
 void ResourceManager::beginShutdown() {

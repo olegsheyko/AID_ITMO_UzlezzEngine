@@ -54,8 +54,11 @@ public:
 
     // Раз в кадр с главного потока: залить на GPU то, что декодировали воркеры, в пределах бюджета кадра.
     void pumpUploads();
-    // Не больше maxUploads текстур и maxBytes байт за кадр; одна текстура за кадр проходит всегда.
-    void setUploadBudget(std::size_t maxUploads, std::size_t maxBytes);
+    // Бюджет пампа — время, а не байты: у каждой заливки есть постоянная цена, и четыре 1K-текстуры
+    // дороже одной 2K при тех же 16 МБ. Первая текстура за кадр проходит всегда, следующие —
+    // пока памп укладывается в maxMs; maxUploads — страховочный предел.
+    void setUploadBudget(double maxMs, std::size_t maxUploads = 8);
+    double uploadBudgetMs() const { return maxUploadMsPerFrame_; }
 
     // Перед остановкой job system: новые загрузки не принимать, начатые — свернуть.
     void beginShutdown();
@@ -107,8 +110,8 @@ private:
     // Декодированные воркерами текстуры, ждущие заливки на главном потоке.
     std::mutex uploadMutex_;
     std::deque<std::shared_ptr<Resource<TextureData>>> uploadQueue_;
-    std::size_t maxUploadsPerFrame_ = 4;
-    std::size_t maxUploadBytesPerFrame_ = 16u * 1024u * 1024u;
+    double maxUploadMsPerFrame_ = 4.0;
+    std::size_t maxUploadsPerFrame_ = 8;
 
     std::atomic<bool> shuttingDown_{false};
     std::atomic<int> pendingLoads_{0};
