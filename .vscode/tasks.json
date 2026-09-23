@@ -59,12 +59,28 @@
             "problemMatcher": []
         },
         {
+            "label": "Bench: run",
+            // Серия прогонов для замеров ЛР 1: оба сценария по 3 раза, в конце — таблица.
+            "type": "shell",
+            "command": "tools/run_bench.sh ${input:benchLabel} 3",
+            "problemMatcher": [],
+            "presentation": { "panel": "dedicated", "clear": true }
+        },
+        {
             "label": "Engine: tests",
             "type": "shell",
             "command": "cmake --build build/mac --target PhysicsSystemTests CoordinateSystemTests TextureResourceTests --parallel $(sysctl -n hw.ncpu) && ctest --test-dir build/mac --output-on-failure",
             "group": "test",
             "problemMatcher": { "base": "$gcc", "fileLocation": ["autoDetect", "${workspaceFolder}"] },
             "presentation": { "panel": "dedicated", "clear": true }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "benchLabel",
+            "type": "promptString",
+            "description": "Метка прогона: before — синхронная загрузка, after — через job system",
+            "default": "before"
         }
     ]
 }

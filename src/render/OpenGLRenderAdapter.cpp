@@ -80,6 +80,12 @@ bool OpenGLRenderAdapter::isRunning() const {
 	return window_ != nullptr && !glfwWindowShouldClose(window_);
 }
 
+void OpenGLRenderAdapter::setVSync(bool enabled) {
+	if (window_) {
+		glfwSwapInterval(enabled ? 1 : 0);
+	}
+}
+
 void OpenGLRenderAdapter::pollEvents() {
 	if (initialized_) {
 		glfwPollEvents();

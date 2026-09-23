@@ -18,6 +18,9 @@ class IRenderAdapter {
 	// Process platform events.
 	virtual void pollEvents() = 0;
 
+	// Enable or disable waiting for the display refresh on present.
+	virtual void setVSync(bool enabled) = 0;
+
 	// Clear the framebuffer and prepare for drawing.
 	virtual void beginFrame(float r, float g, float b) = 0;
 	virtual void beginViewportFrame(int width, int height, float r, float g, float b) = 0;

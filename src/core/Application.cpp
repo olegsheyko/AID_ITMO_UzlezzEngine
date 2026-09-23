@@ -15,7 +15,7 @@
 #include <backends/imgui_impl_opengl3.h>
 #include <tracy/Tracy.hpp>
 
-bool Application::init(int width, int height, const char* title) {
+bool Application::init(int width, int height, const char* title, const LaunchOptions& options) {
     ZoneScoped;
 	LOG_INFO("Application: Initializing application");
 	renderer_ = std::make_unique<OpenGLRenderAdapter>();
@@ -23,6 +23,13 @@ bool Application::init(int width, int height, const char* title) {
 	if (!renderer_->init(width, height, title)) {
 		LOG_ERROR("Application: Failed to initialize renderer");
 		return false;
+	}
+
+	renderer_->setVSync(options.vsync);
+	LOG_INFO(std::string("Application: vsync ") + (options.vsync ? "on" : "off"));
+	if (options.bench) {
+		benchmark_ = std::make_unique<Benchmark>(*options.bench);
+		LOG_INFO(std::string("Application: benchmark mode, scenario ") + LoadScenario::modeName(options.bench->mode));
 	}
 
     if (auto* openGlRenderer = dynamic_cast<OpenGLRenderAdapter*>(renderer_.get())) {
@@ -56,9 +63,18 @@ void Application::run() {
 	while (renderer_ && renderer_->isRunning()) {
         ZoneScopedN("Frame");
 		auto now = Clock::now();
-		float dt = std::chrono::duration<float>(now - lastFrameTime_).count();
+		const double frameMs = std::chrono::duration<double, std::milli>(now - lastFrameTime_).count();
 		lastFrameTime_ = now;
+		// Ограничение нужно симуляции; бенчмарк получает честное время кадра до него.
+		float dt = static_cast<float>(frameMs / 1000.0);
 		if (dt > 0.1f) dt = 0.1f;
+
+		if (benchmark_) {
+			benchmark_->beginFrame(frameMs);
+			if (benchmark_->isFinished()) {
+				break;
+			}
+		}
 
         {
             ZoneScopedN("Input");
@@ -89,6 +105,9 @@ void Application::update(float dt) {
 	if (auto* loading = dynamic_cast<LoadingState*>(current)) {
 		if (loading->isFinished()) {
 			stateManager_.change(std::make_unique<EditorState>(*renderer_));
+			if (benchmark_) {
+				benchmark_->onSceneReady();
+			}
 		}
 	} else if (auto* menu = dynamic_cast<MenuState*>(current)) {
 		if (menu->shouldStartGame()) {

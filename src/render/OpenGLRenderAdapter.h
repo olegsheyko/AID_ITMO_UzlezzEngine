@@ -11,6 +11,7 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual bool init(int width, int height, const std::string& title) override;
 	virtual bool isRunning() const override;
 	virtual void pollEvents() override;
+	virtual void setVSync(bool enabled) override;
 	virtual void beginFrame(float r, float g, float b) override;
 	virtual void beginViewportFrame(int width, int height, float r, float g, float b) override;
 	virtual void endViewportFrame() override;

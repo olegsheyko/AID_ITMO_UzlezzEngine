@@ -198,6 +198,9 @@ endif()
 add_executable(GameEngine
     src/main.cpp
     src/core/Application.cpp
+    src/core/LaunchOptions.cpp
+    src/bench/Benchmark.cpp
+    src/bench/LoadScenario.cpp
     src/ecs/CameraSystem.cpp
     src/ecs/DebugRenderSystem.cpp
     src/ecs/PhysicsSystem.cpp

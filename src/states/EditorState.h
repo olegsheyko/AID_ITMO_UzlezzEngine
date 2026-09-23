@@ -10,6 +10,7 @@
 #include "ecs/SpinSystem.h"
 #include "ecs/World.h"
 #include "states/IGameState.h"
+#include "bench/LoadScenario.h"
 
 #include <array>
 #include <string>
@@ -138,4 +139,5 @@ private:
     float fpsAccumulator_ = 0.0f;
     int fpsFrames_ = 0;
     SceneSnapshot playSnapshot_;
+    LoadScenario heavyLoad_;
 };

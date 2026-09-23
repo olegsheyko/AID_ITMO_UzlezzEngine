@@ -283,6 +283,8 @@ void EditorState::update(float dt) {
         }
     }
 
+    heavyLoad_.update();
+
     const ImGuiIO& io = ImGui::GetIO();
     const bool allowGameInput = viewportInputActive_ && !io.WantTextInput;
 
@@ -1141,6 +1143,28 @@ void EditorState::renderStatisticsPanel() {
     ImGui::Text("Textures: %zu", resources.getTextureCount());
     ImGui::Text("Shaders: %zu", resources.getShaderCount());
     ImGui::Text("Resource memory: %s", formatBytes(resources.estimateMemoryUsageBytes()).c_str());
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Heavy load (lab 1)");
+    ImGui::BeginDisabled(heavyLoad_.isRunning());
+    if (ImGui::Button("Burst")) {
+        heavyLoad_.start(LoadScenario::Mode::Burst);
+    }
+    ImGui::SetItemTooltip("Request every image in assets/models in one frame.\nRepeat runs hit the cache.");
+    ImGui::SameLine();
+    if (ImGui::Button("Stream")) {
+        heavyLoad_.start(LoadScenario::Mode::Stream);
+    }
+    ImGui::SetItemTooltip("Request one image every 100 ms, at most one per frame.\nRepeat runs hit the cache.");
+    ImGui::EndDisabled();
+    if (heavyLoad_.totalCount() > 0) {
+        ImGui::Text("%s: %zu/%zu requested, %.1f ms%s",
+            LoadScenario::modeName(heavyLoad_.mode()),
+            heavyLoad_.requestedCount(),
+            heavyLoad_.totalCount(),
+            heavyLoad_.elapsedMs(),
+            heavyLoad_.isRunning() ? "" : ", done");
+    }
     ImGui::End();
 }
 
