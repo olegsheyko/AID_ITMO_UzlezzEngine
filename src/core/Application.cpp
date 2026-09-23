@@ -8,6 +8,7 @@
 #include "states/GameplayState.h"
 #include "resources/ResourceManager.h"
 #include "resources/HotReload.h"
+#include "jobs/JobSystem.h"
 
 #include <imgui.h>
 #include <ImGuizmo.h>
@@ -38,6 +39,12 @@ bool Application::init(int width, int height, const char* title, const LaunchOpt
 
 	if (!initEditorGui()) {
 		LOG_ERROR("Application: Failed to initialize editor GUI");
+		return false;
+	}
+
+	// Job system — раньше ресурсов: загрузка ставит в неё задачи.
+	if (!JobSystem::getInstance().init()) {
+		LOG_ERROR("Application: Failed to start job system");
 		return false;
 	}
 
@@ -89,6 +96,8 @@ void Application::run() {
 
 void Application::update(float dt) {
     ZoneScoped;
+	JobSystem::getInstance().collectCompleted();
+
 	// Проверяем изменения файлов для горячей замены
 	if (HotReload::getInstance().update()) {
 		const auto& changedFiles = HotReload::getInstance().getChangedFiles();
@@ -134,6 +143,9 @@ void Application::render() {
 
 void Application::shutdown() {
 	LOG_INFO("Application: shutting down");
+
+	// Первыми останавливаем задачи: они не должны пережить кэш ресурсов и GL-контекст.
+	JobSystem::getInstance().shutdown();
 
 	// Очищаем кэш ресурсов
 	ResourceManager::getInstance().clearCache();

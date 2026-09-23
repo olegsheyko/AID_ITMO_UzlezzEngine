@@ -4,6 +4,7 @@
 #include <string>
 #include <chrono>
 #include <ctime>
+#include <mutex>
 
 #define LOG_INFO(msg) Logger::getInstance().log(Logger::Level::INFO, msg)
 #define LOG_WARN(msg) Logger::getInstance().log(Logger::Level::WARN, msg)
@@ -29,6 +30,8 @@ public:
             case Level::WARN: prefix = "[WARN]"; break;
             case Level::ERROR: prefix = "[ERROR]"; break;
         }
+        // Пишут и главный поток, и воркеры job system; localtime тоже не потокобезопасен.
+        std::lock_guard<std::mutex> lock(mutex_);
         std::string entry = getTimeStamp()+ " " + prefix + " " + msg;
         std::cout << entry << "\n";
         if (logFile_.is_open())
@@ -37,10 +40,12 @@ public:
     
     void openFile(const std::string& path)
     {
+        std::lock_guard<std::mutex> lock(mutex_);
         logFile_.open(path, std::ios::app);
     }
 private:
     Logger() = default;
+    std::mutex mutex_;
     std::ofstream logFile_;
     std::string getTimeStamp()
     {

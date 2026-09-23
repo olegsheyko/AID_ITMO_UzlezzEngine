@@ -32,6 +32,11 @@ target_compile_definitions(TracyClient PUBLIC
     "$<$<AND:${ENGINE_TRACY_ACTIVE},$<BOOL:${ENGINE_TRACY_NO_SAMPLING}>>:TRACY_NO_SAMPLING>"
 )
 
+# --- enkiTS (job system, vendored v1.12) ---
+add_library(enkiTS STATIC external/enkiTS/TaskScheduler.cpp)
+target_include_directories(enkiTS SYSTEM PUBLIC external)
+target_link_libraries(enkiTS PUBLIC Threads::Threads)
+
 # --- GLAD ---
 add_library(glad STATIC external/glad/src/glad.c)
 set_target_properties(glad PROPERTIES
@@ -179,6 +184,14 @@ if(BUILD_TESTING)
     target_link_libraries(PhysicsSystemTests PRIVATE TracyHeaders)
     add_test(NAME PhysicsSystemTests COMMAND PhysicsSystemTests)
 
+    add_executable(JobSystemTests
+        tests/JobSystemTests.cpp
+        src/jobs/JobSystem.cpp
+    )
+    target_include_directories(JobSystemTests PRIVATE src)
+    target_link_libraries(JobSystemTests PRIVATE enkiTS TracyHeaders)
+    add_test(NAME JobSystemTests COMMAND JobSystemTests)
+
     add_executable(CoordinateSystemTests
         tests/CoordinateSystemTests.cpp
         src/editor/EditorCamera.cpp
@@ -201,6 +214,7 @@ add_executable(GameEngine
     src/core/LaunchOptions.cpp
     src/bench/Benchmark.cpp
     src/bench/LoadScenario.cpp
+    src/jobs/JobSystem.cpp
     src/ecs/CameraSystem.cpp
     src/ecs/DebugRenderSystem.cpp
     src/ecs/PhysicsSystem.cpp
@@ -248,6 +262,7 @@ target_link_libraries(GameEngine PRIVATE
     ImGuizmo
     ${ENGINE_OPENGL_LIB}
     Tracy::TracyClient
+    enkiTS
 )
 
 target_link_libraries(GameEngine PRIVATE ${ENGINE_ASSIMP_TARGET})

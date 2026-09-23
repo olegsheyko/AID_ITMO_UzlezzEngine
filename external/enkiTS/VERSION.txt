@@ -1,0 +1,2 @@
+enkiTS v1.12 — https://github.com/dougbinks/enkiTS/tree/v1.12
+Files copied unmodified from src/ plus License.txt (zlib).
