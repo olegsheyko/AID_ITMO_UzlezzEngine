@@ -42,11 +42,24 @@ set_target_properties(glad PROPERTIES
 target_include_directories(glad PUBLIC external/glad/include)
 
 # --- GLFW ---
-add_library(glfw STATIC IMPORTED)
-set_target_properties(glfw PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/lib-vc2022/glfw3.lib"
-    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/include"
-)
+if(WIN32)
+    add_library(glfw STATIC IMPORTED)
+    set_target_properties(glfw PROPERTIES
+        IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/lib-vc2022/glfw3.lib"
+        INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/include"
+    )
+else()
+    # macOS / Linux: системный GLFW (brew install glfw), экспортирует target `glfw`
+    find_package(glfw3 3.3 REQUIRED)
+endif()
+
+# --- OpenGL ---
+if(WIN32)
+    set(ENGINE_OPENGL_LIB opengl32)
+else()
+    find_package(OpenGL REQUIRED)
+    set(ENGINE_OPENGL_LIB OpenGL::GL)
+endif()
 
 # --- Dear ImGui ---
 add_library(imgui STATIC
@@ -62,8 +75,12 @@ target_include_directories(imgui PUBLIC
     external/imgui
     external/imgui/backends
     external/glad/include
-    external/glfw/include
 )
+if(WIN32)
+    target_include_directories(imgui PUBLIC external/glfw/include)
+else()
+    target_link_libraries(imgui PUBLIC glfw)
+endif()
 target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLAD)
 
 # --- ImGuizmo ---
@@ -210,7 +227,6 @@ add_executable(GameEngine
 target_include_directories(GameEngine PRIVATE
     external
     external/glad/include
-    external/glfw/include
     external/imgui
     external/imgui/backends
     external/ImGuizmo
@@ -218,12 +234,16 @@ target_include_directories(GameEngine PRIVATE
     src
 )
 
+if(WIN32)
+    target_include_directories(GameEngine PRIVATE external/glfw/include)
+endif()
+
 target_link_libraries(GameEngine PRIVATE
     glad
     glfw
     imgui
     ImGuizmo
-    opengl32
+    ${ENGINE_OPENGL_LIB}
     Tracy::TracyClient
 )
 
@@ -251,7 +271,7 @@ if(BUILD_TESTING)
         src/resources/stb_image_impl.cpp
     )
     target_include_directories(TextureResourceTests PRIVATE src external/stb_image)
-    target_link_libraries(TextureResourceTests PRIVATE glad glfw opengl32)
+    target_link_libraries(TextureResourceTests PRIVATE glad glfw ${ENGINE_OPENGL_LIB})
     target_link_libraries(TextureResourceTests PRIVATE TracyHeaders)
     target_link_libraries(TextureResourceTests PRIVATE ${ENGINE_ASSIMP_TARGET})
     deploy_assimp_runtime(TextureResourceTests)

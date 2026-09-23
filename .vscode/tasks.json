@@ -1,0 +1,70 @@
+{
+    // Задачи для macOS: сборка, запуск движка, профайлер Tracy, тесты.
+    //   Cmd+Shift+B                          — собрать движок (Release)
+    //   Cmd+Shift+P → «Tasks: Run Task»      — выбрать любую задачу ниже
+    //
+    // Профайлер должен совпадать с клиентом Tracy 0.14.1 из external/tracy.
+    // Если его нет на машине, собрать один раз (~5 минут):
+    //   git clone --depth 1 --branch v0.14.1 https://github.com/wolfpld/tracy.git ~/tools/tracy-0.14.1
+    //   cmake -S ~/tools/tracy-0.14.1/profiler -B ~/tools/tracy-0.14.1/profiler/build -DCMAKE_BUILD_TYPE=Release
+    //   cmake --build ~/tools/tracy-0.14.1/profiler/build -j
+    "version": "2.0.0",
+    "options": {
+        "env": {
+            // VS Code, запущенный из Dock, может не видеть brew в PATH.
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:${env:PATH}"
+        }
+    },
+    "tasks": [
+        {
+            "label": "Engine: build (Release)",
+            "type": "shell",
+            // Конфигурирует build/mac только при первом запуске, дальше CMake сам следит за CMakeLists.txt.
+            "command": "[ -f build/mac/CMakeCache.txt ] || cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release && cmake --build build/mac --target GameEngine CopyAssets --parallel $(sysctl -n hw.ncpu)",
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": { "base": "$gcc", "fileLocation": ["autoDetect", "${workspaceFolder}"] },
+            "presentation": { "panel": "dedicated", "clear": true }
+        },
+        {
+            "label": "Engine: run",
+            "type": "shell",
+            "command": "./GameEngine",
+            "options": { "cwd": "${workspaceFolder}/build/mac" },
+            "dependsOn": "Engine: build (Release)",
+            "problemMatcher": [],
+            "presentation": { "panel": "dedicated", "clear": true }
+        },
+        {
+            "label": "Tracy: connect",
+            "type": "shell",
+            // Ждёт движок и подключается к нему сам: переподключение раз в 10 мс.
+            "command": "${userHome}/tools/tracy-0.14.1/profiler/build/tracy-profiler",
+            "args": ["-a", "127.0.0.1"],
+            "problemMatcher": [],
+            "presentation": { "panel": "dedicated", "reveal": "silent" }
+        },
+        {
+            "label": "Tracy: open profiler",
+            "type": "shell",
+            // Стартовый экран Tracy: подключиться вручную или открыть сохранённый .tracy.
+            "command": "${userHome}/tools/tracy-0.14.1/profiler/build/tracy-profiler",
+            "problemMatcher": [],
+            "presentation": { "panel": "dedicated", "reveal": "silent" }
+        },
+        {
+            "label": "Engine + Tracy",
+            // Профайлер стартует сразу и ждёт, движок — после сборки. Трейс захватит и запуск.
+            "dependsOn": ["Tracy: connect", "Engine: run"],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
+        },
+        {
+            "label": "Engine: tests",
+            "type": "shell",
+            "command": "cmake --build build/mac --target PhysicsSystemTests CoordinateSystemTests TextureResourceTests --parallel $(sysctl -n hw.ncpu) && ctest --test-dir build/mac --output-on-failure",
+            "group": "test",
+            "problemMatcher": { "base": "$gcc", "fileLocation": ["autoDetect", "${workspaceFolder}"] },
+            "presentation": { "panel": "dedicated", "clear": true }
+        }
+    ]
+}
