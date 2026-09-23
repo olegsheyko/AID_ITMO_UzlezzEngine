@@ -229,6 +229,7 @@ Vec3 scaleVec3(const Vec3& value, float scalar) {
 
 EditorState::EditorState(IRenderAdapter& renderer)
     : renderer_(renderer),
+      stress_(renderer),
       physicsSystem_(),
       renderSystem_(renderer),
       debugRenderSystem_(renderer) {
@@ -284,6 +285,7 @@ void EditorState::update(float dt) {
     }
 
     heavyLoad_.update();
+    stress_.onFrame(dt * 1000.0);
 
     const ImGuiIO& io = ImGui::GetIO();
     const bool allowGameInput = viewportInputActive_ && !io.WantTextInput;
@@ -1147,7 +1149,7 @@ void EditorState::renderStatisticsPanel() {
 
     ImGui::Separator();
     ImGui::TextUnformatted("Heavy load (lab 1)");
-    ImGui::BeginDisabled(heavyLoad_.isRunning());
+    ImGui::BeginDisabled(heavyLoad_.isRunning() || stress_.isRunning());
     ImGui::Checkbox("Async (job system)", &heavyLoadAsync_);
     ImGui::SetItemTooltip("On: decode on job workers, upload to GPU a few textures per frame.\n"
         "Off: the old synchronous path on the main thread, for comparison.");
@@ -1173,6 +1175,31 @@ void EditorState::renderStatisticsPanel() {
             ImGui::TextDisabled("%zu taken from cache: still held elsewhere, e.g. by the texture picker",
                 heavyLoad_.fromCacheCount());
         }
+    }
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Stress (lab 1)");
+    bool stressOn = stress_.isRunning();
+    ImGui::BeginDisabled(heavyLoad_.isRunning() && !stressOn);
+    if (ImGui::Checkbox("Load and unload in a loop", &stressOn)) {
+        if (stressOn) {
+            stress_.start();
+        } else {
+            stress_.stop();
+        }
+    }
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Burst and stream in turn, through the job system.\n"
+        "Memory and live GPU textures at cycle start must stay flat.");
+    const StressStats& stress = stress_.stats();
+    if (stress_.isRunning() || stress.cycles > 0) {
+        ImGui::Text("Cycles: %zu, failed textures: %zu, from cache: %zu",
+            stress.cycles, stress.failedTextures, stress.fromCache);
+        ImGui::Text("Frames over 33 ms: %zu, worst: %.1f ms", stress.hitches, stress.worstFrameMs);
+        ImGui::Text("Memory: %s now, %s at first cycle start",
+            formatBytes(static_cast<std::size_t>(stress.footprintNow)).c_str(),
+            formatBytes(stress.cycleStartFootprint.empty() ? 0 : static_cast<std::size_t>(stress.cycleStartFootprint.front())).c_str());
+        ImGui::Text("Live GPU textures at cycle start: %zu", stress.cycleStartTextures.empty() ? 0 : stress.cycleStartTextures.back());
     }
     ImGui::End();
 }

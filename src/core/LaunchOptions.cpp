@@ -7,6 +7,7 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
     std::string benchOut;
     std::string loadMode;
     bool exitDuringLoad = false;
+    std::string stressOut;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -44,6 +45,25 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
                 outError = std::string("invalid upload budget: ") + argv[i];
                 return false;
             }
+        } else if (arg == "--stress-seconds") {
+            if (i + 1 >= argc) {
+                outError = "--stress-seconds expects a duration in seconds";
+                return false;
+            }
+            char* end = nullptr;
+            StressConfig config;
+            config.durationSeconds = std::strtod(argv[++i], &end);
+            if (end == argv[i] || *end != '\0' || config.durationSeconds <= 0.0) {
+                outError = std::string("invalid stress duration: ") + argv[i];
+                return false;
+            }
+            outOptions.stress = config;
+        } else if (arg == "--stress-out") {
+            if (i + 1 >= argc) {
+                outError = "--stress-out expects a file path";
+                return false;
+            }
+            stressOut = argv[++i];
         } else if (arg == "--exit-during-load") {
             exitDuringLoad = true;
         } else if (arg == "--bench-out") {
@@ -62,6 +82,17 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
         outError = "--bench-out, --load-mode and --exit-during-load require --bench";
         return false;
     }
+    if (outOptions.bench && outOptions.stress) {
+        outError = "--bench and --stress-seconds cannot be combined";
+        return false;
+    }
+    if (!stressOut.empty() && !outOptions.stress) {
+        outError = "--stress-out requires --stress-seconds";
+        return false;
+    }
+    if (outOptions.stress) {
+        outOptions.stress->summaryPath = stressOut;
+    }
     if (outOptions.bench) {
         outOptions.vsync = false;
         outOptions.bench->asyncLoading = loadMode != "sync";
@@ -74,5 +105,5 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
 }
 
 const char* launchUsage() {
-    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--upload-budget-ms ms]";
+    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms]";
 }

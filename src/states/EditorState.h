@@ -11,6 +11,7 @@
 #include "ecs/World.h"
 #include "states/IGameState.h"
 #include "bench/LoadScenario.h"
+#include "bench/StressRun.h"
 
 #include <array>
 #include <string>
@@ -141,4 +142,5 @@ private:
     SceneSnapshot playSnapshot_;
     LoadScenario heavyLoad_;
     bool heavyLoadAsync_ = true;
+    StressRun stress_;
 };

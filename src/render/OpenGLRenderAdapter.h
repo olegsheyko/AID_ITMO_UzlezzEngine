@@ -57,6 +57,7 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual void destroyMesh(unsigned int& vao, unsigned int& vbo, unsigned int& ebo) override;
 	virtual void destroyTexture(unsigned int& textureId) override;
 	virtual void destroyShaderProgram(unsigned int& programId) override;
+	virtual std::size_t liveTextureCount() const override { return liveTextures_; }
 	virtual void useShaderProgram(unsigned int programId) override;
 	virtual void setMatrix4(unsigned int programId, const char* name, const Mat4& value) override;
 	virtual void setInt(unsigned int programId, const char* name, int value) override;
@@ -87,6 +88,7 @@ private:
 	bool compileShader(GLenum type, const std::string& source, GLuint& shaderId, std::string& outError) const;
 
 	GLFWwindow* window_ = nullptr;
+	std::size_t liveTextures_ = 0;
 	bool initialized_ = false;
 	ShaderProgram shader_;
 	PrimitiveMesh lineMesh_;

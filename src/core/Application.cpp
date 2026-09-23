@@ -28,6 +28,10 @@ bool Application::init(int width, int height, const char* title, const LaunchOpt
 
 	renderer_->setVSync(options.vsync);
 	LOG_INFO(std::string("Application: vsync ") + (options.vsync ? "on" : "off"));
+	if (options.stress) {
+		stress_ = std::make_unique<StressRun>(*renderer_, *options.stress);
+		LOG_INFO("Application: stress mode for " + std::to_string(options.stress->durationSeconds) + " s");
+	}
 	if (options.bench) {
 		benchmark_ = std::make_unique<Benchmark>(*options.bench);
 		LOG_INFO(std::string("Application: benchmark mode, scenario ") + LoadScenario::modeName(options.bench->mode));
@@ -86,6 +90,12 @@ void Application::run() {
 				break;
 			}
 		}
+		if (stress_) {
+			stress_->onFrame(frameMs);
+			if (stress_->isFinished()) {
+				break;
+			}
+		}
 
         {
             ZoneScopedN("Input");
@@ -122,6 +132,9 @@ void Application::update(float dt) {
 			stateManager_.change(std::make_unique<EditorState>(*renderer_));
 			if (benchmark_) {
 				benchmark_->onSceneReady();
+			}
+			if (stress_) {
+				stress_->start();
 			}
 		}
 	} else if (auto* menu = dynamic_cast<MenuState*>(current)) {

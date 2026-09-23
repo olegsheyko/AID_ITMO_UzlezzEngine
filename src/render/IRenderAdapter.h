@@ -78,6 +78,9 @@ class IRenderAdapter {
 	virtual void destroyTexture(unsigned int& textureId) = 0;
 	virtual void destroyShaderProgram(unsigned int& programId) = 0;
 
+	// Текстуры, созданные createTexture и ещё не удалённые, — датчик утечки GPU-памяти для стресс-теста.
+	virtual std::size_t liveTextureCount() const = 0;
+
 	// Bind mesh rendering state.
 	virtual void useShaderProgram(unsigned int programId) = 0;
 	virtual void setMatrix4(unsigned int programId, const char* name, const Mat4& value) = 0;

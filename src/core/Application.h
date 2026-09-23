@@ -24,6 +24,7 @@ private:
     StateManager stateManager_;
     bool editorGuiInitialized_ = false;
     std::unique_ptr<Benchmark> benchmark_;
+    std::unique_ptr<StressRun> stress_;
 
     using Clock = std::chrono::high_resolution_clock;
     std::chrono::time_point<Clock> lastFrameTime_;

@@ -334,6 +334,7 @@ bool OpenGLRenderAdapter::createTexture(
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
+	++liveTextures_;
 	return true;
 }
 
@@ -396,6 +397,9 @@ void OpenGLRenderAdapter::destroyTexture(unsigned int& textureId) {
 	if (textureId != 0) {
 		glDeleteTextures(1, &textureId);
 		textureId = 0;
+		if (liveTextures_ > 0) {
+			--liveTextures_;
+		}
 	}
 }
 

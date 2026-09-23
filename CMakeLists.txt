@@ -214,6 +214,8 @@ add_executable(GameEngine
     src/core/LaunchOptions.cpp
     src/bench/Benchmark.cpp
     src/bench/LoadScenario.cpp
+    src/bench/StressRun.cpp
+    src/core/ProcessStats.cpp
     src/jobs/JobSystem.cpp
     src/ecs/CameraSystem.cpp
     src/ecs/DebugRenderSystem.cpp
