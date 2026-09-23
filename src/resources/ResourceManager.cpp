@@ -5,11 +5,37 @@
 #include "core/Logger.h"
 #include "render/IRenderAdapter.h"
 
+#include <tracy/Tracy.hpp>
+
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <utility>
 #include <vector>
+
+namespace {
+// Меряет, сколько главный поток провёл в загрузке — для колонки main_load_ms бенчмарка.
+class MainThreadLoadTimer {
+public:
+    explicit MainThreadLoadTimer(double& accumulatorMs)
+        : accumulatorMs_(accumulatorMs), start_(std::chrono::steady_clock::now()) {
+    }
+    ~MainThreadLoadTimer() {
+        accumulatorMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start_).count();
+    }
+
+private:
+    double& accumulatorMs_;
+    std::chrono::steady_clock::time_point start_;
+};
+
+std::size_t pixelBytes(const TextureData& texture) {
+    return static_cast<std::size_t>(texture.width) * static_cast<std::size_t>(texture.height) *
+        static_cast<std::size_t>(texture.channels);
+}
+}
 
 std::string ResourceManager::makeShaderKey(const std::string& vertexPath, const std::string& fragmentPath) {
     return vertexPath + "|" + fragmentPath;
@@ -22,6 +48,7 @@ ResourceManager& ResourceManager::getInstance() {
 
 void ResourceManager::init(IRenderAdapter* renderer) {
     renderer_ = renderer;
+    shuttingDown_.store(false, std::memory_order_release);
     LOG_INFO("ResourceManager initialized");
 }
 
@@ -34,6 +61,7 @@ std::shared_ptr<Resource<MeshData>> ResourceManager::loadMesh(const std::string&
     }
 
     // Загружаем новый меш
+    MainThreadLoadTimer timer(mainThreadLoadMs_);
     auto resource = std::make_shared<Resource<MeshData>>(path);
     if (MeshLoader::load(path, *resource->getData(), renderer_)) {
         // Resolve material textures once, not during every draw of every submesh.
@@ -56,10 +84,16 @@ std::shared_ptr<Resource<MeshData>> ResourceManager::loadMesh(const std::string&
 std::shared_ptr<Resource<TextureData>> ResourceManager::loadTexture(const std::string& path) {
     auto it = textureCache_.find(path);
     if (it != textureCache_.end()) {
+        // Провалившаяся асинхронная загрузка остаётся в кэше как Failed; синхронный контракт — nullptr.
+        // Ещё идущая асинхронная возвращается как есть: вызывающий видит её состояние.
+        if (it->second->isFailed()) {
+            return nullptr;
+        }
         LOG_INFO("Texture loaded from cache: " + path);
         return it->second;
     }
 
+    MainThreadLoadTimer timer(mainThreadLoadMs_);
     auto resource = std::make_shared<Resource<TextureData>>(path);
     if (TextureLoader::load(path, *resource->getData(), renderer_)) {
         resource->setLoaded(true);
@@ -81,6 +115,7 @@ std::shared_ptr<Resource<ShaderData>> ResourceManager::loadShader(const std::str
         return it->second;
     }
 
+    MainThreadLoadTimer timer(mainThreadLoadMs_);
     auto resource = std::make_shared<Resource<ShaderData>>(key);
     if (ShaderLoader::load(vertexPath, fragmentPath, *resource->getData(), renderer_)) {
         resource->setLoaded(true);
@@ -93,7 +128,149 @@ std::shared_ptr<Resource<ShaderData>> ResourceManager::loadShader(const std::str
     return nullptr;
 }
 
+std::shared_ptr<Resource<TextureData>> ResourceManager::loadTextureAsync(const std::string& path, JobPriority priority) {
+    auto it = textureCache_.find(path);
+    if (it != textureCache_.end()) {
+        // Готова, грузится или провалилась — вызывающий решает по состоянию хэндла.
+        return it->second;
+    }
+    if (shuttingDown_.load(std::memory_order_acquire)) {
+        return nullptr;
+    }
+
+    // В кэш кладём сразу: повторный запрос той же текстуры получит этот же хэндл, а не вторую загрузку.
+    // Воркеры в кэш не лезут никогда — он только для главного потока.
+    auto resource = std::make_shared<Resource<TextureData>>(path);
+    textureCache_[path] = resource;
+    pendingLoads_.fetch_add(1, std::memory_order_relaxed);
+
+    JobSystem::getInstance().submit([this, resource] {
+        if (shuttingDown_.load(std::memory_order_acquire)) {
+            resource->setState(ResourceState::Failed);
+            pendingLoads_.fetch_sub(1, std::memory_order_relaxed);
+            return;
+        }
+        resource->setState(ResourceState::Decoding);
+        if (!TextureLoader::decode(resource->getPath(), *resource->getData())) {
+            LOG_ERROR("Failed to load texture: " + resource->getPath());
+            resource->setState(ResourceState::Failed);
+            pendingLoads_.fetch_sub(1, std::memory_order_relaxed);
+            return;
+        }
+        resource->setState(ResourceState::ReadyForUpload);
+        std::lock_guard<std::mutex> lock(uploadMutex_);
+        uploadQueue_.push_back(resource);
+    }, priority);
+    return resource;
+}
+
+void ResourceManager::pumpUploads() {
+    ZoneScopedN("Resource upload pump");
+    const auto start = std::chrono::steady_clock::now();
+    std::size_t uploads = 0;
+    std::size_t bytes = 0;
+
+    while (uploads < maxUploadsPerFrame_) {
+        std::shared_ptr<Resource<TextureData>> next;
+        {
+            std::lock_guard<std::mutex> lock(uploadMutex_);
+            if (uploadQueue_.empty()) {
+                break;
+            }
+            const std::size_t size = pixelBytes(*uploadQueue_.front()->getData());
+            // Бюджет кадра; первая текстура проходит всегда, иначе огромная застряла бы в очереди навсегда.
+            if (uploads > 0 && bytes + size > maxUploadBytesPerFrame_) {
+                break;
+            }
+            bytes += size;
+            next = std::move(uploadQueue_.front());
+            uploadQueue_.pop_front();
+        }
+
+        const bool uploaded = TextureLoader::upload(*next->getData(), renderer_, next->getPath());
+        next->setState(uploaded ? ResourceState::Ready : ResourceState::Failed);
+        pendingLoads_.fetch_sub(1, std::memory_order_relaxed);
+        ++uploads;
+    }
+
+    if (uploads > 0) {
+        addMainThreadLoadTime(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    }
+    TracyPlot("Loads pending", static_cast<int64_t>(pendingLoads_.load(std::memory_order_relaxed)));
+}
+
+void ResourceManager::setUploadBudget(std::size_t maxUploads, std::size_t maxBytes) {
+    maxUploadsPerFrame_ = std::max<std::size_t>(1, maxUploads);
+    maxUploadBytesPerFrame_ = maxBytes;
+}
+
+void ResourceManager::beginShutdown() {
+    shuttingDown_.store(true, std::memory_order_release);
+    LOG_INFO("ResourceManager: shutting down, " + std::to_string(pendingLoadCount()) + " loads pending");
+}
+
+bool ResourceManager::releaseTexture(const std::string& path) {
+    auto it = textureCache_.find(path);
+    if (it == textureCache_.end()) {
+        return false;
+    }
+    // Грузится — держат задача и очередь; держит кто-то кроме кэша — ещё нужна. В обоих случаях не трогаем.
+    if (it->second->isPending() || it->second.use_count() > 1) {
+        return false;
+    }
+    if (renderer_ != nullptr && it->second->isLoaded()) {
+        renderer_->destroyTexture(it->second->getData()->textureId);
+    }
+    textureCache_.erase(it);
+    return true;
+}
+
+unsigned int ResourceManager::placeholderTextureId() {
+    if (placeholderTextureId_ == 0 && renderer_ != nullptr) {
+        // Серая шахматка 8×8 клеток: видно, что текстура ещё грузится, и не путается с ошибкой.
+        constexpr int kSize = 64;
+        constexpr int kCell = 8;
+        std::vector<unsigned char> pixels(static_cast<std::size_t>(kSize * kSize * 4));
+        for (int y = 0; y < kSize; ++y) {
+            for (int x = 0; x < kSize; ++x) {
+                const unsigned char value = ((x / kCell + y / kCell) % 2 == 0) ? 170 : 110;
+                unsigned char* pixel = &pixels[static_cast<std::size_t>((y * kSize + x) * 4)];
+                pixel[0] = pixel[1] = pixel[2] = value;
+                pixel[3] = 255;
+            }
+        }
+        renderer_->createTexture(kSize, kSize, 4, pixels.data(), placeholderTextureId_);
+    }
+    return placeholderTextureId_;
+}
+
+double ResourceManager::takeMainThreadLoadMs() {
+    const double ms = mainThreadLoadMs_;
+    mainThreadLoadMs_ = 0.0;
+    return ms;
+}
+
+void ResourceManager::drainUploadQueue() {
+    std::deque<std::shared_ptr<Resource<TextureData>>> pending;
+    {
+        std::lock_guard<std::mutex> lock(uploadMutex_);
+        pending.swap(uploadQueue_);
+    }
+    // Декодированное, но не залитое при выходе — просто освобождаем CPU-пиксели.
+    for (auto& resource : pending) {
+        std::free(resource->getData()->pixels);
+        resource->getData()->pixels = nullptr;
+        resource->setState(ResourceState::Failed);
+        pendingLoads_.fetch_sub(1, std::memory_order_relaxed);
+    }
+}
+
 void ResourceManager::clearCache() {
+    drainUploadQueue();
+    if (renderer_ != nullptr && placeholderTextureId_ != 0) {
+        renderer_->destroyTexture(placeholderTextureId_);
+    }
+
     if (renderer_ != nullptr) {
         for (auto& [path, resource] : meshCache_) {
             (void)path;
@@ -265,6 +442,7 @@ size_t ResourceManager::estimateMemoryUsageBytes() const {
 
     for (const auto& [path, resource] : textureCache_) {
         (void)path;
+        // Поля текстуры пишет воркер, пока она грузится; читать их можно только у готовой.
         if (!resource || !resource->isLoaded() || resource->getData() == nullptr) {
             continue;
         }

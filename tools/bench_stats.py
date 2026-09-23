@@ -79,6 +79,8 @@ def main(paths):
     warnings = []
     for path in paths:
         meta, rows = read_run(path)
+        if meta.get("exit_during_load") == "1":
+            continue  # проверка шатдауна, а не замер — в таблицу не идёт
         label = Path(path).parent.name
         key = (label, meta.get("scenario", "?"), meta.get("loading", "?"))
         metrics = run_metrics(rows)

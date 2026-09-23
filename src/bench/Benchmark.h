@@ -11,6 +11,10 @@ class Benchmark {
 public:
     struct Config {
         LoadScenario::Mode mode = LoadScenario::Mode::Burst;
+        // true — через job system, false — прежняя синхронная загрузка на главном потоке.
+        bool asyncLoading = true;
+        // Проверка шатдауна: выйти через кадр после запуска пачки, пока воркеры её декодируют.
+        bool exitDuringLoad = false;
         std::string outputPath;
         int warmupFrames = 300;
         int idleFrames = 300;
@@ -50,6 +54,5 @@ private:
 
     // Кадр, который идёт сейчас: его длительность станет известна только в следующем beginFrame.
     Phase currentPhase_ = Phase::WaitingForScene;
-    double currentLoadMs_ = 0.0;
     bool currentRecorded_ = false;
 };

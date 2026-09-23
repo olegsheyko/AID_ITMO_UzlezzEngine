@@ -214,7 +214,7 @@ void GameplayState::createScene() {
 	renderer.baseColorTextureId = "fallback_crate";
 	renderer.shaderId = "fallback_textured";
 	renderer.cachedMesh = resourceManager.load<MeshData>(kFallbackMeshPath);
-	renderer.cachedBaseColorTexture = resourceManager.load<TextureData>(kFallbackTexturePath);
+	renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(kFallbackTexturePath, JobPriority::High);
 	renderer.cachedShader = resourceManager.loadShader(kFallbackVertexShaderPath, kFallbackFragmentShaderPath);
 
 	if (!renderer.cachedMesh || !renderer.cachedShader || !renderer.cachedBaseColorTexture) {
@@ -260,7 +260,7 @@ bool GameplayState::createSceneFromManifest() {
 
 		if (!description.baseColorTextureId.empty()) {
 			if (const std::string* texturePath = manifest.findTexturePath(description.baseColorTextureId)) {
-				renderer.cachedBaseColorTexture = resourceManager.load<TextureData>(*texturePath);
+				renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(*texturePath, JobPriority::High);
 			}
 		}
 

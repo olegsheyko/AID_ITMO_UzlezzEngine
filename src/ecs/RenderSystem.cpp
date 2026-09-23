@@ -5,6 +5,7 @@
 #include "math/MathTypes.h"
 #include "math/CameraMath.h"
 #include "render/IRenderAdapter.h"
+#include "resources/ResourceManager.h"
 
 #include <cstddef>
 #include <unordered_set>
@@ -95,8 +96,15 @@ void RenderSystem::bindMaterial(const Material& material, const ShaderData& shad
         texture = material.cachedDiffuseTexture;
     }
 
-    const bool hasTexture = texture && texture->isLoaded() && texture->getData()->textureId != 0;
-    renderer_.bindTexture2D(hasTexture ? texture->getData()->textureId : 0, 0);
+    unsigned int textureId = 0;
+    if (texture && texture->isLoaded()) {
+        textureId = texture->getData()->textureId;
+    } else if (texture) {
+        // Текстура назначена, но ещё грузится или не загрузилась — рисуем заглушку, а не цвет материала.
+        textureId = ResourceManager::getInstance().placeholderTextureId();
+    }
+    const bool hasTexture = textureId != 0;
+    renderer_.bindTexture2D(textureId, 0);
     renderer_.setInt(shaderData.programId, "baseColorTexture", 0);
     renderer_.setInt(shaderData.programId, "useBaseColorTexture", hasTexture ? 1 : 0);
     renderer_.setVec3(shaderData.programId, "materialColor", material.diffuseColor);

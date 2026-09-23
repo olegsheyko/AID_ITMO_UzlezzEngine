@@ -1,6 +1,7 @@
 #include "bench/Benchmark.h"
 
 #include "core/Logger.h"
+#include "resources/ResourceManager.h"
 
 #include <tracy/Tracy.hpp>
 
@@ -9,11 +10,6 @@
 #include <fstream>
 #include <system_error>
 #include <utility>
-
-namespace {
-// Как грузятся ресурсы в этой сборке — попадает в CSV, чтобы прогоны «до» и «после» не перепутать.
-constexpr const char* kLoadingMode = "sync";
-}
 
 Benchmark::Benchmark(Config config)
     : config_(std::move(config)) {
@@ -32,8 +28,10 @@ void Benchmark::beginFrame(double previousFrameMs) {
         return;
     }
 
+    // Всё, что главный поток провёл в загрузке за прошлый кадр: синхронные загрузки и заливка в пампе.
+    const double previousLoadMs = ResourceManager::getInstance().takeMainThreadLoadMs();
     if (currentRecorded_) {
-        samples_.push_back({currentPhase_, previousFrameMs, currentLoadMs_});
+        samples_.push_back({currentPhase_, previousFrameMs, previousLoadMs});
     }
 
     // Переходы — по числу кадров, прожитых в текущей фазе; загрузка — пока пачка не готова.
@@ -42,7 +40,11 @@ void Benchmark::beginFrame(double previousFrameMs) {
     } else if (phase_ == Phase::Idle && phaseFrames_ >= config_.idleFrames) {
         enter(Phase::Load);
         TracyMessageL("Heavy batch start");
-        scenario_.start(config_.mode);
+        scenario_.start(config_.mode, config_.asyncLoading);
+    } else if (phase_ == Phase::Load && config_.exitDuringLoad && phaseFrames_ >= 1) {
+        LOG_INFO("Benchmark: exiting with the batch still loading");
+        finish(false);
+        return;
     } else if (phase_ == Phase::Load && scenario_.isComplete()) {
         enter(Phase::Tail);
     } else if (phase_ == Phase::Load && scenario_.elapsedMs() > config_.loadTimeoutMs) {
@@ -56,7 +58,9 @@ void Benchmark::beginFrame(double previousFrameMs) {
 
     currentPhase_ = phase_;
     currentRecorded_ = phase_ != Phase::Warmup;
-    currentLoadMs_ = phase_ == Phase::Load ? scenario_.update() : 0.0;
+    if (phase_ == Phase::Load) {
+        scenario_.update();
+    }
     ++phaseFrames_;
 }
 
@@ -101,14 +105,16 @@ bool Benchmark::writeCsv(bool complete) const {
 
     file << "# uzlezz-bench v1\n"
          << "# scenario=" << LoadScenario::modeName(config_.mode) << "\n"
-         << "# loading=" << kLoadingMode << "\n"
+         << "# loading=" << (config_.asyncLoading ? "async" : "sync") << "\n"
          << "# vsync=0\n"
          << "# warmup_frames=" << config_.warmupFrames << "\n"
          << "# batch_textures=" << scenario_.totalCount() << "\n"
          << "# batch_failed=" << scenario_.failedCount() << "\n"
+         << "# batch_from_cache=" << scenario_.fromCacheCount() << "\n"
          << "# batch_bytes=" << scenario_.batchBytes() << "\n"
          << "# batch_ms=" << scenario_.elapsedMs() << "\n"
          << "# complete=" << (complete ? 1 : 0) << "\n"
+         << "# exit_during_load=" << (config_.exitDuringLoad ? 1 : 0) << "\n"
          << "frame,phase,frame_ms,main_load_ms\n";
 
     char line[96];

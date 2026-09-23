@@ -10,7 +10,8 @@ struct LaunchOptions {
     std::optional<Benchmark::Config> bench;
 };
 
-// Аргументы запуска: --no-vsync, --bench burst|stream, --bench-out <файл.csv>.
+// Аргументы запуска: --no-vsync, --bench burst|stream, --bench-out <файл.csv>, --load-mode async|sync,
+// --exit-during-load.
 // Режим --bench всегда выключает vsync — иначе время кадра прилипает к частоте экрана.
 bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::string& outError);
 

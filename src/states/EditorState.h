@@ -140,4 +140,5 @@ private:
     int fpsFrames_ = 0;
     SceneSnapshot playSnapshot_;
     LoadScenario heavyLoad_;
+    bool heavyLoadAsync_ = true;
 };

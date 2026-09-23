@@ -287,8 +287,10 @@ if(BUILD_TESTING)
         src/resources/TextureLoader.cpp
         src/resources/ShaderLoader.cpp
         src/resources/stb_image_impl.cpp
+        src/jobs/JobSystem.cpp
     )
     target_include_directories(TextureResourceTests PRIVATE src external/stb_image)
+    target_link_libraries(TextureResourceTests PRIVATE enkiTS)
     target_link_libraries(TextureResourceTests PRIVATE glad glfw ${ENGINE_OPENGL_LIB})
     target_link_libraries(TextureResourceTests PRIVATE TracyHeaders)
     target_link_libraries(TextureResourceTests PRIVATE ${ENGINE_ASSIMP_TARGET})

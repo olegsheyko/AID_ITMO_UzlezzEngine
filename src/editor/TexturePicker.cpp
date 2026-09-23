@@ -99,8 +99,10 @@ void TexturePicker::render(MeshRenderer& meshRenderer) {
             for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
                 const auto& path = *visiblePaths[i];
                 auto [it, inserted] = previews_.try_emplace(path);
-                if (inserted) it->second = resources.load<TextureData>(path);
+                // Превью — самое неважное, что грузит редактор: низкий приоритет, текстуры сцены обгоняют их.
+                if (inserted) it->second = resources.loadTextureAsync(path, JobPriority::Low);
                 const TextureData* texture = loadedTexture(it->second);
+                const bool loading = it->second && it->second->isPending();
                 const bool selected = meshRenderer.baseColorTextureId == path;
                 ImGui::PushID(path.c_str());
                 const ImVec2 rowStart = ImGui::GetCursorScreenPos();
@@ -120,7 +122,7 @@ void TexturePicker::render(MeshRenderer& meshRenderer) {
                 draw->PushClipRect(ImVec2(textX, rowStart.y), ImVec2(rowStart.x + rowWidth, rowStart.y + kRowHeight), true);
                 draw->AddText(ImVec2(textX, rowStart.y + 9.0f), ImGui::GetColorU32(ImGuiCol_Text), file.filename().string().c_str());
                 draw->AddText(ImVec2(textX, rowStart.y + 33.0f), ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                    texture ? file.parent_path().generic_string().c_str() : "Unable to load image");
+                    texture ? file.parent_path().generic_string().c_str() : loading ? "Loading..." : "Unable to load image");
                 draw->PopClipRect();
                 if (hovered) {
                     ImGui::BeginTooltip();
@@ -129,6 +131,8 @@ void TexturePicker::render(MeshRenderer& meshRenderer) {
                         drawThumbnail(ImGui::GetCursorScreenPos(), 160.0f, texture);
                         ImGui::Dummy(ImVec2(160.0f, 160.0f));
                         ImGui::Text("%d x %d", texture->width, texture->height);
+                    } else if (loading) {
+                        ImGui::TextUnformatted("Loading in the background...");
                     } else {
                         ImGui::TextUnformatted("File is missing or cannot be decoded.");
                     }

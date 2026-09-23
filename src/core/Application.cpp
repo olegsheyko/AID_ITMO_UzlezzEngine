@@ -97,6 +97,8 @@ void Application::run() {
 void Application::update(float dt) {
     ZoneScoped;
 	JobSystem::getInstance().collectCompleted();
+	// До логики состояния: текстуры, залитые в этом кадре, уже видны его рендеру.
+	ResourceManager::getInstance().pumpUploads();
 
 	// Проверяем изменения файлов для горячей замены
 	if (HotReload::getInstance().update()) {
@@ -144,7 +146,9 @@ void Application::render() {
 void Application::shutdown() {
 	LOG_INFO("Application: shutting down");
 
-	// Первыми останавливаем задачи: они не должны пережить кэш ресурсов и GL-контекст.
+	// Порядок важен: сначала запретить новые загрузки и свернуть начатые, потом дождаться задач,
+	// и только затем чистить кэш и GL — задачи не должны пережить ни то, ни другое.
+	ResourceManager::getInstance().beginShutdown();
 	JobSystem::getInstance().shutdown();
 
 	// Очищаем кэш ресурсов

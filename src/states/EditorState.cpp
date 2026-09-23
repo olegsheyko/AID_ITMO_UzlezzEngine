@@ -386,7 +386,7 @@ bool EditorState::createSceneFromManifest() {
 
         if (!description.baseColorTextureId.empty()) {
             if (const std::string* texturePath = manifest.findTexturePath(description.baseColorTextureId)) {
-                renderer.cachedBaseColorTexture = resourceManager.load<TextureData>(*texturePath);
+                renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(*texturePath, JobPriority::High);
             }
         }
 
@@ -439,7 +439,7 @@ void EditorState::createFallbackScene() {
     renderer.baseColorTextureId = "fallback_crate";
     renderer.shaderId = "fallback_textured";
     renderer.cachedMesh = resourceManager.load<MeshData>(kFallbackMeshPath);
-    renderer.cachedBaseColorTexture = resourceManager.load<TextureData>(kFallbackTexturePath);
+    renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(kFallbackTexturePath, JobPriority::High);
     renderer.cachedShader = resourceManager.loadShader(kFallbackVertexShaderPath, kFallbackFragmentShaderPath);
 
     if (!renderer.cachedMesh || !renderer.cachedShader || !renderer.cachedBaseColorTexture) {
@@ -468,7 +468,7 @@ Entity EditorState::createCubeEntity(const std::string& requestedName, const Vec
     renderer.baseColorTextureId = kFallbackTexturePath;
     renderer.shaderId = std::string(kFallbackVertexShaderPath) + "|" + kFallbackFragmentShaderPath;
     renderer.cachedMesh = resourceManager.load<MeshData>(kFallbackMeshPath);
-    renderer.cachedBaseColorTexture = resourceManager.load<TextureData>(kFallbackTexturePath);
+    renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(kFallbackTexturePath, JobPriority::High);
     renderer.cachedShader = resourceManager.loadShader(kFallbackVertexShaderPath, kFallbackFragmentShaderPath);
 
     if (!renderer.cachedMesh || !renderer.cachedBaseColorTexture || !renderer.cachedShader) {
@@ -1143,27 +1143,36 @@ void EditorState::renderStatisticsPanel() {
     ImGui::Text("Textures: %zu", resources.getTextureCount());
     ImGui::Text("Shaders: %zu", resources.getShaderCount());
     ImGui::Text("Resource memory: %s", formatBytes(resources.estimateMemoryUsageBytes()).c_str());
+    ImGui::Text("Loads pending: %zu", resources.pendingLoadCount());
 
     ImGui::Separator();
     ImGui::TextUnformatted("Heavy load (lab 1)");
     ImGui::BeginDisabled(heavyLoad_.isRunning());
+    ImGui::Checkbox("Async (job system)", &heavyLoadAsync_);
+    ImGui::SetItemTooltip("On: decode on job workers, upload to GPU a few textures per frame.\n"
+        "Off: the old synchronous path on the main thread, for comparison.");
     if (ImGui::Button("Burst")) {
-        heavyLoad_.start(LoadScenario::Mode::Burst);
+        heavyLoad_.start(LoadScenario::Mode::Burst, heavyLoadAsync_);
     }
-    ImGui::SetItemTooltip("Request every image in assets/models in one frame.\nRepeat runs hit the cache.");
+    ImGui::SetItemTooltip("Request every image in assets/models in one frame.\nEach run reloads them from disk.");
     ImGui::SameLine();
     if (ImGui::Button("Stream")) {
-        heavyLoad_.start(LoadScenario::Mode::Stream);
+        heavyLoad_.start(LoadScenario::Mode::Stream, heavyLoadAsync_);
     }
-    ImGui::SetItemTooltip("Request one image every 100 ms, at most one per frame.\nRepeat runs hit the cache.");
+    ImGui::SetItemTooltip("Request one image every 100 ms, at most one per frame.\nEach run reloads them from disk.");
     ImGui::EndDisabled();
     if (heavyLoad_.totalCount() > 0) {
-        ImGui::Text("%s: %zu/%zu requested, %.1f ms%s",
+        ImGui::Text("%s %s: %zu/%zu requested, %.1f ms%s",
             LoadScenario::modeName(heavyLoad_.mode()),
+            heavyLoad_.isAsync() ? "async" : "sync",
             heavyLoad_.requestedCount(),
             heavyLoad_.totalCount(),
             heavyLoad_.elapsedMs(),
             heavyLoad_.isRunning() ? "" : ", done");
+        if (heavyLoad_.fromCacheCount() > 0) {
+            ImGui::TextDisabled("%zu taken from cache: still held elsewhere, e.g. by the texture picker",
+                heavyLoad_.fromCacheCount());
+        }
     }
     ImGui::End();
 }

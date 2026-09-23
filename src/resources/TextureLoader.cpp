@@ -265,6 +265,12 @@ bool loadDdsTexture(const std::string& path, TextureData& textureData) {
 
 bool TextureLoader::load(const std::string& path, TextureData& textureData, IRenderAdapter* renderer) {
     ZoneScopedN("Load texture");
+    return decode(path, textureData) && upload(textureData, renderer, path);
+}
+
+bool TextureLoader::decode(const std::string& path, TextureData& textureData) {
+    ZoneScopedN("Decode texture");
+    ZoneText(path.c_str(), path.size());
     LOG_INFO("Loading texture from disk: " + path);
 
     FILE* testFile = std::fopen(path.c_str(), "rb");
@@ -300,10 +306,18 @@ bool TextureLoader::load(const std::string& path, TextureData& textureData, IRen
         textureData.pixels = pixels;
     }
 
+    return true;
+}
+
+bool TextureLoader::upload(TextureData& textureData, IRenderAdapter* renderer, const std::string& debugName) {
+    ZoneScopedN("Upload texture");
+    if (!debugName.empty()) {
+        ZoneText(debugName.c_str(), debugName.size());
+    }
     const bool uploaded = uploadToGPU(textureData, renderer);
+    // После заливки CPU-копия не нужна: 2K-текстура — это 16 МБ пикселей.
     std::free(textureData.pixels);
     textureData.pixels = nullptr;
-
     return uploaded;
 }
 

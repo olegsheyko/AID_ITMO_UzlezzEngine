@@ -42,12 +42,20 @@ bool LoadScenario::parseMode(const std::string& text, Mode& outMode) {
     return false;
 }
 
-void LoadScenario::start(Mode mode) {
-    mode_ = mode;
-    paths_.clear();
+void LoadScenario::start(Mode mode, bool async) {
+    // Сначала отпустить свои хэндлы, потом выгрузить: releaseTexture не трогает то, что ещё кто-то держит.
+    const std::vector<std::string> previous = std::move(paths_);
     handles_.clear();
+    for (const std::string& path : previous) {
+        ResourceManager::getInstance().releaseTexture(path);
+    }
+
+    mode_ = mode;
+    async_ = async;
+    paths_.clear();
     nextIndex_ = 0;
     failed_ = 0;
+    fromCache_ = 0;
     batchBytes_ = 0;
     batchMs_ = 0.0;
 
@@ -65,16 +73,16 @@ void LoadScenario::start(Mode mode) {
     started_ = true;
     running_ = !paths_.empty();
     startTime_ = Clock::now();
-    LOG_INFO("LoadScenario: " + std::string(modeName(mode)) + ", " + std::to_string(paths_.size()) +
-        " textures, " + std::to_string(batchBytes_ / 1024) + " KB on disk");
+    LOG_INFO("LoadScenario: " + std::string(modeName(mode)) + (async ? " async" : " sync") + ", " +
+        std::to_string(paths_.size()) + " textures, " + std::to_string(batchBytes_ / 1024) + " KB on disk");
     if (paths_.empty()) {
         LOG_ERROR("LoadScenario: no images found in " + std::string(kBatchRoot));
     }
 }
 
-double LoadScenario::update() {
+void LoadScenario::update() {
     if (!running_) {
-        return 0.0;
+        return;
     }
 
     const Clock::time_point frameStart = Clock::now();
@@ -87,15 +95,15 @@ double LoadScenario::update() {
         ZoneScopedN("Heavy batch: stream");
         request(nextIndex_++);
     }
-    const Clock::time_point frameEnd = Clock::now();
-
     if (nextIndex_ == paths_.size() && allReady()) {
         running_ = false;
-        batchMs_ = toMs(frameEnd - startTime_);
+        batchMs_ = toMs(Clock::now() - startTime_);
+        failed_ = static_cast<std::size_t>(std::count_if(handles_.begin(), handles_.end(),
+            [](const auto& handle) { return !handle || handle->isFailed(); }));
         TracyMessageL("Heavy batch complete");
-        LOG_INFO("LoadScenario: batch ready in " + std::to_string(batchMs_) + " ms, failed " + std::to_string(failed_));
+        LOG_INFO("LoadScenario: batch ready in " + std::to_string(batchMs_) + " ms, failed " + std::to_string(failed_) +
+            ", from cache " + std::to_string(fromCache_));
     }
-    return toMs(frameEnd - frameStart);
 }
 
 double LoadScenario::elapsedMs() const {
@@ -106,15 +114,19 @@ double LoadScenario::elapsedMs() const {
 }
 
 void LoadScenario::request(std::size_t index) {
-    handles_[index] = ResourceManager::getInstance().load<TextureData>(paths_[index]);
-    if (!handles_[index]) {
-        ++failed_;
+    ResourceManager& resources = ResourceManager::getInstance();
+    handles_[index] = async_
+        ? resources.loadTextureAsync(paths_[index], JobPriority::Normal)
+        : resources.load<TextureData>(paths_[index]);
+    // Асинхронный хэндл готов сразу, только если текстура уже была в кэше.
+    if (async_ && handles_[index] && handles_[index]->isLoaded()) {
+        ++fromCache_;
     }
 }
 
 bool LoadScenario::allReady() const {
     return std::all_of(handles_.begin(), handles_.end(), [](const auto& handle) {
-        // nullptr — загрузка не удалась, ждать нечего.
-        return !handle || handle->isLoaded();
+        // nullptr — загрузка не удалась, ждать нечего; Failed тоже финал.
+        return !handle || !handle->isPending();
     });
 }
