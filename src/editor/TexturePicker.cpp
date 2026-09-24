@@ -42,7 +42,7 @@ void drawThumbnail(const ImVec2& position, float size, const TextureData* textur
 void TexturePicker::render(MeshRenderer& meshRenderer) {
     ResourceManager& resources = ResourceManager::getInstance();
     const TextureData* current = loadedTexture(meshRenderer.cachedBaseColorTexture);
-    if (!current && meshRenderer.cachedMesh) {
+    if (!current && meshRenderer.cachedMesh && meshRenderer.cachedMesh->isLoaded()) {
         for (const auto& subMesh : meshRenderer.cachedMesh->getData()->subMeshes) {
             current = loadedTexture(subMesh.material.cachedDiffuseTexture);
             if (current) break;

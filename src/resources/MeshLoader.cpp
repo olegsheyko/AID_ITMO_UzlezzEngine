@@ -1,4 +1,5 @@
 #include "MeshLoader.h"
+#include "animation/AnimationImporter.h"
 #include <tracy/Tracy.hpp>
 #include "render/IRenderAdapter.h"
 #include "core/Logger.h"
@@ -6,6 +7,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <assimp/config.h>
 #include <algorithm>
 #include <filesystem>
 
@@ -75,15 +77,23 @@ MeshData createProceduralCubeMesh() {
 }
 
 bool MeshLoader::load(const std::string& path, MeshData& meshData, IRenderAdapter* renderer) {
+    return decode(path, meshData) && uploadToGPU(meshData, renderer);
+}
+
+bool MeshLoader::decode(const std::string& path, MeshData& meshData) {
     ZoneScopedN("Load mesh");
     LOG_INFO("Loading mesh from: " + path);
 
     if (path == "primitive:cube") {
         meshData = createProceduralCubeMesh();
-        return uploadToGPU(meshData, renderer);
+        return true;
     }
 
     Assimp::Importer importer;
+    // Our evaluator consumes one local TRS per node. Collapse FBX pivot helper
+    // nodes so channels and bind transforms share that representation. Otherwise
+    // this Assimp version applies translation/pre-rotation twice on Mixamo FBX.
+    importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
     const aiScene* scene = importer.ReadFile(
         path,
         aiProcess_Triangulate |
@@ -98,6 +108,7 @@ bool MeshLoader::load(const std::string& path, MeshData& meshData, IRenderAdapte
 
     meshData = MeshData{};
     processNode(scene->mRootNode, scene, meshData, getDirectory(path));
+    if (!importAnimation(*scene, meshData)) return false;
 
     if (meshData.subMeshes.empty()) {
         LOG_ERROR("No submeshes were extracted from: " + path);
@@ -110,7 +121,7 @@ bool MeshLoader::load(const std::string& path, MeshData& meshData, IRenderAdapte
     }
 
     LOG_INFO("Processed " + std::to_string(meshData.subMeshes.size()) + " submeshes");
-    return uploadToGPU(meshData, renderer);
+    return true;
 }
 
 void MeshLoader::processNode(aiNode* node, const aiScene* scene, MeshData& meshData, const std::string& directory) {

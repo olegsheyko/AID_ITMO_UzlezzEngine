@@ -267,6 +267,12 @@ void EditorState::onExit() {
 }
 
 void EditorState::update(float dt) {
+    world_.forEach<MeshRenderer, Collider>([](Entity, MeshRenderer& mesh, Collider& collider) {
+        if (!mesh.colliderBoundsInitialized && mesh.cachedMesh && mesh.cachedMesh->isLoaded()) {
+            fitColliderToMeshBounds(mesh, collider);
+            mesh.colliderBoundsInitialized = true;
+        }
+    });
     ZoneScoped;
     lastDt_ = dt;
     fpsAccumulator_ += dt;
@@ -284,6 +290,7 @@ void EditorState::update(float dt) {
         }
     }
 
+    if (animationLoad_ && !animationLoad_->isPending() && mode_ == EditorMode::Edit) rebuildAnimationDemo();
     heavyLoad_.update();
     stress_.onFrame(dt * 1000.0);
 
@@ -293,6 +300,8 @@ void EditorState::update(float dt) {
     if (mode_ == EditorMode::Play) {
         updateGameplay(dt, allowGameInput);
     }
+    // Editor preview and Play use the same animation pipeline, completed before rendering.
+    animationSystem_.update(world_, dt);
 }
 
 void EditorState::render() {
@@ -345,6 +354,7 @@ void EditorState::bindActions() {
 }
 
 void EditorState::createScene() {
+    animationDemoEntities_.clear();
     world_.clear();
     selectedEntity_ = kInvalidEntity;
     controllableEntity_ = kInvalidEntity;
@@ -364,12 +374,10 @@ void EditorState::createScene() {
 }
 
 bool EditorState::createSceneFromManifest() {
-    SceneManifest manifest;
-    if (!manifest.loadFromFile(kSceneManifestPath)) {
-        return false;
-    }
-
     auto& resourceManager = ResourceManager::getInstance();
+    auto scene = resourceManager.loadSceneAsync(kSceneManifestPath);
+    if (!scene || !scene->isLoaded()) return false;
+    const SceneManifest& manifest = *scene->getData();
 
     for (const SceneEntityDescription& description : manifest.getEntities()) {
         const std::string* meshPath = manifest.findMeshPath(description.meshId);
@@ -383,7 +391,7 @@ bool EditorState::createSceneFromManifest() {
         renderer.meshId = description.meshId;
         renderer.baseColorTextureId = description.baseColorTextureId;
         renderer.shaderId = description.shaderId;
-        renderer.cachedMesh = resourceManager.load<MeshData>(*meshPath);
+        renderer.cachedMesh = resourceManager.loadMeshAsync(*meshPath);
         renderer.cachedShader = resourceManager.loadShader(shaderPaths->vertexPath, shaderPaths->fragmentPath);
 
         if (!description.baseColorTextureId.empty()) {
@@ -440,7 +448,7 @@ void EditorState::createFallbackScene() {
     renderer.meshId = "fallback_cube";
     renderer.baseColorTextureId = "fallback_crate";
     renderer.shaderId = "fallback_textured";
-    renderer.cachedMesh = resourceManager.load<MeshData>(kFallbackMeshPath);
+    renderer.cachedMesh = resourceManager.loadMeshAsync(kFallbackMeshPath);
     renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(kFallbackTexturePath, JobPriority::High);
     renderer.cachedShader = resourceManager.loadShader(kFallbackVertexShaderPath, kFallbackFragmentShaderPath);
 
@@ -469,7 +477,7 @@ Entity EditorState::createCubeEntity(const std::string& requestedName, const Vec
     renderer.meshId = kFallbackMeshPath;
     renderer.baseColorTextureId = kFallbackTexturePath;
     renderer.shaderId = std::string(kFallbackVertexShaderPath) + "|" + kFallbackFragmentShaderPath;
-    renderer.cachedMesh = resourceManager.load<MeshData>(kFallbackMeshPath);
+    renderer.cachedMesh = resourceManager.loadMeshAsync(kFallbackMeshPath);
     renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(kFallbackTexturePath, JobPriority::High);
     renderer.cachedShader = resourceManager.loadShader(kFallbackVertexShaderPath, kFallbackFragmentShaderPath);
 
@@ -514,6 +522,9 @@ Entity EditorState::duplicateEntity(Entity source) {
     }
     if (world_.hasComponent<MeshRenderer>(source)) {
         world_.addComponent<MeshRenderer>(entity, world_.getComponent<MeshRenderer>(source));
+    }
+    if (world_.hasComponent<Animator>(source)) {
+        world_.addComponent<Animator>(entity, world_.getComponent<Animator>(source));
     }
     if (world_.hasComponent<Rigidbody>(source)) {
         Rigidbody rigidbody = world_.getComponent<Rigidbody>(source);
@@ -615,7 +626,11 @@ void EditorState::updateGameplay(float dt, bool allowInput) {
         processGameplayInput(dt);
     }
 
-    physicsSystem_.update(world_, dt);
+    bool waitingForColliders = false;
+    world_.forEach<MeshRenderer, Collider>([&](Entity, MeshRenderer& mesh, Collider&) {
+        waitingForColliders |= mesh.cachedMesh && mesh.cachedMesh->isPending();
+    });
+    if (!waitingForColliders) physicsSystem_.update(world_, dt);
     spinSystem_.update(world_, dt);
     updateGameCamera(dt, allowInput);
 }
@@ -1050,8 +1065,9 @@ void EditorState::renderInspectorPanel() {
                 const bool selected = meshRenderer.meshId == id;
                 if (ImGui::Selectable(id.c_str(), selected)) {
                     meshRenderer.meshId = id;
-                    meshRenderer.cachedMesh = resources.load<MeshData>(id);
-                    if (meshRenderer.cachedMesh) {
+                    meshRenderer.cachedMesh = resources.loadMeshAsync(id);
+                    meshRenderer.colliderBoundsInitialized = false;
+                    if (meshRenderer.cachedMesh && meshRenderer.cachedMesh->isLoaded()) {
                         const auto& subMeshes = meshRenderer.cachedMesh->getData()->subMeshes;
                         if (std::any_of(subMeshes.begin(), subMeshes.end(), [](const SubMesh& subMesh) {
                             return !subMesh.material.diffuseTexturePath.empty();
@@ -1127,6 +1143,30 @@ void EditorState::renderInspectorPanel() {
         ImGui::TextUnformatted("Play mode is running. Stop to edit scene values.");
     }
 
+    if (world_.hasComponent<Animator>(selectedEntity_) && world_.hasComponent<MeshRenderer>(selectedEntity_)
+        && ImGui::TreeNodeEx("Animation", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto& animator = world_.getComponent<Animator>(selectedEntity_);
+        const auto& mesh = world_.getComponent<MeshRenderer>(selectedEntity_).cachedMesh;
+        if (mesh && mesh->isLoaded() && !mesh->getData()->skeleton.clips.empty()) {
+            const auto& clips = mesh->getData()->skeleton.clips;
+            if (animator.clip >= clips.size()) animator.clip = 0;
+            if (ImGui::BeginCombo("Clip", clips[animator.clip].name.c_str())) {
+                for (unsigned int i=0; i<clips.size(); ++i) {
+                    ImGui::PushID(static_cast<int>(i));
+                    if (ImGui::Selectable(clips[i].name.c_str(), animator.clip == i)) { animator.clip=i; animator.time=0; }
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::Checkbox("Paused##character", &animator.paused);
+            ImGui::SliderFloat("Speed##character", &animator.speed, -2.0f, 3.0f);
+            float time = static_cast<float>(animator.time);
+            if (ImGui::SliderFloat("Time (s)", &time, 0, static_cast<float>(clips[animator.clip].duration))) animator.time=time;
+            ImGui::TextUnformatted("Looping. Global pause/speed are in Statistics.");
+        } else ImGui::TextUnformatted("Bind pose (no animation clips).");
+        ImGui::TreePop();
+    }
+
     ImGui::End();
 }
 
@@ -1146,6 +1186,7 @@ void EditorState::renderStatisticsPanel() {
     ImGui::Text("Shaders: %zu", resources.getShaderCount());
     ImGui::Text("Resource memory: %s", formatBytes(resources.estimateMemoryUsageBytes()).c_str());
     ImGui::Text("Loads pending: %zu", resources.pendingLoadCount());
+    renderAnimationPanel();
 
     ImGui::Separator();
     ImGui::TextUnformatted("Heavy load (lab 1)");
@@ -1439,6 +1480,10 @@ EditorState::SceneSnapshot EditorState::captureSnapshot() const {
             entitySnapshot.hasMeshRenderer = true;
             entitySnapshot.meshRenderer = world_.getComponent<MeshRenderer>(entity);
         }
+        if (world_.hasComponent<Animator>(entity)) {
+            entitySnapshot.hasAnimator = true;
+            entitySnapshot.animator = world_.getComponent<Animator>(entity);
+        }
         if (world_.hasComponent<Hierarchy>(entity)) {
             entitySnapshot.hasHierarchy = true;
             entitySnapshot.hierarchy = world_.getComponent<Hierarchy>(entity);
@@ -1479,6 +1524,7 @@ void EditorState::restoreSnapshot(const SceneSnapshot& snapshot) {
         if (entitySnapshot.hasTag) world_.addComponent<Tag>(entity, entitySnapshot.tag);
         if (entitySnapshot.hasTransform) world_.addComponent<Transform>(entity, entitySnapshot.transform);
         if (entitySnapshot.hasMeshRenderer) world_.addComponent<MeshRenderer>(entity, entitySnapshot.meshRenderer);
+        if (entitySnapshot.hasAnimator) world_.addComponent<Animator>(entity, entitySnapshot.animator);
         if (entitySnapshot.hasHierarchy) world_.addComponent<Hierarchy>(entity, entitySnapshot.hierarchy);
         if (entitySnapshot.hasSpin) world_.addComponent<Spin>(entity, entitySnapshot.spin);
         if (entitySnapshot.hasCamera) world_.addComponent<Camera>(entity, entitySnapshot.camera);

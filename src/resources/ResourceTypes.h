@@ -1,6 +1,7 @@
 #pragma once
 
 #include "math/MathTypes.h"
+#include "animation/Animation.h"
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -15,6 +16,8 @@ struct Vertex {
     Vec3 position;
     Vec3 normal;
     Vec2 texCoord;
+    std::array<int, 4> boneIds{};
+    std::array<float, 4> boneWeights{};
 };
 
 // Материал меша
@@ -32,6 +35,8 @@ struct Material {
 
 // Подмеш (часть модели с одним материалом)
 struct SubMesh {
+    unsigned int skeletonNode = 0;
+    std::vector<SkinBone> bones;
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     Material material;
@@ -45,6 +50,7 @@ struct SubMesh {
 
 // Данные меша (может содержать несколько подмешей)
 struct MeshData {
+    Skeleton skeleton;
     std::vector<SubMesh> subMeshes;
     
     // Для обратной совместимости - если модель простая (один меш)

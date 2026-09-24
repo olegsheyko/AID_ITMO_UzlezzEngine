@@ -25,5 +25,5 @@ int main(int argc, char** argv) {
 	app.run();
 	app.shutdown();
 
-    return 0;
+    return app.exitCode();
 }

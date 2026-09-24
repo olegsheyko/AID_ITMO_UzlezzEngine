@@ -60,6 +60,7 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual std::size_t liveTextureCount() const override { return liveTextures_; }
 	virtual void useShaderProgram(unsigned int programId) override;
 	virtual void setMatrix4(unsigned int programId, const char* name, const Mat4& value) override;
+	virtual void setSkinMatrices(unsigned int programId, const Mat4* matrices, std::size_t count) override;
 	virtual void setInt(unsigned int programId, const char* name, int value) override;
 	virtual void setFloat(unsigned int programId, const char* name, float value) override;
 	virtual void setVec3(unsigned int programId, const char* name, const Vec3& value) override;
@@ -97,6 +98,7 @@ private:
 	PrimitiveMesh cubeMesh_;
 	PrimitiveMesh wireSphereMesh_;
 	GLuint viewportFbo_ = 0;
+	GLuint skinBuffer_ = 0;
 	GLuint viewportColorTexture_ = 0;
 	GLuint viewportDepthRbo_ = 0;
 	int viewportWidth_ = 0;

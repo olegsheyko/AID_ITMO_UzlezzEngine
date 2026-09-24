@@ -7,6 +7,7 @@
 #include "ecs/PhysicsSystem.h"
 #include "ecs/RenderSystem.h"
 #include "ecs/SpinSystem.h"
+#include "ecs/AnimationSystem.h"
 #include "ecs/World.h"
 
 class IRenderAdapter;
@@ -32,6 +33,7 @@ private:
     CameraSystem cameraSystem_;
 	PhysicsSystem physicsSystem_;
 	SpinSystem spinSystem_;
+    AnimationSystem animationSystem_;
 	RenderSystem renderSystem_;
     DebugRenderSystem debugRenderSystem_;
     Entity cameraEntity_ = kInvalidEntity;

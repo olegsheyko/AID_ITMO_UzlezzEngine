@@ -11,7 +11,27 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
-        if (arg == "--no-vsync") {
+        if (arg == "--animation-bench") {
+            if (i+1>=argc) { outError="--animation-bench expects sequential or parallel"; return false; }
+            const std::string mode=argv[++i];
+            if (mode!="sequential" && mode!="parallel") { outError="Invalid animation mode"; return false; }
+            outOptions.animationBench=AnimationBenchmark::Config{};
+            outOptions.animationBench->parallel=mode=="parallel";
+        } else if (arg == "--animation-characters" || arg == "--animation-frames" || arg == "--animation-out") {
+            if (!outOptions.animationBench || i+1>=argc) { outError=arg+" requires preceding --animation-bench and a value"; return false; }
+            const char* value=argv[++i];
+            if (arg=="--animation-out") outOptions.animationBench->output=value;
+            else {
+                char* end=nullptr; const long n=std::strtol(value,&end,10);
+                if (*end || n<1 || n>(arg=="--animation-characters" ? 2048 : 10000000)) { outError="Invalid animation count"; return false; }
+                if (arg=="--animation-characters") outOptions.animationBench->characters=static_cast<unsigned int>(n);
+                else outOptions.animationBench->frames=static_cast<unsigned int>(n);
+            }
+        } else if (arg=="--animation-wait-tracy" || arg=="--animation-exit-loading") {
+            if (!outOptions.animationBench) { outError=arg+" requires preceding --animation-bench"; return false; }
+            if (arg=="--animation-wait-tracy") outOptions.animationBench->waitTracy=true;
+            else outOptions.animationBench->exitLoading=true;
+        } else if (arg == "--no-vsync") {
             outOptions.vsync = false;
         } else if (arg == "--bench") {
             if (i + 1 >= argc) {
@@ -86,6 +106,8 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
         outError = "--bench and --stress-seconds cannot be combined";
         return false;
     }
+    if (outOptions.animationBench && outOptions.bench) { outError="Animation and loading benchmarks are separate modes"; return false; }
+    if (outOptions.animationBench) outOptions.vsync=false;
     if (!stressOut.empty() && !outOptions.stress) {
         outError = "--stress-out requires --stress-seconds";
         return false;
@@ -105,5 +127,5 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
 }
 
 const char* launchUsage() {
-    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms]";
+    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms] [--animation-bench sequential|parallel [--animation-characters N] [--animation-frames N] [--animation-out file.csv] [--animation-wait-tracy] [--animation-exit-loading]]";
 }

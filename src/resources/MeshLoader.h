@@ -14,12 +14,13 @@ class IRenderAdapter;
 class MeshLoader {
 public:
     static bool load(const std::string& path, MeshData& meshData, IRenderAdapter* renderer);
+    static bool uploadSubMeshToGPU(SubMesh& subMesh, IRenderAdapter* renderer);
+    static bool decode(const std::string& path, MeshData& meshData);
 
 private:
     static void processNode(aiNode* node, const aiScene* scene, MeshData& meshData, const std::string& directory);
     static SubMesh processMesh(aiMesh* mesh, const aiScene* scene, const std::string& directory);
     static Material processMaterial(aiMaterial* material, const std::string& directory);
     static bool uploadToGPU(MeshData& meshData, IRenderAdapter* renderer);
-    static bool uploadSubMeshToGPU(SubMesh& subMesh, IRenderAdapter* renderer);
     static std::string getDirectory(const std::string& path);
 };

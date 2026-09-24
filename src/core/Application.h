@@ -11,6 +11,7 @@ public:
     bool init(int width, int height, const char* title, const LaunchOptions& options = {});
     void run();
     void shutdown();
+    int exitCode() const { return exitCode_; }
 
 private:
     bool initEditorGui();
@@ -23,6 +24,7 @@ private:
     std::unique_ptr<IRenderAdapter> renderer_;
     StateManager stateManager_;
     bool editorGuiInitialized_ = false;
+    int exitCode_ = 0;
     std::unique_ptr<Benchmark> benchmark_;
     std::unique_ptr<StressRun> stress_;
 

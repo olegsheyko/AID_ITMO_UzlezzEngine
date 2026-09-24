@@ -1,0 +1,258 @@
+Start testing: Sep 24 19:26 RTZ 2 (����)
+----------------------------------------------------------
+1/6 Testing: AnimationTests
+1/6 Test: AnimationTests
+Command: "D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/Release/AnimationTests.exe" "D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/animation-test-fixtures"
+Directory: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build
+"AnimationTests" start time: Sep 24 19:26 RTZ 2 (����)
+Output:
+----------------------------------------------------------
+19:26:52 [INFO] Loading mesh from: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/animation-test-fixtures\skin.gltf
+19:26:52 [INFO] Processed 1 submeshes
+19:26:52 [INFO] JobSystem: started 4 worker threads
+19:26:52 [INFO] JobSystem: stopped
+19:26:52 [INFO] Loading mesh from: primitive:cube
+PASS: interpolation, looping, hierarchy, glTF import, 257 sequential/parallel poses, pause and lifecycle
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"AnimationTests" end time: Sep 24 19:26 RTZ 2 (����)
+"AnimationTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/6 Testing: WalkingAnimationTests
+2/6 Test: WalkingAnimationTests
+Command: "D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/Release/AnimationTests.exe" "D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/walking-test-fixtures" "D:/GitHubRepos/AID_ITMO_UzlezzEngine/assets/models/animation/Walking.fbx"
+Directory: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build
+"WalkingAnimationTests" start time: Sep 24 19:26 RTZ 2 (����)
+Output:
+----------------------------------------------------------
+19:26:52 [INFO] Loading mesh from: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/walking-test-fixtures\skin.gltf
+19:26:52 [INFO] Processed 1 submeshes
+19:26:52 [INFO] JobSystem: started 4 worker threads
+19:26:52 [INFO] JobSystem: stopped
+19:26:52 [INFO] Loading mesh from: primitive:cube
+19:26:52 [INFO] Loading mesh from: D:/GitHubRepos/AID_ITMO_UzlezzEngine/assets/models/animation/Walking.fbx
+19:26:52 [INFO] Processed 2 submeshes
+MODEL D:/GitHubRepos/AID_ITMO_UzlezzEngine/assets/models/animation/Walking.fbx nodes=68 submeshes=2
+MESH vertices=15991 triangles=28272 bones=65 material=Beta_HighLimbsGeoSG3 texture=
+bounds -90.2566 -0.0321938 -14.8957 to 90.2566 180.888 17.1742
+MESH vertices=12473 triangles=20840 bones=64 material=Beta_Joints_MAT1 texture=
+bounds -88.3467 -0.0351161 -12.9905 to 88.3467 159.644 12.5019
+CLIP mixamo.com seconds=1.03333 tracks=51 keys=3873
+19:26:52 [INFO] JobSystem: started 4 worker threads
+PASS: actual FBX poses change, loop and match sequential/parallel for 512 characters
+19:26:52 [INFO] JobSystem: stopped
+PASS: interpolation, looping, hierarchy, glTF import, 257 sequential/parallel poses, pause and lifecycle
+<end of output>
+Test time =   0.07 sec
+----------------------------------------------------------
+Test Passed.
+"WalkingAnimationTests" end time: Sep 24 19:26 RTZ 2 (����)
+"WalkingAnimationTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/6 Testing: PhysicsSystemTests
+3/6 Test: PhysicsSystemTests
+Command: "D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/Release/PhysicsSystemTests.exe"
+Directory: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build
+"PhysicsSystemTests" start time: Sep 24 19:26 RTZ 2 (����)
+Output:
+----------------------------------------------------------
+PASS: falling sphere, created first
+PASS: falling sphere, created second
+PASS: dynamic box, static sphere
+PASS: sphere contacts box edges/corners
+PASS: sphere does not collide as a box
+PASS: sphere inside box
+PASS: sphere pairs, including coincident centers
+PASS: sphere radius, scale and offset
+PASS: box-box regression
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"PhysicsSystemTests" end time: Sep 24 19:26 RTZ 2 (����)
+"PhysicsSystemTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/6 Testing: JobSystemTests
+4/6 Test: JobSystemTests
+Command: "D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/Release/JobSystemTests.exe"
+Directory: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build
+"JobSystemTests" start time: Sep 24 19:26 RTZ 2 (����)
+Output:
+----------------------------------------------------------
+19:26:52 [INFO] JobSystem: started 4 worker threads
+PASS: starts the requested number of workers
+PASS: submit runs every job exactly once
+PASS: parallelFor visits every index once
+PASS: jobs can submit and wait for jobs
+PASS: jobs of every priority run
+19:26:52 [ERROR] JobSystem: job threw: expected test exception
+PASS: a throwing job keeps workers alive
+PASS: collectCompleted releases finished jobs
+19:26:52 [INFO] JobSystem: stopped
+19:26:52 [INFO] JobSystem: started 4 worker threads
+PASS: background work stays off main and drains on shutdown
+19:26:53 [INFO] JobSystem: stopped
+PASS: shutdown waits for pending jobs
+PASS: submit after shutdown runs inline
+19:26:53 [INFO] JobSystem: started 2 worker threads
+19:26:53 [INFO] JobSystem: stopped
+PASS: restart after shutdown
+<end of output>
+Test time =   0.70 sec
+----------------------------------------------------------
+Test Passed.
+"JobSystemTests" end time: Sep 24 19:26 RTZ 2 (����)
+"JobSystemTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/6 Testing: CoordinateSystemTests
+5/6 Test: CoordinateSystemTests
+Command: "D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/Release/CoordinateSystemTests.exe"
+Directory: D:/GitHubRepos/AID_ITMO_UzlezzEngine
+"CoordinateSystemTests" start time: Sep 24 19:26 RTZ 2 (����)
+Output:
+----------------------------------------------------------
+19:26:53 [INFO] Scene manifest loaded: assets/scenes/demo_scene.json
+PASS: Z-up camera, movement, mouse look, picking, focus, gravity, spin and scene
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"CoordinateSystemTests" end time: Sep 24 19:26 RTZ 2 (����)
+"CoordinateSystemTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/6 Testing: TextureResourceTests
+6/6 Test: TextureResourceTests
+Command: "D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/Release/TextureResourceTests.exe" "D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures" "D:/GitHubRepos/AID_ITMO_UzlezzEngine/assets/models/animation/Walking.fbx"
+Directory: D:/GitHubRepos/AID_ITMO_UzlezzEngine
+"TextureResourceTests" start time: Sep 24 19:26 RTZ 2 (����)
+Output:
+----------------------------------------------------------
+19:26:53 [INFO] ShaderProgram: compiled OK
+19:26:53 [INFO] OpenGLRenderAdapter: Successfully initialized OpenGL context
+19:26:53 [INFO] ResourceManager initialized
+19:26:53 [INFO] Loading texture from disk: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/colors.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=1 (3x2, 0.60 ms)
+19:26:53 [INFO] Texture loaded: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/colors.png
+19:26:53 [INFO] Texture loaded from cache: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/colors.png
+19:26:53 [INFO] Loading texture from disk: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/alpha.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=2 (1x1, 0.02 ms)
+19:26:53 [INFO] Texture loaded: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/alpha.png
+19:26:53 [INFO] Loading texture from disk: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/invalid.png
+19:26:53 [ERROR] Texture decode failed: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/invalid.png (unknown image type)
+19:26:53 [ERROR] Failed to load texture: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/invalid.png
+19:26:53 [INFO] Loading texture from disk: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/missing.png
+19:26:53 [ERROR] Texture file does not exist or cannot be opened: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/missing.png
+19:26:53 [ERROR] Failed to load texture: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/missing.png
+19:26:53 [INFO] Loading texture from disk: assets/models/Bakes/Bookcase&Handle baked diffuse.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=3 (1024x1024, 2.43 ms)
+19:26:53 [INFO] Texture loaded: assets/models/Bakes/Bookcase&Handle baked diffuse.png
+19:26:53 [INFO] Loading texture from disk: assets/models/Bakes/Bookcase&Handle baked roughness.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=4 (1024x1024, 3.06 ms)
+19:26:53 [INFO] Texture loaded: assets/models/Bakes/Bookcase&Handle baked roughness.png
+19:26:53 [INFO] Loading texture from disk: assets/models/Bakes/Paws baked diffuse.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=5 (1024x1024, 1.72 ms)
+19:26:53 [INFO] Texture loaded: assets/models/Bakes/Paws baked diffuse.png
+19:26:53 [INFO] Loading texture from disk: assets/models/Bakes/Paws baked roughness.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=6 (1024x1024, 2.52 ms)
+19:26:53 [INFO] Texture loaded: assets/models/Bakes/Paws baked roughness.png
+19:26:53 [INFO] Loading texture from disk: assets/models/Bakes/Sides baked diffuse.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=7 (1024x1024, 1.76 ms)
+19:26:53 [INFO] Texture loaded: assets/models/Bakes/Sides baked diffuse.png
+19:26:53 [INFO] Loading texture from disk: assets/models/Bakes/Sides baked roughness.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=8 (1024x1024, 2.51 ms)
+19:26:53 [INFO] Texture loaded: assets/models/Bakes/Sides baked roughness.png
+19:26:53 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_AO.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=9 (2048x2048, 8.33 ms)
+19:26:53 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_AO.png
+19:26:53 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_BaseColor.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=10 (2048x2048, 6.92 ms)
+19:26:53 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_BaseColor.png
+19:26:53 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_Height.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=11 (2048x2048, 7.87 ms)
+19:26:53 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_Height.png
+19:26:53 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_Metallic.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=12 (2048x2048, 7.26 ms)
+19:26:53 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_Metallic.png
+19:26:53 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_Normal.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=13 (2048x2048, 7.08 ms)
+19:26:53 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_Normal.png
+19:26:53 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_Roughness.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=14 (2048x2048, 7.38 ms)
+19:26:53 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_Roughness.png
+19:26:53 [INFO] Loading texture from disk: assets/textures/WireFence.dds
+19:26:53 [INFO] Texture uploaded to GPU: ID=15 (512x512, 0.86 ms)
+19:26:53 [INFO] Texture loaded: assets/textures/WireFence.dds
+19:26:53 [INFO] Loading texture from disk: assets/textures/WoodCrate02.dds
+19:26:53 [INFO] Texture uploaded to GPU: ID=16 (512x512, 1.55 ms)
+19:26:53 [INFO] Texture loaded: assets/textures/WoodCrate02.dds
+19:26:53 [INFO] Loading texture from disk: assets/textures/demo_checker.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=17 (256x256, 0.69 ms)
+19:26:53 [INFO] Texture loaded: assets/textures/demo_checker.png
+19:26:53 [INFO] Loading texture from disk: assets/textures/demo_panel.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=18 (256x256, 0.42 ms)
+19:26:53 [INFO] Texture loaded: assets/textures/demo_panel.png
+19:26:53 [INFO] Loading texture from disk: assets/textures/stone.dds
+19:26:53 [INFO] Texture uploaded to GPU: ID=19 (512x512, 0.46 ms)
+19:26:53 [INFO] Texture loaded: assets/textures/stone.dds
+PASS: PNG pixels, alpha, orientation, errors, cache and 17 project PNG/DDS files
+19:26:53 [INFO] Loading mesh from: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/quad.obj
+19:26:53 [INFO] Processed 1 submeshes
+19:26:53 [INFO] Mesh uploaded to GPU successfully
+19:26:53 [INFO] Texture loaded from cache: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/colors.png
+19:26:53 [INFO] Mesh loaded: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/quad.obj
+19:26:53 [INFO] Shader program compiled successfully, ID=6
+19:26:53 [INFO] Shader loaded: assets/shaders/mesh_vertex.glsl|assets/shaders/mesh_fragment_simple_texture.glsl
+19:26:53 [INFO] Texture loaded from cache: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/alpha.png
+PASS: OBJ/MTL texture resolution, actual rendered colors, override and missing-texture fallback
+19:26:53 [INFO] Loading mesh from: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/skin/skin.gltf
+19:26:53 [INFO] Processed 1 submeshes
+19:26:53 [INFO] Mesh uploaded to GPU successfully
+19:26:53 [INFO] Mesh loaded: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/skin/skin.gltf
+19:26:53 [INFO] Shader loaded from cache: assets/shaders/mesh_vertex.glsl|assets/shaders/mesh_fragment_simple_texture.glsl
+PASS: actual GPU skinning, integer attributes, palette upload, normals and static fallback
+19:26:53 [INFO] Loading mesh from: D:/GitHubRepos/AID_ITMO_UzlezzEngine/assets/models/animation/Walking.fbx
+19:26:53 [INFO] Processed 2 submeshes
+19:26:53 [INFO] Mesh uploaded to GPU successfully
+19:26:53 [INFO] Mesh loaded: D:/GitHubRepos/AID_ITMO_UzlezzEngine/assets/models/animation/Walking.fbx
+19:26:53 [INFO] Shader loaded from cache: assets/shaders/mesh_vertex.glsl|assets/shaders/mesh_fragment_simple_texture.glsl
+PASS: Walking.fbx full GPU/CPU vertex comparison and four rendered poses
+19:26:53 [INFO] Resource cache cleared
+19:26:53 [INFO] JobSystem: started 4 worker threads
+19:26:53 [INFO] Loading mesh from: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/quad.obj
+19:26:53 [INFO] Loading mesh from: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/missing.fbx
+19:26:53 [INFO] Scene manifest loaded: assets/scenes/demo_scene.json
+19:26:53 [ERROR] Assimp error: Unable to open file "D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/missing.fbx".
+19:26:53 [INFO] Shader program compiled successfully, ID=6
+19:26:53 [INFO] Shader loaded: assets/shaders/mesh_vertex.glsl|assets/shaders/mesh_fragment_simple_texture.glsl
+19:26:53 [ERROR] Resource decode failed: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/broken.json: [json.exception.parse_error.101] parse error at line 1, column 2: syntax error while parsing object key - invalid literal; last read: '{b'; expected string literal
+19:26:53 [INFO] Loading mesh from: primitive:cube
+19:26:53 [INFO] Mesh uploaded to GPU successfully
+19:26:53 [INFO] Mesh loaded: primitive:cube
+19:26:53 [INFO] Processed 1 submeshes
+19:26:53 [INFO] Loading texture from disk: D:/GitHubRepos/AID_ITMO_UzlezzEngine/build/texture-test-fixtures/colors.png
+19:26:53 [INFO] Texture uploaded to GPU: ID=3 (3x2, 0.51 ms)
+19:26:53 [INFO] Loading mesh from: D:/GitHubRepos/AID_ITMO_UzlezzEngine/assets/models/animation/Walking.fbx
+19:26:53 [INFO] Processed 2 submeshes
+19:26:53 [INFO] ResourceManager: shutting down, 2 loads pending
+19:26:53 [INFO] JobSystem: stopped
+19:26:53 [INFO] Resource cache cleared
+19:26:53 [INFO] ResourceManager initialized
+PASS: async mesh/scene/material, placeholders, failures, incremental GPU budget and shutdown
+19:26:53 [INFO] Resource cache cleared
+19:26:53 [INFO] OpenGLRenderAdapter: Shutdown complete
+<end of output>
+Test time =   0.86 sec
+----------------------------------------------------------
+Test Passed.
+"TextureResourceTests" end time: Sep 24 19:26 RTZ 2 (����)
+"TextureResourceTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Sep 24 19:26 RTZ 2 (����)

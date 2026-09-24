@@ -84,6 +84,7 @@ class IRenderAdapter {
 	// Bind mesh rendering state.
 	virtual void useShaderProgram(unsigned int programId) = 0;
 	virtual void setMatrix4(unsigned int programId, const char* name, const Mat4& value) = 0;
+	virtual void setSkinMatrices(unsigned int programId, const Mat4* matrices, std::size_t count) = 0;
 	virtual void setInt(unsigned int programId, const char* name, int value) = 0;
 	virtual void setFloat(unsigned int programId, const char* name, float value) = 0;
 	virtual void setVec3(unsigned int programId, const char* name, const Vec3& value) = 0;

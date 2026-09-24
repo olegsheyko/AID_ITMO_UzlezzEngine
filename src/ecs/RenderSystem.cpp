@@ -44,16 +44,21 @@ RenderSystem::RenderSystem(IRenderAdapter& renderer)
 void RenderSystem::render(World& world) {
     ZoneScopedN("Scene render");
     lastDrawnMeshCount_ = 0;
+    ZoneNamedN(submission, "Skin palette upload and scene draws", true);
     world.forEach<Transform, MeshRenderer>([this, &world](Entity entity, Transform&, MeshRenderer& meshRenderer) {
         if (!meshRenderer.cachedMesh || !meshRenderer.cachedShader) {
             return;
         }
 
-        if (!meshRenderer.cachedMesh->isLoaded() || !meshRenderer.cachedShader->isLoaded()) {
+        if (!meshRenderer.cachedShader->isLoaded()) {
             return;
         }
 
-        const MeshData* meshData = meshRenderer.cachedMesh->getData();
+        const bool placeholder = !meshRenderer.cachedMesh->isLoaded();
+        // This tiny procedural resource performs no file I/O and is cached once.
+        auto mesh = placeholder ? ResourceManager::getInstance().loadMesh("primitive:cube") : meshRenderer.cachedMesh;
+        if (!mesh || !mesh->isLoaded()) return;
+        const MeshData* meshData = mesh->getData();
         const ShaderData* shaderData = meshRenderer.cachedShader->getData();
         if (meshData == nullptr || shaderData == nullptr || shaderData->programId == 0) {
             return;
@@ -68,8 +73,34 @@ void RenderSystem::render(World& world) {
         setupMatrices(world, shaderData->programId, modelMatrix);
         setupLighting(shaderData->programId);
 
-        if (!meshData->subMeshes.empty()) {
-            for (const SubMesh& subMesh : meshData->subMeshes) {
+        const AnimationPose* pose = nullptr;
+        if (world.hasComponent<Animator>(entity)) {
+            const auto& animator = world.getComponent<Animator>(entity);
+            const auto& candidate = animator.pose;
+            if (animator.evaluatedMesh == meshData && candidate.globals.size() == meshData->skeleton.nodes.size()
+                && candidate.palettes.size() == meshData->subMeshes.size()) pose = &candidate;
+        }
+        renderer_.setInt(shaderData->programId, "useSkinning", 0);
+        renderer_.setMatrix4(shaderData->programId, "meshNodeTransform", Mat4::identity());
+
+        if (placeholder) {
+            renderer_.bindTexture2D(ResourceManager::getInstance().placeholderTextureId(), 0);
+            renderer_.setInt(shaderData->programId, "baseColorTexture", 0);
+            renderer_.setInt(shaderData->programId, "useBaseColorTexture", 1);
+            renderer_.setVec3(shaderData->programId, "materialColor",
+                meshRenderer.cachedMesh->isFailed() ? Vec3{1,.2f,.2f} : Vec3{1,1,1});
+            for (const auto& sub : meshData->subMeshes) renderer_.drawIndexed(sub.vao, sub.indexCount);
+        } else if (!meshData->subMeshes.empty()) {
+            for (size_t i = 0; i < meshData->subMeshes.size(); ++i) {
+                const SubMesh& subMesh = meshData->subMeshes[i];
+                if (!meshData->skeleton.nodes.empty()) {
+                    const auto& globals = pose ? pose->globals : meshData->skeleton.bindGlobals;
+                    renderer_.setMatrix4(shaderData->programId, "meshNodeTransform",
+                        Math::multiply(meshData->skeleton.rootInverse, globals[subMesh.skeletonNode]));
+                }
+                const bool skinned = pose && !subMesh.bones.empty() && pose->palettes[i].size() == subMesh.bones.size();
+                renderer_.setInt(shaderData->programId, "useSkinning", skinned ? 1 : 0);
+                if (skinned) renderer_.setSkinMatrices(shaderData->programId, pose->palettes[i].data(), pose->palettes[i].size());
                 renderSubMesh(subMesh, *shaderData, meshRenderer);
             }
         } else if (meshData->vao != 0 && meshData->indexCount > 0) {
@@ -92,7 +123,7 @@ void RenderSystem::setupLighting(unsigned int shaderProgram) {
 
 void RenderSystem::bindMaterial(const Material& material, const ShaderData& shaderData, const MeshRenderer& meshRenderer) {
     std::shared_ptr<Resource<TextureData>> texture = meshRenderer.cachedBaseColorTexture;
-    if (!texture || !texture->isLoaded()) {
+    if (!texture) {
         texture = material.cachedDiffuseTexture;
     }
 

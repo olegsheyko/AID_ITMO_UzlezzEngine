@@ -1,9 +1,10 @@
 ﻿#include "states/LoadingState.h"
 #include "core/Logger.h"
+#include "resources/ResourceManager.h"
 
 void LoadingState::onEnter() {
     LOG_INFO("LoadingState: entered");
-    timer_ = 0.0f;
+    scene_ = ResourceManager::getInstance().loadSceneAsync("assets/scenes/demo_scene.json");
     finished_ = false;
 }
 
@@ -11,12 +12,8 @@ void LoadingState::onExit() {
     LOG_INFO("LoadingState: exited");
 }
 
-void LoadingState::update(float dt) {
-    timer_ += dt; // Accumulate elapsed loading time.
-
-    if (timer_ >= duration_) {
-        finished_ = true; // The loading timeout has elapsed.
-    }
+void LoadingState::update(float) {
+    finished_ = !scene_ || !scene_->isPending();
 }
 
 void LoadingState::render() {

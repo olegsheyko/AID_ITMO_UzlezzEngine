@@ -100,6 +100,29 @@ void collectCompletedReleasesFinishedJobs() {
     require(jobs().inFlightCount() == 0, "collectCompleted must release every finished job");
 }
 
+void backgroundWorkStaysOffMain() {
+    const auto mainThread = std::this_thread::get_id();
+    std::atomic<int> completed{0}, wrongThread{0};
+    std::vector<JobHandle> handles;
+    for (int i=0; i<1000; ++i) {
+        handles.push_back(jobs().submitBackground([&] {
+            if (std::this_thread::get_id()==mainThread) ++wrongThread;
+            ++completed;
+        }, JobPriority::High));
+    }
+    // Exercise the same main-thread helping that animation uses.
+    for (auto& handle : handles) jobs().wait(handle);
+    require(completed==1000 && wrongThread==0,"Main thread executed background work");
+    completed=0;
+    for (int i=0;i<100;++i) jobs().submitBackground([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1)); ++completed;
+    });
+    jobs().shutdown();
+    require(completed==100,"Shutdown lost background tasks");
+    require(!JobSystem::getInstance().submitBackground([] {}).isValid(),"Stopped system accepted background work");
+    jobs();
+}
+
 void shutdownWaitsForPendingJobs() {
     std::atomic<int> finished{0};
     for (int i = 0; i < 100; ++i) {
@@ -154,6 +177,7 @@ int main() {
     run("jobs of every priority run", everyPriorityRuns);
     run("a throwing job keeps workers alive", throwingJobKeepsWorkersAlive);
     run("collectCompleted releases finished jobs", collectCompletedReleasesFinishedJobs);
+    run("background work stays off main and drains on shutdown", backgroundWorkStaysOffMain);
     run("shutdown waits for pending jobs", shutdownWaitsForPendingJobs);
     run("submit after shutdown runs inline", submitAfterShutdownRunsInline);
     run("restart after shutdown", restartsAfterShutdown);

@@ -1,5 +1,6 @@
 #include "render/OpenGLRenderAdapter.h"
 #include "core/Logger.h"
+#include "resources/ResourceTypes.h"
 
 #include <algorithm>
 #include <array>
@@ -288,6 +289,12 @@ bool OpenGLRenderAdapter::uploadMesh(
 
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(vertexStride), (void*)(6 * sizeof(float)));
+	if (vertexStride == sizeof(Vertex)) {
+		glEnableVertexAttribArray(3);
+		glVertexAttribIPointer(3, 4, GL_INT, static_cast<GLsizei>(vertexStride), reinterpret_cast<void*>(offsetof(Vertex, boneIds)));
+		glEnableVertexAttribArray(4);
+		glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(vertexStride), reinterpret_cast<void*>(offsetof(Vertex, boneWeights)));
+	}
 
 	glBindVertexArray(0);
 	return true;
@@ -419,6 +426,22 @@ void OpenGLRenderAdapter::setMatrix4(unsigned int programId, const char* name, c
 	if (location >= 0) {
 		glUniformMatrix4fv(location, 1, GL_FALSE, value.data());
 	}
+}
+
+void OpenGLRenderAdapter::setSkinMatrices(unsigned int programId, const Mat4* matrices, std::size_t count) {
+	if (!matrices || count == 0 || count > kMaxSkinBones) return;
+	const GLuint block = glGetUniformBlockIndex(programId, "SkinPalette");
+	if (block == GL_INVALID_INDEX) return;
+	if (!skinBuffer_) {
+		glGenBuffers(1, &skinBuffer_);
+		glBindBuffer(GL_UNIFORM_BUFFER, skinBuffer_);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(Mat4)*kMaxSkinBones, nullptr, GL_STREAM_DRAW);
+	}
+	glBindBuffer(GL_UNIFORM_BUFFER, skinBuffer_);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Mat4)*count, matrices);
+	glUniformBlockBinding(programId, block, 0);
+	glBindBufferBase(GL_UNIFORM_BUFFER, 0, skinBuffer_);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
 void OpenGLRenderAdapter::setInt(unsigned int programId, const char* name, int value) {
@@ -597,6 +620,7 @@ bool OpenGLRenderAdapter::createRenderResources() {
 }
 
 void OpenGLRenderAdapter::destroyRenderResources() {
+	if (skinBuffer_) { glDeleteBuffers(1, &skinBuffer_); skinBuffer_ = 0; }
 	auto destroyMesh = [](PrimitiveMesh& mesh) {
 		if (mesh.vbo != 0) {
 			glDeleteBuffers(1, &mesh.vbo);

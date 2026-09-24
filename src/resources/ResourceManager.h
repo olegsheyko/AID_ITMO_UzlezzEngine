@@ -2,6 +2,7 @@
 
 #include "Resource.h"
 #include "ResourceTypes.h"
+#include "SceneManifest.h"
 #include "jobs/JobSystem.h"
 
 #include <atomic>
@@ -42,9 +43,14 @@ public:
     // Инициализация с адаптером рендеринга
     void init(IRenderAdapter* renderer);
 
-    // Загрузка ресурсов с кэшированием
+    // Синхронный путь для baseline-замеров, тестов и процедурных примитивов.
     std::shared_ptr<Resource<MeshData>> loadMesh(const std::string& path);
     std::shared_ptr<Resource<TextureData>> loadTexture(const std::string& path);
+
+    // Runtime I/O: workers decode; pumpUploads publishes Ready on the main thread.
+    // All public resource requests/cache operations are main-thread only.
+    std::shared_ptr<Resource<MeshData>> loadMeshAsync(const std::string& path, JobPriority priority = JobPriority::High);
+    std::shared_ptr<Resource<SceneManifest>> loadSceneAsync(const std::string& path, JobPriority priority = JobPriority::High);
 
     // Асинхронная загрузка текстуры: чтение и декодирование — задачей в job system,
     // заливка на GPU — в pumpUploads на главном потоке. Хэндл возвращается сразу;
@@ -55,7 +61,7 @@ public:
     // Раз в кадр с главного потока: залить на GPU то, что декодировали воркеры, в пределах бюджета кадра.
     void pumpUploads();
     // Бюджет пампа — время, а не байты: у каждой заливки есть постоянная цена, и четыре 1K-текстуры
-    // дороже одной 2K при тех же 16 МБ. Первая текстура за кадр проходит всегда, следующие —
+    // дороже одной 2K при тех же 16 МБ. Первая операция за кадр проходит всегда, следующие —
     // пока памп укладывается в maxMs; maxUploads — страховочный предел.
     void setUploadBudget(double maxMs, std::size_t maxUploads = 8);
     double uploadBudgetMs() const { return maxUploadMsPerFrame_; }
@@ -104,12 +110,19 @@ private:
 
     void addMainThreadLoadTime(double ms) { mainThreadLoadMs_ += ms; }
     void drainUploadQueue();
+    void discardMesh(MeshData& mesh);
+    template<class T, class Decode, class Finalize, class Discard>
+    void startAsync(std::shared_ptr<Resource<T>> resource, Decode decode, Finalize finalize, Discard discard, JobPriority priority);
 
     IRenderAdapter* renderer_ = nullptr;
 
-    // Декодированные воркерами текстуры, ждущие заливки на главном потоке.
+    // Finalization steps for decoded textures, mesh chunks and scene manifests.
     std::mutex uploadMutex_;
-    std::deque<std::shared_ptr<Resource<TextureData>>> uploadQueue_;
+    struct Upload {
+        std::function<bool()> step; // One bounded unit, true when the resource is complete.
+        std::function<void()> cancel;
+    };
+    std::deque<Upload> uploadQueue_;
     double maxUploadMsPerFrame_ = 4.0;
     std::size_t maxUploadsPerFrame_ = 8;
 
@@ -117,6 +130,8 @@ private:
     std::atomic<int> pendingLoads_{0};
     double mainThreadLoadMs_ = 0.0;
     unsigned int placeholderTextureId_ = 0;
+
+    std::unordered_map<std::string, std::shared_ptr<Resource<SceneManifest>>> sceneCache_;
 
     // Кэши для разных типов ресурсов
     std::unordered_map<std::string, std::shared_ptr<Resource<MeshData>>> meshCache_;

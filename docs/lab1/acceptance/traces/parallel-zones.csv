@@ -1,0 +1,6 @@
+name,src_file,src_line,total_ns,total_perc,counts,mean_ns,min_ns,max_ns,std_ns
+Animation poses,D:\GitHubRepos\AID_ITMO_UzlezzEngine\src\ecs\AnimationSystem.cpp,8,3925950344,97.829920,9600,408953,218953,1043073,55598.454489
+Animation update,D:\GitHubRepos\AID_ITMO_UzlezzEngine\src\ecs\AnimationSystem.cpp,16,371114933,9.247734,600,618524,444757,2449001,129586.076365
+Animation dispatch,D:\GitHubRepos\AID_ITMO_UzlezzEngine\src\ecs\AnimationSystem.cpp,39,12965155,0.323076,600,21608,12110,532498,44711.969873
+Animation prepare,D:\GitHubRepos\AID_ITMO_UzlezzEngine\src\ecs\AnimationSystem.cpp,19,15916717,0.396625,600,26527,21181,1931013,78010.349883
+Animation wait,D:\GitHubRepos\AID_ITMO_UzlezzEngine\src\ecs\AnimationSystem.cpp,48,341984896,8.521849,600,569974,265674,1051757,103819.427492

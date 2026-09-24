@@ -21,6 +21,7 @@ struct Tag {
 };
 
 struct MeshRenderer {
+    bool colliderBoundsInitialized = false;
     std::string meshId;
     std::string baseColorTextureId;
     std::string normalTextureId;
@@ -48,6 +49,17 @@ struct Hierarchy {
 struct Spin {
     float speed = 0.0f;
 };
+
+struct Animator {
+    unsigned int clip = 0;
+    double time = 0;
+    float speed = 1;
+    bool paused = false;
+    AnimationPose pose;
+    const MeshData* evaluatedMesh = nullptr; // identity only; cachedMesh owns the resource
+};
+
+template <> struct IsComponent<Animator> : std::true_type {};
 
 struct Camera {
     float fovDegrees = 45.0f;

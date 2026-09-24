@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <utility>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -51,7 +52,6 @@ std::shared_ptr<Resource<MeshData>> ResourceManager::loadMesh(const std::string&
     // Проверяем кэш
     auto it = meshCache_.find(path);
     if (it != meshCache_.end()) {
-        LOG_INFO("Mesh loaded from cache: " + path);
         return it->second;
     }
 
@@ -123,39 +123,98 @@ std::shared_ptr<Resource<ShaderData>> ResourceManager::loadShader(const std::str
     return nullptr;
 }
 
-std::shared_ptr<Resource<TextureData>> ResourceManager::loadTextureAsync(const std::string& path, JobPriority priority) {
-    auto it = textureCache_.find(path);
-    if (it != textureCache_.end()) {
-        // Готова, грузится или провалилась — вызывающий решает по состоянию хэндла.
-        return it->second;
-    }
-    if (shuttingDown_.load(std::memory_order_acquire)) {
-        return nullptr;
-    }
+// Workers own CPU data until publishing a finalization task. Only the main thread
+// touches caches, GPU objects, material handles, or publishes Ready to consumers.
+template<class T, class Decode, class Finalize, class Discard>
+void ResourceManager::startAsync(std::shared_ptr<Resource<T>> resource, Decode decode,
+    Finalize finalize, Discard discard, JobPriority priority) {
+    pendingLoads_.fetch_add(1, std::memory_order_relaxed);
+    auto cancel = [this, resource, discard] {
+        discard(*resource->getData());
+        resource->setState(ResourceState::Failed);
+        pendingLoads_.fetch_sub(1, std::memory_order_relaxed);
+    };
+    const auto job = JobSystem::getInstance().submitBackground([this, resource, decode, finalize, cancel] {
+        bool decoded = false;
+        try {
+            if (!shuttingDown_.load(std::memory_order_acquire)) {
+                resource->setState(ResourceState::Decoding);
+                decoded = decode(*resource->getData());
+            }
+        } catch (const std::exception& error) {
+            LOG_ERROR("Resource decode failed: " + resource->getPath() + ": " + error.what());
+        } catch (...) {
+            LOG_ERROR("Resource decode failed: " + resource->getPath());
+        }
+        if (decoded) resource->setState(ResourceState::ReadyForUpload);
+        Upload upload;
+        upload.cancel = cancel;
+        upload.step = [this, resource, finalize, cancel, decoded]() mutable {
+            if (!decoded || shuttingDown_.load(std::memory_order_acquire)) { cancel(); return true; }
+            if (!finalize(*resource->getData())) return false;
+            resource->setState(ResourceState::Ready);
+            pendingLoads_.fetch_sub(1, std::memory_order_relaxed);
+            return true;
+        };
+        std::lock_guard<std::mutex> lock(uploadMutex_);
+        uploadQueue_.push_back(std::move(upload));
+    }, priority);
+    if (!job.isValid()) cancel();
+}
 
-    // В кэш кладём сразу: повторный запрос той же текстуры получит этот же хэндл, а не вторую загрузку.
-    // Воркеры в кэш не лезут никогда — он только для главного потока.
+void ResourceManager::discardMesh(MeshData& mesh) {
+    for (auto& sub : mesh.subMeshes) {
+        if (renderer_ && (sub.vao || sub.vbo || sub.ebo)) renderer_->destroyMesh(sub.vao, sub.vbo, sub.ebo);
+    }
+    mesh = {};
+}
+
+std::shared_ptr<Resource<MeshData>> ResourceManager::loadMeshAsync(const std::string& path, JobPriority priority) {
+    if (shuttingDown_.load(std::memory_order_acquire)) return nullptr;
+    if (path == "primitive:cube") return loadMesh(path); // Generated locally; no file to read.
+    if (auto it = meshCache_.find(path); it != meshCache_.end()) return it->second;
+    auto resource = std::make_shared<Resource<MeshData>>(path);
+    meshCache_[path] = resource;
+    startAsync(resource, [path](MeshData& data) { return MeshLoader::decode(path, data); },
+        [this, priority, next = size_t{0}](MeshData& data) mutable {
+            ZoneScopedN("Mesh GPU upload chunk");
+            if (!renderer_ || data.subMeshes.empty()) throw std::runtime_error("Mesh has no GPU data");
+            // One submesh per pump step; texture decoding uses the same Job System.
+            auto& sub = data.subMeshes[next];
+            if (!sub.material.diffuseTexturePath.empty())
+                sub.material.cachedDiffuseTexture = loadTextureAsync(sub.material.diffuseTexturePath, priority);
+            if (!MeshLoader::uploadSubMeshToGPU(sub, renderer_)) throw std::runtime_error("Mesh GPU upload failed");
+            if (++next < data.subMeshes.size()) return false;
+            if (data.subMeshes.size() == 1) {
+                data.vao = sub.vao; data.vbo = sub.vbo; data.ebo = sub.ebo; data.indexCount = sub.indexCount;
+            }
+            return true;
+        }, [this](MeshData& data) { discardMesh(data); }, priority);
+    return resource;
+}
+
+std::shared_ptr<Resource<SceneManifest>> ResourceManager::loadSceneAsync(const std::string& path, JobPriority priority) {
+    if (shuttingDown_.load(std::memory_order_acquire)) return nullptr;
+    if (auto it = sceneCache_.find(path); it != sceneCache_.end()) return it->second;
+    auto resource = std::make_shared<Resource<SceneManifest>>(path);
+    sceneCache_[path] = resource;
+    startAsync(resource, [path](SceneManifest& data) {
+        ZoneScopedN("Scene read and parse");
+        return data.loadFromFile(path);
+    }, [](SceneManifest&) { return true; }, [](SceneManifest& data) { data = {}; }, priority);
+    return resource;
+}
+
+std::shared_ptr<Resource<TextureData>> ResourceManager::loadTextureAsync(const std::string& path, JobPriority priority) {
+    if (shuttingDown_.load(std::memory_order_acquire)) return nullptr;
+    if (auto it = textureCache_.find(path); it != textureCache_.end()) return it->second;
     auto resource = std::make_shared<Resource<TextureData>>(path);
     textureCache_[path] = resource;
-    pendingLoads_.fetch_add(1, std::memory_order_relaxed);
-
-    JobSystem::getInstance().submit([this, resource] {
-        if (shuttingDown_.load(std::memory_order_acquire)) {
-            resource->setState(ResourceState::Failed);
-            pendingLoads_.fetch_sub(1, std::memory_order_relaxed);
-            return;
-        }
-        resource->setState(ResourceState::Decoding);
-        if (!TextureLoader::decode(resource->getPath(), *resource->getData())) {
-            LOG_ERROR("Failed to load texture: " + resource->getPath());
-            resource->setState(ResourceState::Failed);
-            pendingLoads_.fetch_sub(1, std::memory_order_relaxed);
-            return;
-        }
-        resource->setState(ResourceState::ReadyForUpload);
-        std::lock_guard<std::mutex> lock(uploadMutex_);
-        uploadQueue_.push_back(resource);
-    }, priority);
+    startAsync(resource, [path](TextureData& data) { return TextureLoader::decode(path, data); },
+        [this, path](TextureData& data) {
+            if (!TextureLoader::upload(data, renderer_, path)) throw std::runtime_error("Texture GPU upload failed: " + path);
+            return true;
+        }, [](TextureData& data) { std::free(data.pixels); data.pixels = nullptr; }, priority);
     return resource;
 }
 
@@ -168,11 +227,11 @@ void ResourceManager::pumpUploads() {
     std::size_t uploads = 0;
 
     while (uploads < maxUploadsPerFrame_) {
-        // Первая текстура проходит всегда, иначе дорогая застряла бы в очереди навсегда.
+        // Первый шаг проходит всегда; бюджет проверяется между неделимыми GPU-вызовами.
         if (uploads > 0 && elapsedMs() >= maxUploadMsPerFrame_) {
             break;
         }
-        std::shared_ptr<Resource<TextureData>> next;
+        Upload next;
         {
             std::lock_guard<std::mutex> lock(uploadMutex_);
             if (uploadQueue_.empty()) {
@@ -182,9 +241,15 @@ void ResourceManager::pumpUploads() {
             uploadQueue_.pop_front();
         }
 
-        const bool uploaded = TextureLoader::upload(*next->getData(), renderer_, next->getPath());
-        next->setState(uploaded ? ResourceState::Ready : ResourceState::Failed);
-        pendingLoads_.fetch_sub(1, std::memory_order_relaxed);
+        try {
+            if (!next.step()) {
+                std::lock_guard<std::mutex> lock(uploadMutex_);
+                uploadQueue_.push_back(std::move(next));
+            }
+        } catch (const std::exception& error) {
+            LOG_ERROR(std::string("Resource finalization failed: ") + error.what());
+            next.cancel();
+        }
         ++uploads;
     }
 
@@ -246,18 +311,13 @@ double ResourceManager::takeMainThreadLoadMs() {
 }
 
 void ResourceManager::drainUploadQueue() {
-    std::deque<std::shared_ptr<Resource<TextureData>>> pending;
+    std::deque<Upload> pending;
     {
         std::lock_guard<std::mutex> lock(uploadMutex_);
         pending.swap(uploadQueue_);
     }
-    // Декодированное, но не залитое при выходе — просто освобождаем CPU-пиксели.
-    for (auto& resource : pending) {
-        std::free(resource->getData()->pixels);
-        resource->getData()->pixels = nullptr;
-        resource->setState(ResourceState::Failed);
-        pendingLoads_.fetch_sub(1, std::memory_order_relaxed);
-    }
+    // JobSystem must already be stopped: no worker can publish after this drain.
+    for (auto& upload : pending) upload.cancel();
 }
 
 void ResourceManager::clearCache() {
@@ -308,6 +368,8 @@ void ResourceManager::clearCache() {
         }
     }
 
+    placeholderTextureId_ = 0;
+    sceneCache_.clear();
     meshCache_.clear();
     textureCache_.clear();
     shaderCache_.clear();

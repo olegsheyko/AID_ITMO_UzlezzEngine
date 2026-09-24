@@ -182,8 +182,19 @@ void GameplayState::onExit() {
 }
 
 void GameplayState::update(float dt) {
+    world_.forEach<MeshRenderer, Collider>([](Entity, MeshRenderer& mesh, Collider& collider) {
+        if (!mesh.colliderBoundsInitialized && mesh.cachedMesh && mesh.cachedMesh->isLoaded()) {
+            fitColliderToMeshBounds(mesh, collider);
+            mesh.colliderBoundsInitialized = true;
+        }
+    });
 	handleInput(dt);
-	world_.updateSystems(dt);
+    bool waitingForColliders = false;
+    world_.forEach<MeshRenderer, Collider>([&](Entity, MeshRenderer& mesh, Collider&) {
+        waitingForColliders |= mesh.cachedMesh && mesh.cachedMesh->isPending();
+    });
+    if (!waitingForColliders) world_.updateSystems(dt);
+    animationSystem_.update(world_, dt);
 }
 
 void GameplayState::render() {
@@ -213,7 +224,7 @@ void GameplayState::createScene() {
 	renderer.meshId = "fallback_cube";
 	renderer.baseColorTextureId = "fallback_crate";
 	renderer.shaderId = "fallback_textured";
-	renderer.cachedMesh = resourceManager.load<MeshData>(kFallbackMeshPath);
+	renderer.cachedMesh = resourceManager.loadMeshAsync(kFallbackMeshPath);
 	renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(kFallbackTexturePath, JobPriority::High);
 	renderer.cachedShader = resourceManager.loadShader(kFallbackVertexShaderPath, kFallbackFragmentShaderPath);
 
@@ -236,14 +247,12 @@ void GameplayState::createScene() {
 }
 
 bool GameplayState::createSceneFromManifest() {
-	SceneManifest manifest;
-	if (!manifest.loadFromFile(kSceneManifestPath)) {
-		return false;
-	}
+    auto& resourceManager = ResourceManager::getInstance();
+    auto scene = resourceManager.loadSceneAsync(kSceneManifestPath);
+    if (!scene || !scene->isLoaded()) return false;
+    const SceneManifest& manifest = *scene->getData();
 
-	auto& resourceManager = ResourceManager::getInstance();
-
-	for (const SceneEntityDescription& description : manifest.getEntities()) {
+    for (const SceneEntityDescription& description : manifest.getEntities()) {
 		const std::string* meshPath = manifest.findMeshPath(description.meshId);
 		const ShaderAssetPaths* shaderPaths = manifest.findShader(description.shaderId);
 		if (meshPath == nullptr || shaderPaths == nullptr) {
@@ -255,7 +264,7 @@ bool GameplayState::createSceneFromManifest() {
 		renderer.meshId = description.meshId;
 		renderer.baseColorTextureId = description.baseColorTextureId;
 		renderer.shaderId = description.shaderId;
-		renderer.cachedMesh = resourceManager.load<MeshData>(*meshPath);
+		renderer.cachedMesh = resourceManager.loadMeshAsync(*meshPath);
 		renderer.cachedShader = resourceManager.loadShader(shaderPaths->vertexPath, shaderPaths->fragmentPath);
 
 		if (!description.baseColorTextureId.empty()) {

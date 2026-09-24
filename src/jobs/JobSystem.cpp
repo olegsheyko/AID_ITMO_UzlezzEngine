@@ -37,6 +37,12 @@ struct Job final : enki::ITaskSet {
 
     std::function<void()> function_;
 };
+struct BackgroundJob final : enki::IPinnedTask {
+    BackgroundJob(uint32_t worker, std::function<void()> function)
+        : enki::IPinnedTask(worker), body_(std::move(function)) {}
+    void Execute() override { body_.run(); }
+    Job body_;
+};
 }
 
 namespace {
@@ -82,7 +88,7 @@ void onSleepStop(uint32_t) {
 #endif
 }
 
-JobHandle::JobHandle(std::shared_ptr<jobs_detail::Job> job)
+JobHandle::JobHandle(std::shared_ptr<enki::ICompletable> job)
     : job_(std::move(job)) {
 }
 
@@ -165,6 +171,19 @@ JobHandle JobSystem::submit(std::function<void()> job, JobPriority priority) {
     // Сначала в очередь, потом в список: пока задача в очереди, её держит локальный shared_ptr,
     // а collectCompleted не может принять ещё не поставленную задачу за выполненную.
     scheduler_->AddTaskSetToPipe(task.get());
+    {
+        std::lock_guard<std::mutex> lock(inFlightMutex_);
+        inFlight_.push_back(task);
+    }
+    return JobHandle(task);
+}
+
+JobHandle JobSystem::submitBackground(std::function<void()> job, JobPriority priority) {
+    if (!isRunning()) return {};
+    const uint32_t worker = 1 + nextBackgroundWorker_.fetch_add(1, std::memory_order_relaxed) % workerCount();
+    auto task = std::make_shared<jobs_detail::BackgroundJob>(worker, std::move(job));
+    task->m_Priority = toEnki(priority);
+    scheduler_->AddPinnedTask(task.get());
     {
         std::lock_guard<std::mutex> lock(inFlightMutex_);
         inFlight_.push_back(task);

@@ -1,0 +1,10 @@
+{
+  "configuration": "Release",
+  "tracy_enabled": true,
+  "test_suites_passed": 6,
+  "executable_sha256": "a07c67f0caf6b088a829796e7142c91380725c9b16e734f61556dedf579294fb",
+  "platform": "Windows x64 / MSVC 2022",
+  "cpu": "AMD Ryzen 7 7800X3D",
+  "worker_threads": 15,
+  "notes": "Current worktree, including uncommitted changes. Final stability run uses this executable."
+}

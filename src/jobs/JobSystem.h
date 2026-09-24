@@ -10,6 +10,7 @@
 
 namespace enki {
 class TaskScheduler;
+class ICompletable;
 }
 
 namespace jobs_detail {
@@ -32,9 +33,9 @@ public:
 
 private:
     friend class JobSystem;
-    explicit JobHandle(std::shared_ptr<jobs_detail::Job> job);
+    explicit JobHandle(std::shared_ptr<enki::ICompletable> job);
 
-    std::shared_ptr<jobs_detail::Job> job_;
+    std::shared_ptr<enki::ICompletable> job_;
 };
 
 // Единственная система фоновой работы движка — поверх enkiTS.
@@ -61,6 +62,10 @@ public:
     // Если система не запущена, задача выполняется сразу на вызывающем потоке.
     JobHandle submit(std::function<void()> job, JobPriority priority = JobPriority::Normal);
 
+    // Resource I/O must never be stolen by the main thread during an animation wait.
+    // Uses the same enkiTS workers; returns an invalid handle if not initialized.
+    JobHandle submitBackground(std::function<void()> job, JobPriority priority = JobPriority::Normal);
+
     // Дождаться задачи. Пока ждёт, поток сам выполняет задачи из очереди.
     void wait(const JobHandle& handle);
 
@@ -83,6 +88,7 @@ private:
 
     std::unique_ptr<enki::TaskScheduler> scheduler_;
     std::atomic<bool> running_{false};
+    std::atomic<uint32_t> nextBackgroundWorker_{0};
     mutable std::mutex inFlightMutex_;
-    std::vector<std::shared_ptr<jobs_detail::Job>> inFlight_;
+    std::vector<std::shared_ptr<enki::ICompletable>> inFlight_;
 };

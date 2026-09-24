@@ -1,6 +1,8 @@
 #pragma once
 #include "states/IGameState.h"
 #include "core/Logger.h"
+#include "resources/Resource.h"
+#include "resources/SceneManifest.h"
 
 class LoadingState : public IGameState {
 public:
@@ -12,7 +14,6 @@ public:
     bool isFinished() const { return finished_; }
 
 private:
-    float timer_ = 0.0f;         
-    const float duration_ = 2.0f; 
+    std::shared_ptr<Resource<SceneManifest>> scene_;
     bool finished_ = false;
 };

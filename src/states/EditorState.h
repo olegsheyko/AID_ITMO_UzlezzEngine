@@ -3,6 +3,7 @@
 #include "editor/EditorCamera.h"
 #include "editor/TexturePicker.h"
 #include "ecs/Components.h"
+#include "ecs/AnimationSystem.h"
 #include "ecs/DebugRenderSystem.h"
 #include "ecs/Entity.h"
 #include "ecs/PhysicsSystem.h"
@@ -49,6 +50,8 @@ private:
         Transform transform{};
         bool hasMeshRenderer = false;
         MeshRenderer meshRenderer{};
+        bool hasAnimator = false;
+        Animator animator{};
         bool hasHierarchy = false;
         Hierarchy hierarchy{};
         bool hasSpin = false;
@@ -92,6 +95,8 @@ private:
     void renderHierarchyEntity(Entity entity);
     void renderInspectorPanel();
     void renderStatisticsPanel();
+    void renderAnimationPanel();
+    void rebuildAnimationDemo();
     void renderViewportPanel();
     void renderViewportScene(int width, int height);
     void renderGizmo(const ImVec2& viewportMin, const ImVec2& viewportSize);
@@ -111,6 +116,7 @@ private:
     TexturePicker texturePicker_;
     PhysicsSystem physicsSystem_;
     SpinSystem spinSystem_;
+    AnimationSystem animationSystem_;
     RenderSystem renderSystem_;
     DebugRenderSystem debugRenderSystem_;
     Entity selectedEntity_ = kInvalidEntity;
@@ -143,4 +149,10 @@ private:
     LoadScenario heavyLoad_;
     bool heavyLoadAsync_ = true;
     StressRun stress_;
+    std::array<char, 1024> animationPath_{"assets/models/animation/Walking.fbx"};
+    std::string animationError_;
+    std::shared_ptr<Resource<MeshData>> animationLoad_;
+    std::vector<Entity> animationDemoEntities_;
+    int animationDemoCount_ = 16;
+    bool animationYUp_ = true;
 };

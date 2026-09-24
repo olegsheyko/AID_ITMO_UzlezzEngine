@@ -2,6 +2,7 @@
 
 #include "bench/Benchmark.h"
 #include "bench/StressRun.h"
+#include "bench/AnimationBenchmark.h"
 
 #include <optional>
 #include <string>
@@ -12,6 +13,7 @@ struct LaunchOptions {
     double uploadBudgetMs = -1.0;
     std::optional<Benchmark::Config> bench;
     std::optional<StressConfig> stress;
+    std::optional<AnimationBenchmark::Config> animationBench;
 };
 
 // Аргументы запуска: --no-vsync, --bench burst|stream, --bench-out <файл.csv>, --load-mode async|sync,

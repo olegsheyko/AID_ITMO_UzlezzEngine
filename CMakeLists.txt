@@ -175,6 +175,21 @@ endfunction()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(AnimationTests
+        tests/AnimationTests.cpp
+        src/animation/Animation.cpp
+        src/animation/AnimationImporter.cpp
+        src/ecs/AnimationSystem.cpp
+        src/ecs/World.cpp
+        src/jobs/JobSystem.cpp
+        src/resources/MeshLoader.cpp
+    )
+    target_include_directories(AnimationTests PRIVATE src external)
+    target_link_libraries(AnimationTests PRIVATE enkiTS TracyHeaders ${ENGINE_ASSIMP_TARGET})
+    deploy_assimp_runtime(AnimationTests)
+    add_test(NAME AnimationTests COMMAND AnimationTests "${CMAKE_CURRENT_BINARY_DIR}/animation-test-fixtures")
+    add_test(NAME WalkingAnimationTests COMMAND AnimationTests "${CMAKE_CURRENT_BINARY_DIR}/walking-test-fixtures" "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/animation/Walking.fbx")
+
     add_executable(PhysicsSystemTests
         tests/PhysicsSystemTests.cpp
         src/ecs/PhysicsSystem.cpp
@@ -209,6 +224,11 @@ endif()
 
 # --- Game target ---
 add_executable(GameEngine
+    src/bench/AnimationBenchmark.cpp
+    src/animation/Animation.cpp
+    src/animation/AnimationImporter.cpp
+    src/ecs/AnimationSystem.cpp
+    src/states/EditorAnimation.cpp
     src/main.cpp
     src/core/Application.cpp
     src/core/LaunchOptions.cpp
@@ -277,8 +297,25 @@ add_custom_target(CopyAssets ALL
 )
 add_dependencies(CopyAssets GameEngine)
 
+# Several MSBuild executables share Release/. A later project's stale-output
+# cleanup can delete the runtime deployed by an earlier target. Copy once after
+# every consumer as well, so an ALL build always leaves a runnable application.
+get_target_property(assimp_final_type ${ENGINE_ASSIMP_TARGET} TYPE)
+if(WIN32 AND assimp_final_type STREQUAL "SHARED_LIBRARY")
+    add_custom_target(DeploySharedRuntime ALL
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:${ENGINE_ASSIMP_TARGET}>" "$<TARGET_FILE_DIR:GameEngine>"
+        DEPENDS GameEngine
+        VERBATIM)
+    if(BUILD_TESTING)
+        add_dependencies(DeploySharedRuntime AnimationTests)
+    endif()
+endif()
+
 if(BUILD_TESTING)
     add_executable(TextureResourceTests
+        src/resources/SceneManifest.cpp
+        src/animation/Animation.cpp
+        src/animation/AnimationImporter.cpp
         tests/TextureResourceTests.cpp
         src/ecs/World.cpp
         src/ecs/RenderSystem.cpp
@@ -291,13 +328,16 @@ if(BUILD_TESTING)
         src/resources/stb_image_impl.cpp
         src/jobs/JobSystem.cpp
     )
-    target_include_directories(TextureResourceTests PRIVATE src external/stb_image)
+    target_include_directories(TextureResourceTests PRIVATE src external external/stb_image)
     target_link_libraries(TextureResourceTests PRIVATE enkiTS)
     target_link_libraries(TextureResourceTests PRIVATE glad glfw ${ENGINE_OPENGL_LIB})
     target_link_libraries(TextureResourceTests PRIVATE TracyHeaders)
     target_link_libraries(TextureResourceTests PRIVATE ${ENGINE_ASSIMP_TARGET})
     deploy_assimp_runtime(TextureResourceTests)
-    add_test(NAME TextureResourceTests COMMAND TextureResourceTests "${CMAKE_CURRENT_BINARY_DIR}/texture-test-fixtures")
+    if(TARGET DeploySharedRuntime)
+        add_dependencies(DeploySharedRuntime TextureResourceTests)
+    endif()
+    add_test(NAME TextureResourceTests COMMAND TextureResourceTests "${CMAKE_CURRENT_BINARY_DIR}/texture-test-fixtures" "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/animation/Walking.fbx")
     set_tests_properties(TextureResourceTests PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         SKIP_RETURN_CODE 77

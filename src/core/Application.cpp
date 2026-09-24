@@ -62,7 +62,10 @@ bool Application::init(int width, int height, const char* title, const LaunchOpt
 
 	LOG_INFO("Application: HotReload initialized");
 
-	stateManager_.push(std::make_unique<LoadingState>());
+	if (options.animationBench) {
+        stateManager_.push(std::make_unique<AnimationBenchmark>(*renderer_,*options.animationBench));
+        if (stress_) stress_->start();
+    } else stateManager_.push(std::make_unique<LoadingState>());
 
 	lastFrameTime_ = Clock::now();
 	LOG_INFO("Application: Initialization successful");
@@ -90,6 +93,10 @@ void Application::run() {
 				break;
 			}
 		}
+        if (auto* animation=dynamic_cast<AnimationBenchmark*>(stateManager_.current())) {
+            animation->beginFrame(frameMs);
+            if (animation->finished()) { exitCode_=animation->failed() ? 1 : 0; break; }
+        }
 		if (stress_) {
 			stress_->onFrame(frameMs);
 			if (stress_->isFinished()) {
@@ -180,6 +187,7 @@ void Application::shutdown() {
 		renderer_->shutdown();
 	}
     InputManager::getInstance().shutdown();
+    LOG_INFO("Shutdown complete");
 }
 
 bool Application::initEditorGui() {

@@ -1,0 +1,12 @@
+# uzlezz-stress v1
+duration_s=300.0
+cycles=435
+failed_textures=0
+from_cache=0
+frames=185690
+hitches_over_33ms=0
+worst_frame_ms=19.24
+footprint_cycle_start_mb first=264.9 settled=1005.8(cycle 11) last=986.8 band=890.2..1030.9 growth_since_settled=-19.0
+footprint_peak_mb=1210.0
+footprint_trend_mb_per_100_cycles=+7.39 scatter_mb=14.0 cycles=219..436
+live_textures_cycle_start first=0 last=0 max=0
