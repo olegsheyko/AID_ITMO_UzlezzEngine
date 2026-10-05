@@ -450,7 +450,8 @@ void ContentBrowserPanel::drawFolderTree(EditorContext& context, const std::stri
     drawList->AddText(ImVec2(labelX, textY), styled(isRoot ? kAccentHovered : kFolder),
         isRoot ? ICON_LC_HARD_DRIVE : (nodeOpen && hasChildren ? ICON_LC_FOLDER_OPEN : ICON_LC_FOLDER));
     const std::string label = folderLabel(folder, context.assets.root());
-    EditorUI::drawTextEllipsis(drawList, ImVec2(labelX + 22.0f, textY), rowMax.x - labelX - 26.0f, label.c_str(),
+    const float iconAdvance = ImGui::GetFontSize() + EditorUI::px(7.0f);
+    EditorUI::drawTextEllipsis(drawList, ImVec2(labelX + iconAdvance, textY), rowMax.x - labelX - iconAdvance - 4.0f, label.c_str(),
         current ? kText : IM_COL32(200, 200, 204, 255));
     if (nodeOpen) {
         for (const AssetEntry& child : context.assets.subfolders(folder)) {
@@ -715,7 +716,7 @@ void ContentBrowserPanel::drawList(EditorContext& context, const std::vector<Ass
         handleItemInteraction(context, entry);
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         drawList->AddText(ImVec2(cell.x + 2.0f, cell.y + 2.0f), styled(color), icon);
-        drawList->AddText(ImVec2(cell.x + 24.0f, cell.y + 2.0f), styled(kText), entry.name.c_str());
+        drawList->AddText(ImVec2(cell.x + ImGui::GetFontSize() + EditorUI::px(10.0f), cell.y + 2.0f), styled(kText), entry.name.c_str());
         // Остальные колонки — на той же базовой линии, что и имя внутри строки-Selectable.
         auto cellText = [](int column, const std::string& text, bool faint) {
             ImGui::TableSetColumnIndex(column);

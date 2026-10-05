@@ -9,6 +9,8 @@
 
 // Общие контролы редактора поверх ImGui: всё, что нужно больше чем одной панели.
 namespace EditorUI {
+// Размер в точках с учётом масштаба интерфейса (View → UI Scale).
+float px(float value);
 // Подписи хоткеев: на macOS Cmd вместо Ctrl.
 std::string shortcut(const char* keys);
 

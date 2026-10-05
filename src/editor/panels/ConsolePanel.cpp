@@ -283,10 +283,11 @@ void ConsolePanel::drawRows(float height) {
             if (entry.level == Logger::Level::ERROR) {
                 drawList->AddRectFilled(min, ImVec2(min.x + 2.0f, min.y + rowHeight), ImGui::GetColorU32(kError));
             }
-            drawList->AddText(ImVec2(min.x + 10.0f, textY), ImGui::GetColorU32(color), levelIcon(entry.level));
+            drawList->AddText(ImVec2(min.x + EditorUI::px(10.0f), textY), ImGui::GetColorU32(color), levelIcon(entry.level));
+            const float timeX = min.x + EditorUI::px(18.0f) + ImGui::GetFontSize();
             EditorUI::pushMono();
             const float monoY = min.y + (rowHeight - ImGui::GetFontSize()) * 0.5f;
-            drawList->AddText(ImVec2(min.x + 32.0f, monoY), ImGui::GetColorU32(kTextFaint), entry.time.c_str());
+            drawList->AddText(ImVec2(timeX, monoY), ImGui::GetColorU32(kTextFaint), entry.time.c_str());
             const float timeWidth = ImGui::CalcTextSize("00:00:00").x;
             EditorUI::popFont();
 
@@ -299,7 +300,7 @@ void ConsolePanel::drawRows(float height) {
                 EditorUI::badge(drawList, ImVec2(rightEdge, min.y + (rowHeight - badgeSize.y) * 0.5f), repeat, kFrameActive, kText, 11.0f);
                 rightEdge -= 8.0f;
             }
-            const float messageX = min.x + 44.0f + timeWidth;
+            const float messageX = timeX + timeWidth + EditorUI::px(12.0f);
             // Сообщение одной строкой: переводы строк показываем в деталях.
             std::string firstLine = entry.message.substr(0, entry.message.find('\n'));
             const ImU32 textColor = entry.level == Logger::Level::INFO ? IM_COL32(214, 214, 218, 255) : color;

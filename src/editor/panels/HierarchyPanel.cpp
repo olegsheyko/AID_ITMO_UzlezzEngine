@@ -90,7 +90,7 @@ void HierarchyPanel::draw(EditorContext& context) {
             ImDrawList* drawList = ImGui::GetWindowDrawList();
             drawList->AddText(ImVec2(labelX, textY), ImGui::GetColorU32(kAssetScene), ICON_LC_CLAPPERBOARD);
             ImGui::PushFont(fonts().semibold, 0.0f);
-            drawList->AddText(ImVec2(labelX + 22.0f, textY), ImGui::GetColorU32(kText), context.sceneName().c_str());
+            drawList->AddText(ImVec2(labelX + ImGui::GetFontSize() + EditorUI::px(8.0f), textY), ImGui::GetColorU32(kText), context.sceneName().c_str());
             ImGui::PopFont();
         }
         if (rootOpen) {

@@ -28,6 +28,10 @@ bool replacePrefix(std::string& text, const char* from, const char* to) {
 }
 }
 
+float px(float value) {
+    return value * EditorTheme::uiScale();
+}
+
 std::string shortcut(const char* keys) {
     std::string text = keys;
 #ifdef __APPLE__
@@ -436,11 +440,11 @@ bool cardHeader(const char* id, const char* icon, const char* title, bool withMe
     const ImGuiID openId = ImGui::GetID("##open");
     bool open = storage->GetBool(openId, defaultOpen);
 
-    const float height = ImGui::GetFrameHeight() + 4.0f;
+    const float height = ImGui::GetFrameHeight() + px(4.0f);
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const float width = ImGui::GetContentRegionAvail().x;
     const ImVec2 max(min.x + width, min.y + height);
-    const float menuSize = height - 6.0f;
+    const float menuSize = height - px(6.0f);
 
     ImGui::SetNextItemAllowOverlap();
     if (ImGui::InvisibleButton("##header", ImVec2(width, height))) {
@@ -453,10 +457,11 @@ bool cardHeader(const char* id, const char* icon, const char* title, bool withMe
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     drawList->AddRectFilled(min, max, styled(hovered ? IM_COL32(44, 44, 47, 255) : kPanelRaised), 5.0f);
     const float textY = min.y + (height - ImGui::GetFontSize()) * 0.5f;
-    drawList->AddText(ImVec2(min.x + 7.0f, textY), styled(kTextFaint), open ? ICON_LC_CHEVRON_DOWN : ICON_LC_CHEVRON_RIGHT);
-    drawList->AddText(ImVec2(min.x + 27.0f, textY), styled(IM_COL32(150, 180, 230, 255)), icon);
+    const float glyph = ImGui::GetFontSize();
+    drawList->AddText(ImVec2(min.x + px(7.0f), textY), styled(kTextFaint), open ? ICON_LC_CHEVRON_DOWN : ICON_LC_CHEVRON_RIGHT);
+    drawList->AddText(ImVec2(min.x + px(13.0f) + glyph, textY), styled(IM_COL32(150, 180, 230, 255)), icon);
     ImGui::PushFont(fonts().semibold, 0.0f);
-    drawList->AddText(ImVec2(min.x + 49.0f, textY), styled(kText), title);
+    drawList->AddText(ImVec2(min.x + px(21.0f) + glyph * 2.0f, textY), styled(kText), title);
     ImGui::PopFont();
 
     if (withMenu) {

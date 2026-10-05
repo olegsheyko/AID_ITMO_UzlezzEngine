@@ -93,7 +93,7 @@ bool assetSlot(const char* id, const TextureData* thumbnail, const char* icon, I
     outClear = false;
     outDropped.clear();
     ImGui::PushID(id);
-    const float height = 40.0f;
+    const float height = std::max(40.0f, ImGui::GetFontSize() * 2.0f + EditorUI::px(12.0f));
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const float width = ImGui::GetContentRegionAvail().x;
     const ImVec2 max(min.x + width, min.y + height);
@@ -134,9 +134,11 @@ bool assetSlot(const char* id, const TextureData* thumbnail, const char* icon, I
     const float buttonsWidth = buttonSize * (clearable ? 2.0f : 1.0f) + 6.0f;
     const float textX = thumbMax.x + 8.0f;
     const float textWidth = max.x - buttonsWidth - textX - 4.0f;
-    EditorUI::drawTextEllipsis(drawList, ImVec2(textX, min.y + 4.0f), textWidth, title.c_str(), kText);
+    const float titleY = min.y + (height - ImGui::GetFontSize() * 1.95f) * 0.5f;
+    EditorUI::drawTextEllipsis(drawList, ImVec2(textX, titleY), textWidth, title.c_str(), kText);
+    const float subtitleY = titleY + ImGui::GetFontSize() + EditorUI::px(2.0f);
     EditorUI::pushSmallFont();
-    EditorUI::drawTextEllipsis(drawList, ImVec2(textX, min.y + 22.0f), textWidth, subtitle.c_str(), kTextFaint);
+    EditorUI::drawTextEllipsis(drawList, ImVec2(textX, subtitleY), textWidth, subtitle.c_str(), kTextFaint);
     EditorUI::popFont();
 
     ImGui::SetCursorScreenPos(ImVec2(max.x - buttonsWidth, min.y + (height - buttonSize) * 0.5f));
@@ -234,7 +236,7 @@ void InspectorPanel::drawEntity(EditorContext& context, Entity entity) {
 void InspectorPanel::drawHeader(EditorContext& context, Entity entity) {
     ImU32 iconColor = 0;
     const char* icon = entityIcon(context, entity, &iconColor);
-    const float tile = 38.0f;
+    const float tile = EditorUI::px(38.0f);
     const ImVec2 min = ImGui::GetCursorScreenPos();
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     drawList->AddRectFilled(min, ImVec2(min.x + tile, min.y + tile), ImGui::GetColorU32(kPanelRaised), 7.0f);
