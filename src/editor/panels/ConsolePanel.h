@@ -33,6 +33,7 @@ private:
 
     bool passes(const Logger::Entry& entry) const;
     void rebuildRows();
+    void appendRows();
     void drawToolbar();
     void drawRows(float height);
     void drawDetails();
@@ -48,6 +49,8 @@ private:
     bool lastFilters_[3] = {true, true, true};
     bool dirty_ = true;
     bool scrollToBottom_ = false;
+    bool atBottom_ = true;
+    std::size_t processed_ = 0;
     std::size_t selected_ = SIZE_MAX;
     float detailsHeight_ = 86.0f;
 };

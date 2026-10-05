@@ -39,6 +39,7 @@ private:
     std::array<char, 128> search_{};
     std::string scrollToPath_;
     std::string draggingPath_;
+    bool revealFolder_ = false;
     float refreshTimer_ = 0.0f;
     float treeWidth_ = 190.0f;
     bool initialized_ = false;

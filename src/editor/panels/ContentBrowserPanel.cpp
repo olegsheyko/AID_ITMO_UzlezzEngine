@@ -141,6 +141,7 @@ void ContentBrowserPanel::navigate(EditorContext& context, const std::string& fo
         return;
     }
     currentFolder_ = folder;
+    revealFolder_ = true;
     if (recordHistory) {
         if (historyIndex_ + 1 < static_cast<int>(history_.size())) {
             history_.resize(static_cast<std::size_t>(historyIndex_ + 1));
@@ -220,6 +221,7 @@ void ContentBrowserPanel::draw(EditorContext& context, float dt) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 0.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 3.0f));
         drawFolderTree(context, context.assets.root(), 0);
+        revealFolder_ = false;
         ImGui::PopStyleVar(2);
         ImGui::EndChild();
         ImGui::PopStyleVar();
@@ -420,8 +422,8 @@ void ContentBrowserPanel::drawFolderTree(EditorContext& context, const std::stri
     if (isRoot) {
         flags |= ImGuiTreeNodeFlags_DefaultOpen;
     }
-    // Путь к текущей папке всегда раскрыт.
-    if (hasChildren && !current && currentFolder_.rfind(folder + "/", 0) == 0) {
+    // После перехода раскрываем путь к текущей папке; дальше пользователь сворачивает что хочет.
+    if (revealFolder_ && hasChildren && !current && currentFolder_.rfind(folder + "/", 0) == 0) {
         ImGui::SetNextItemOpen(true, ImGuiCond_Always);
     }
     ImGui::PushID(folder.c_str());

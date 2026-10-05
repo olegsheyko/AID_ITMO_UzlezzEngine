@@ -23,4 +23,5 @@ private:
     std::array<char, 128> search_{};
     Entity scrollTo_ = 0;
     Entity lastSelected_ = 0;
+    bool revealSelection_ = false;
 };

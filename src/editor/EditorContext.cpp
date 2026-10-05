@@ -842,7 +842,8 @@ Entity EditorContext::pick(const Vec3& origin, const Vec3& direction, float* out
     Entity best = kInvalidEntity;
     float bestDistance = std::numeric_limits<float>::max();
     for (Entity entity : world.getEntities()) {
-        if (isEditorEntity(entity)) {
+        // Скрытые глазиком объекты не ловят клики, как в Unity.
+        if (isEditorEntity(entity) || (world.hasComponent<MeshRenderer>(entity) && !world.getComponent<MeshRenderer>(entity).visible)) {
             continue;
         }
         AABB bounds;

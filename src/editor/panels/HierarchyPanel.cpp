@@ -42,8 +42,10 @@ void HierarchyPanel::draw(EditorContext& context) {
         return;
     }
 
-    if (context.selected != lastSelected_) {
-        // Выбрали в сцене — прокручиваем иерархию к объекту.
+    // Выделение сменилось (например, кликом во вьюпорте) — раскрываем родителей и прокручиваем к объекту.
+    // Только в этот кадр, иначе родителя выделенного нельзя было бы свернуть.
+    revealSelection_ = context.selected != lastSelected_;
+    if (revealSelection_) {
         scrollTo_ = context.selected;
         lastSelected_ = context.selected;
     }
@@ -279,8 +281,7 @@ void HierarchyPanel::drawEntity(EditorContext& context, Entity entity, int depth
     if (context.selected == entity) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
-    // Раскрываем родителей выделенного, чтобы клик во вьюпорте был виден в дереве.
-    if (!children.empty() && context.selected != kInvalidEntity && context.isAncestor(entity, context.selected)) {
+    if (revealSelection_ && !children.empty() && context.selected != kInvalidEntity && context.isAncestor(entity, context.selected)) {
         ImGui::SetNextItemOpen(true, ImGuiCond_Always);
     }
 

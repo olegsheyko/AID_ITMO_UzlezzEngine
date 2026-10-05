@@ -16,6 +16,8 @@ using namespace EditorTheme;
 
 namespace {
 constexpr std::size_t kMaxEntries = 5000;
+// Обрезаем пачкой: каждая обрезка сдвигает индексы и требует полной пересборки строк.
+constexpr std::size_t kTrimSlack = 1000;
 
 std::string lower(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -87,22 +89,24 @@ void ConsolePanel::poll() {
         ++counts_[static_cast<std::size_t>(levelIndex(entry.level))];
         entries_.push_back(std::move(entry));
     }
-    if (entries_.size() > kMaxEntries) {
+    if (entries_.size() > kMaxEntries + kTrimSlack) {
         const std::size_t drop = entries_.size() - kMaxEntries;
         for (std::size_t i = 0; i < drop; ++i) {
             --counts_[static_cast<std::size_t>(levelIndex(entries_[i].level))];
         }
         entries_.erase(entries_.begin(), entries_.begin() + static_cast<std::ptrdiff_t>(drop));
         selected_ = selected_ >= drop && selected_ != SIZE_MAX ? selected_ - drop : SIZE_MAX;
+        dirty_ = true;
     }
-    dirty_ = true;
-    if (autoScroll) {
+    // Новые строки не трогают уже собранные — догоняем инкрементально, если фильтры не менялись.
+    if (autoScroll && atBottom_) {
         scrollToBottom_ = true;
     }
 }
 
 void ConsolePanel::clear() {
     entries_.clear();
+    processed_ = 0;
     rows_.clear();
     collapsedIndex_.clear();
     counts_ = {};
@@ -125,7 +129,13 @@ bool ConsolePanel::passes(const Logger::Entry& entry) const {
 void ConsolePanel::rebuildRows() {
     rows_.clear();
     collapsedIndex_.clear();
-    for (std::size_t i = 0; i < entries_.size(); ++i) {
+    processed_ = 0;
+    appendRows();
+    dirty_ = false;
+}
+
+void ConsolePanel::appendRows() {
+    for (std::size_t i = processed_; i < entries_.size(); ++i) {
         const Logger::Entry& entry = entries_[i];
         if (!passes(entry)) {
             continue;
@@ -144,7 +154,7 @@ void ConsolePanel::rebuildRows() {
         }
         rows_.push_back(Row{i, 1});
     }
-    dirty_ = false;
+    processed_ = entries_.size();
 }
 
 void ConsolePanel::draw() {
@@ -169,6 +179,8 @@ void ConsolePanel::draw() {
         lastFilters_[1] = showWarnings;
         lastFilters_[2] = showErrors;
         rebuildRows();
+    } else if (processed_ < entries_.size()) {
+        appendRows();
     }
 
     const bool hasDetails = selected_ < entries_.size();
@@ -240,7 +252,7 @@ void ConsolePanel::drawRows(float height) {
     }
     const float rowHeight = ImGui::GetTextLineHeight() + 8.0f;
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const bool wasAtBottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 2.0f;
+    atBottom_ = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 2.0f;
     ImGuiListClipper clipper;
     clipper.Begin(static_cast<int>(rows_.size()), rowHeight);
     while (clipper.Step()) {
@@ -295,7 +307,7 @@ void ConsolePanel::drawRows(float height) {
             ImGui::PopID();
         }
     }
-    if (scrollToBottom_ || (autoScroll && wasAtBottom && !ImGui::IsWindowFocused())) {
+    if (scrollToBottom_) {
         ImGui::SetScrollHereY(1.0f);
         scrollToBottom_ = false;
     }
