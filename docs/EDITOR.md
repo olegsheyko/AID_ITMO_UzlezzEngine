@@ -48,6 +48,7 @@
              [--editor-select Ground] [--editor-asset assets/textures/stone.dds]
              [--editor-browse assets/models] [--editor-tab game] [--editor-play]
              [--editor-colliders] [--editor-list-view] [--editor-reset-layout]
+             [--editor-ini layout.ini]   # по умолчанию раскладка в этом режиме не сохраняется
 ```
 
 `--editor-script файл` подаёт ввод по кадрам и снимает промежуточные кадры:
