@@ -131,6 +131,11 @@ void EditorState::onEnter() {
         }
     }
     context_.enter();
+    // Сцена могла догрузиться раньше первого NewFrame — тогда ImGui ещё не читал ini
+    // и настройки редактора пусты. Дочитываем сами; NewFrame потом повторно не читает.
+    if (!ImGui::GetCurrentContext()->SettingsLoaded && ImGui::GetIO().IniFilename != nullptr) {
+        ImGui::LoadIniSettingsFromDisk(ImGui::GetIO().IniFilename);
+    }
     loadPreferences();
     if (prefFloat("LayoutVersion", 0.0f) != static_cast<float>(kLayoutVersion) || startup_.resetLayout) {
         resetLayout_ = true;

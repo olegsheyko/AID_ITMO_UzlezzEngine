@@ -12,6 +12,8 @@
 struct EditorStartupOptions {
     std::string screenshotPath;
     std::string scriptPath;
+    // Файл раскладки для скриншотного режима (по умолчанию там раскладка не сохраняется).
+    std::string iniPath;
     int screenshotFrames = 120;
     int windowWidth = 1600;
     int windowHeight = 1000;

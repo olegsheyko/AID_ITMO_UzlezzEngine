@@ -239,7 +239,11 @@ bool Application::initEditorGui() {
 	io.ConfigWindowsMoveFromTitleBarOnly = true;
 	io.ConfigDragClickToInputText = true;
 	// Раскладка окон и настройки редактора. Скриншоты всегда снимаются с раскладки по умолчанию.
-	io.IniFilename = options_.editor.screenshotPath.empty() ? "editor_layout.ini" : nullptr;
+	if (options_.editor.screenshotPath.empty()) {
+		io.IniFilename = "editor_layout.ini";
+	} else {
+		io.IniFilename = options_.editor.iniPath.empty() ? nullptr : options_.editor.iniPath.c_str();
+	}
 	EditorState::registerSettingsHandler();
 
 	EditorTheme::loadFonts();
