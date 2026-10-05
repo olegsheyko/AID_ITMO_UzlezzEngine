@@ -33,7 +33,8 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
             if (arg=="--animation-wait-tracy") outOptions.animationBench->waitTracy=true;
             else outOptions.animationBench->exitLoading=true;
         } else if (arg == "--editor-screenshot" || arg == "--editor-select" || arg == "--editor-asset" ||
-                   arg == "--editor-browse" || arg == "--editor-tab" || arg == "--editor-frames" || arg == "--window-size") {
+                   arg == "--editor-browse" || arg == "--editor-tab" || arg == "--editor-frames" || arg == "--window-size" ||
+                   arg == "--editor-script") {
             if (i + 1 >= argc) {
                 outError = arg + " expects a value";
                 return false;
@@ -42,6 +43,8 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
             EditorStartupOptions& editor = outOptions.editor;
             if (arg == "--editor-screenshot") {
                 editor.screenshotPath = value;
+            } else if (arg == "--editor-script") {
+                editor.scriptPath = value;
             } else if (arg == "--editor-select") {
                 editor.selectEntity = value;
             } else if (arg == "--editor-asset") {

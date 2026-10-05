@@ -182,7 +182,7 @@ void apply(float scale) {
     set(ImGuiCol_Header, kAccentSoft);
     set(ImGuiCol_HeaderHovered, IM_COL32(255, 255, 255, 14));
     set(ImGuiCol_HeaderActive, IM_COL32(61, 139, 253, 80));
-    set(ImGuiCol_Separator, kBorder);
+    set(ImGuiCol_Separator, IM_COL32(54, 54, 58, 255));
     set(ImGuiCol_SeparatorHovered, kAccent);
     set(ImGuiCol_SeparatorActive, kAccentHovered);
     set(ImGuiCol_ResizeGrip, IM_COL32(0, 0, 0, 0));
@@ -213,7 +213,7 @@ void apply(float scale) {
     set(ImGuiCol_DragDropTarget, kAccent);
     set(ImGuiCol_DragDropTargetBg, IM_COL32(61, 139, 253, 30));
     set(ImGuiCol_UnsavedMarker, kText);
-    set(ImGuiCol_NavCursor, kAccent);
+    set(ImGuiCol_NavCursor, IM_COL32(61, 139, 253, 110));
     set(ImGuiCol_NavWindowingHighlight, IM_COL32(255, 255, 255, 180));
     set(ImGuiCol_NavWindowingDimBg, IM_COL32(0, 0, 0, 100));
     set(ImGuiCol_ModalWindowDimBg, IM_COL32(0, 0, 0, 140));

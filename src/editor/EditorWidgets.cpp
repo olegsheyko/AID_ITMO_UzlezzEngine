@@ -245,7 +245,9 @@ bool beginCombo(const char* id, const char* preview, ImGuiComboFlags flags) {
     const ImVec2 position = ImGui::GetCursorScreenPos();
     const float width = ImGui::CalcItemWidth();
     const float height = ImGui::GetFrameHeight();
-    const bool open = ImGui::BeginCombo(id, preview, flags | ImGuiComboFlags_NoArrowButton);
+    // Превью короче поля на ширину стрелки, иначе текст заезжает под неё.
+    const std::string fitted = ellipsize(preview, width - height - ImGui::GetStyle().FramePadding.x * 2.0f);
+    const bool open = ImGui::BeginCombo(id, fitted.c_str(), flags | ImGuiComboFlags_NoArrowButton);
     const float chevronX = position.x + width - height * 0.5f - 2.0f;
     drawTextCentered(drawList, ImVec2(chevronX, position.y + height * 0.5f), open ? ICON_LC_CHEVRON_UP : ICON_LC_CHEVRON_DOWN, kTextDim);
     return open;
@@ -289,8 +291,9 @@ bool searchBox(const char* id, char* buffer, std::size_t bufferSize, const char*
     drawList->AddText(ImVec2(rect.Min.x + style.FramePadding.x, rect.Min.y + style.FramePadding.y),
         styled(focused ? kTextDim : kTextFaint), ICON_LC_SEARCH);
     if (buffer[0] != '\0') {
+        // Крестик — последний элемент строки и стоит ровно у правого края поля,
+        // поэтому SameLine() после поиска продолжает ту же строку.
         const float size = rect.GetHeight();
-        const ImVec2 backup = ImGui::GetCursorScreenPos();
         ImGui::SetCursorScreenPos(ImVec2(rect.Max.x - size, rect.Min.y));
         if (ImGui::InvisibleButton("##clear", ImVec2(size, size))) {
             buffer[0] = '\0';
@@ -298,8 +301,6 @@ bool searchBox(const char* id, char* buffer, std::size_t bufferSize, const char*
         }
         const bool hovered = ImGui::IsItemHovered();
         drawTextCentered(drawList, ImVec2(rect.Max.x - size * 0.5f, rect.GetCenter().y), ICON_LC_X, hovered ? kText : kTextFaint);
-        ImGui::SetCursorScreenPos(backup);
-        ImGui::Dummy(ImVec2(0.0f, 0.0f));
     }
     ImGui::PopID();
     return changed;

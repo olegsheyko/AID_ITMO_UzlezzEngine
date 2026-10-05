@@ -51,6 +51,8 @@ public:
     std::uint64_t generation() const { return generation_; }
 
     static AssetType classify(const std::filesystem::path& path);
+    // Текстуры, которые умеет декодировать движок (TextureLoader): только для них строим превью.
+    static bool isLoadableTexture(const std::string& extension);
     static const char* typeName(AssetType type);
     // Короткая метка для плашки на плитке: PNG, FBX, GLSL...
     static std::string badgeText(const AssetEntry& entry);

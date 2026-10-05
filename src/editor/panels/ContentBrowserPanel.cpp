@@ -474,7 +474,7 @@ void ContentBrowserPanel::drawTile(EditorContext& context, const AssetEntry& ent
     const float iconSize = size;
     if (entry.type == AssetType::Folder) {
         drawFolderIcon(drawList, min, iconSize, hovered);
-    } else if (entry.type == AssetType::Texture) {
+    } else if (entry.type == AssetType::Texture && AssetDatabase::isLoadableTexture(entry.extension)) {
         ThumbnailCache& thumbnails = ThumbnailCache::instance();
         const float inset = size * 0.08f;
         const ImVec2 imageMin(min.x + inset, min.y + inset);
@@ -505,13 +505,22 @@ void ContentBrowserPanel::drawTile(EditorContext& context, const AssetEntry& ent
 }
 
 void ContentBrowserPanel::handleItemInteraction(EditorContext& context, const AssetEntry& entry) {
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+    // Выделяем по отпусканию, а не по нажатию: иначе при перетаскивании ассета в слот инспектора
+    // инспектор успевает переключиться на сам ассет и слот исчезает (в Unity так же).
+    if (ImGui::IsItemDeactivated() && ImGui::IsItemHovered() && draggingPath_ != entry.path) {
         context.selectAsset(entry.path);
+    }
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        context.selectAsset(entry.path);
+    }
+    if (ImGui::IsItemDeactivated() && draggingPath_ == entry.path) {
+        draggingPath_.clear();
     }
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         activate(context, entry);
     }
     if (entry.type != AssetType::Folder && ImGui::BeginDragDropSource()) {
+        draggingPath_ = entry.path;
         ImGui::SetDragDropPayload(kAssetPayload, entry.path.c_str(), entry.path.size() + 1);
         ImU32 color = 0;
         const char* icon = assetIcon(entry.type, &color);
@@ -529,7 +538,7 @@ void ContentBrowserPanel::handleItemInteraction(EditorContext& context, const As
             ImGui::Text("Folder  \xC2\xB7  %d items", static_cast<int>(context.assets.list(entry.path).size()));
         } else {
             ImGui::Text("%s  \xC2\xB7  %s", AssetDatabase::typeName(entry.type), AssetDatabase::formatSize(entry.size).c_str());
-            if (entry.type == AssetType::Texture) {
+            if (entry.type == AssetType::Texture && AssetDatabase::isLoadableTexture(entry.extension)) {
                 if (const TextureData* texture = ThumbnailCache::instance().texture(entry.path)) {
                     ImGui::Text("%d \xC3\x97 %d", texture->width, texture->height);
                 }
@@ -687,15 +696,20 @@ void ContentBrowserPanel::drawList(EditorContext& context, const std::vector<Ass
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         drawList->AddText(ImVec2(cell.x + 2.0f, cell.y + 2.0f), styled(color), icon);
         drawList->AddText(ImVec2(cell.x + 24.0f, cell.y + 2.0f), styled(kText), entry.name.c_str());
-        ImGui::TableSetColumnIndex(1);
-        EditorUI::textDim(AssetDatabase::typeName(entry.type));
-        ImGui::TableSetColumnIndex(2);
+        // Остальные колонки — на той же базовой линии, что и имя внутри строки-Selectable.
+        auto cellText = [](int column, const std::string& text, bool faint) {
+            ImGui::TableSetColumnIndex(column);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
+            if (faint) {
+                EditorUI::textFaint(text.c_str());
+            } else {
+                EditorUI::textDim(text.c_str());
+            }
+        };
+        cellText(1, AssetDatabase::typeName(entry.type), false);
         if (entry.type != AssetType::Folder) {
-            EditorUI::textDim(AssetDatabase::formatSize(entry.size).c_str());
-        }
-        ImGui::TableSetColumnIndex(3);
-        if (entry.type != AssetType::Folder) {
-            EditorUI::textFaint(formatTime(entry.modified).c_str());
+            cellText(2, AssetDatabase::formatSize(entry.size), false);
+            cellText(3, formatTime(entry.modified), true);
         }
         ImGui::PopID();
     }

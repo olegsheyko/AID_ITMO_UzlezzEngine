@@ -123,6 +123,12 @@ EditorState::EditorState(IRenderAdapter& renderer, EditorStartupOptions startup)
 
 void EditorState::onEnter() {
     LOG_INFO("EditorState: entered");
+    if (!startup_.scriptPath.empty()) {
+        std::string error;
+        if (!script_.load(startup_.scriptPath, error)) {
+            LOG_ERROR("EditorState: " + error);
+        }
+    }
     context_.enter();
     loadPreferences();
     if (prefFloat("LayoutVersion", 0.0f) != static_cast<float>(kLayoutVersion) || startup_.resetLayout) {
@@ -222,7 +228,16 @@ void EditorState::update(float dt) {
         pendingUiScale_ = 0.0f;
         EditorTheme::apply(uiScale_);
     }
+    if (!script_.empty()) {
+        script_.apply(frame_);
+    }
     context_.update(dt);
+}
+
+std::vector<std::string> EditorState::takeScreenshotRequests() {
+    std::vector<std::string> requests;
+    requests.swap(screenshotRequests_);
+    return requests;
 }
 
 void EditorState::togglePlay() {
@@ -276,6 +291,12 @@ void EditorState::render() {
         applyStartupOptions();
     }
     storePreferences();
+    if (!script_.empty()) {
+        for (const std::string& path : script_.screenshots(frame_)) {
+            screenshotRequests_.push_back(path);
+        }
+        scriptQuit_ = scriptQuit_ || script_.quitAt(frame_);
+    }
     ++frame_;
 }
 

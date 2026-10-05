@@ -176,11 +176,24 @@ void Application::render() {
 		current->render();
 	}
 	renderEditorGuiFrame();
-	if (!options_.editor.screenshotPath.empty() && dynamic_cast<EditorState*>(current) != nullptr &&
-		++editorFrames_ >= options_.editor.screenshotFrames) {
-		exitCode_ = captureScreenshot() ? 0 : 1;
-		if (auto* openGlRenderer = dynamic_cast<OpenGLRenderAdapter*>(renderer_.get())) {
-			glfwSetWindowShouldClose(openGlRenderer->getWindow(), GLFW_TRUE);
+	if (auto* editor = dynamic_cast<EditorState*>(current); editor && !options_.editor.screenshotPath.empty()) {
+		bool ok = true;
+		for (const std::string& path : editor->takeScreenshotRequests()) {
+			ok = captureScreenshot(path) && ok;
+		}
+		// Со сценарием работаем до его quit, без него — заданное число кадров.
+		const bool scripted = !options_.editor.scriptPath.empty();
+		const bool done = scripted ? editor->scriptFinished() : ++editorFrames_ >= options_.editor.screenshotFrames;
+		if (!ok) {
+			exitCode_ = 1;
+		}
+		if (done) {
+			if (!captureScreenshot(options_.editor.screenshotPath)) {
+				exitCode_ = 1;
+			}
+			if (auto* openGlRenderer = dynamic_cast<OpenGLRenderAdapter*>(renderer_.get())) {
+				glfwSetWindowShouldClose(openGlRenderer->getWindow(), GLFW_TRUE);
+			}
 		}
 	}
     {
@@ -265,7 +278,7 @@ void Application::renderEditorGuiFrame() {
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-bool Application::captureScreenshot() {
+bool Application::captureScreenshot(const std::string& outputPath) {
 	auto* openGlRenderer = dynamic_cast<OpenGLRenderAdapter*>(renderer_.get());
 	std::vector<unsigned char> pixels;
 	int width = 0;
@@ -274,7 +287,7 @@ bool Application::captureScreenshot() {
 		LOG_ERROR("Application: failed to read the editor frame");
 		return false;
 	}
-	const std::filesystem::path path(options_.editor.screenshotPath);
+	const std::filesystem::path path(outputPath);
 	std::error_code error;
 	if (path.has_parent_path()) {
 		std::filesystem::create_directories(path.parent_path(), error);

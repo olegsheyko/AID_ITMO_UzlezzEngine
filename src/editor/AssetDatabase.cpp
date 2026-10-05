@@ -196,6 +196,12 @@ AssetType AssetDatabase::classify(const std::filesystem::path& path) {
     return AssetType::Other;
 }
 
+bool AssetDatabase::isLoadableTexture(const std::string& extension) {
+    static const char* loadable[] = {".dds", ".png", ".jpg", ".jpeg", ".bmp", ".tga", ".gif", ".hdr", ".psd", ".pic"};
+    const std::string value = toLower(extension);
+    return std::any_of(std::begin(loadable), std::end(loadable), [&value](const char* candidate) { return value == candidate; });
+}
+
 const char* AssetDatabase::typeName(AssetType type) {
     switch (type) {
     case AssetType::Folder: return "Folder";

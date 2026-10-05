@@ -2,6 +2,7 @@
 
 #include "core/LaunchOptions.h"
 #include "editor/EditorContext.h"
+#include "editor/EditorScript.h"
 #include "editor/panels/ConsolePanel.h"
 #include "editor/panels/ContentBrowserPanel.h"
 #include "editor/panels/GameViewPanel.h"
@@ -25,6 +26,10 @@ public:
     void onExit() override;
     void update(float dt) override;
     void render() override;
+
+    // Для Application: скриншоты, которые сценарий просит снять после этого кадра, и конец сценария.
+    std::vector<std::string> takeScreenshotRequests();
+    bool scriptFinished() const { return scriptQuit_; }
 
 private:
     void renderMainMenu();
@@ -50,6 +55,9 @@ private:
     ContentBrowserPanel contentBrowser_;
     ConsolePanel console_;
     EditorStartupOptions startup_;
+    EditorScript script_;
+    bool scriptQuit_ = false;
+    std::vector<std::string> screenshotRequests_;
 
     float uiScale_ = 1.0f;
     float pendingUiScale_ = 0.0f;

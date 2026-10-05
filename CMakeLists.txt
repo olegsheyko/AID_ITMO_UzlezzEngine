@@ -256,6 +256,7 @@ add_executable(GameEngine
     src/editor/EditorCamera.cpp
     src/editor/EditorContext.cpp
     src/editor/EditorIcons.cpp
+    src/editor/EditorScript.cpp
     src/editor/EditorTheme.cpp
     src/editor/EditorWidgets.cpp
     src/editor/PlatformShell.cpp

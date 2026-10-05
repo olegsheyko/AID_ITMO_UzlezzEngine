@@ -86,19 +86,34 @@ const TextureData* currentBaseTexture(const MeshRenderer& meshRenderer) {
     return nullptr;
 }
 
-// Строка «слот ассета»: миниатюра или иконка, имя, подпись и кнопки справа. true — клик по кнопке «…».
+// Строка «слот ассета»: миниатюра или иконка, имя, подпись и кнопки справа. true — просят открыть выбор.
+// Принимает перетаскивание ассета типа acceptType из Content Browser: путь — в outDropped.
 bool assetSlot(const char* id, const TextureData* thumbnail, const char* icon, ImU32 iconColor, const std::string& title,
-    const std::string& subtitle, bool clearable, bool& outClear) {
+    const std::string& subtitle, bool clearable, bool& outClear, AssetType acceptType, std::string& outDropped) {
     outClear = false;
+    outDropped.clear();
     ImGui::PushID(id);
     const float height = 40.0f;
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const float width = ImGui::GetContentRegionAvail().x;
     const ImVec2 max(min.x + width, min.y + height);
     ImGui::SetNextItemAllowOverlap();
-    ImGui::InvisibleButton("##slot", ImVec2(width, height));
+    // Клик по полю открывает выбор, как Object Field в Unity.
+    bool browse = ImGui::InvisibleButton("##slot", ImVec2(width, height));
     const bool hovered = ImGui::IsItemHovered();
-    const bool dropHover = ImGui::GetDragDropPayload() != nullptr && hovered;
+    bool dropHover = false;
+    if (ImGui::BeginDragDropTarget()) {
+        const ImGuiPayload* peek = ImGui::GetDragDropPayload();
+        const bool matches = peek && peek->IsDataType(kAssetPayload) &&
+            AssetDatabase::classify(static_cast<const char*>(peek->Data)) == acceptType;
+        if (matches) {
+            dropHover = true;
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kAssetPayload, ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
+                outDropped = static_cast<const char*>(payload->Data);
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     drawList->AddRectFilled(min, max, ImGui::GetColorU32(hovered ? kFrameHovered : kFrame), 5.0f);
     if (dropHover) {
@@ -124,7 +139,6 @@ bool assetSlot(const char* id, const TextureData* thumbnail, const char* icon, I
     EditorUI::drawTextEllipsis(drawList, ImVec2(textX, min.y + 22.0f), textWidth, subtitle.c_str(), kTextFaint);
     EditorUI::popFont();
 
-    bool browse = false;
     ImGui::SetCursorScreenPos(ImVec2(max.x - buttonsWidth, min.y + (height - buttonSize) * 0.5f));
     if (EditorUI::iconButton("##browse", ICON_LC_ELLIPSIS, "Browse...", false, buttonSize)) {
         browse = true;
@@ -376,19 +390,16 @@ void InspectorPanel::drawMeshRenderer(EditorContext& context, Entity entity, boo
                     }
                 }
                 bool clear = false;
+                std::string dropped;
                 const std::string title = meshRenderer.meshId.empty() ? std::string("None") : fileName(meshRenderer.meshId);
-                if (assetSlot("mesh_slot", nullptr, ICON_LC_BOX, assetColor(AssetType::Model), title, subtitle, false, clear)) {
+                if (assetSlot("mesh_slot", nullptr, ICON_LC_BOX, assetColor(AssetType::Model), title, subtitle, false, clear,
+                        AssetType::Model, dropped)) {
                     ImGui::OpenPopup("##mesh_picker");
                 }
-                if (ImGui::BeginDragDropTarget()) {
-                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kAssetPayload)) {
-                        const std::string path(static_cast<const char*>(payload->Data));
-                        if (AssetDatabase::classify(path) == AssetType::Model) {
-                            changeMesh(context, entity, path);
-                        }
-                    }
-                    ImGui::EndDragDropTarget();
+                if (!dropped.empty()) {
+                    changeMesh(context, entity, dropped);
                 }
+                ImGui::SetNextWindowSizeConstraints(ImVec2(ImGui::GetContentRegionAvail().x, 0.0f), ImVec2(FLT_MAX, 420.0f));
                 if (ImGui::BeginPopup("##mesh_picker")) {
                     EditorUI::textFaint("Loaded meshes");
                     for (const std::string& id : resources.getMeshIds()) {
@@ -427,8 +438,9 @@ void InspectorPanel::drawMeshRenderer(EditorContext& context, Entity entity, boo
                     subtitle = meshRenderer.baseColorTextureId.empty() ? "Uses material color" : "Missing";
                 }
                 bool clear = false;
+                std::string dropped;
                 if (assetSlot("texture_slot", texture, ICON_LC_IMAGE, assetColor(AssetType::Texture), title, subtitle,
-                        !meshRenderer.baseColorTextureId.empty(), clear)) {
+                        !meshRenderer.baseColorTextureId.empty(), clear, AssetType::Texture, dropped)) {
                     texturePickerTarget_ = entity;
                     texturePicker_.open(meshRenderer.baseColorTextureId);
                 }
@@ -436,15 +448,9 @@ void InspectorPanel::drawMeshRenderer(EditorContext& context, Entity entity, boo
                     meshRenderer.baseColorTextureId.clear();
                     meshRenderer.cachedBaseColorTexture.reset();
                 }
-                if (ImGui::BeginDragDropTarget()) {
-                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kAssetPayload)) {
-                        const std::string path(static_cast<const char*>(payload->Data));
-                        if (AssetDatabase::classify(path) == AssetType::Texture) {
-                            meshRenderer.baseColorTextureId = path;
-                            meshRenderer.cachedBaseColorTexture = resources.loadTextureAsync(path, JobPriority::High);
-                        }
-                    }
-                    ImGui::EndDragDropTarget();
+                if (!dropped.empty()) {
+                    meshRenderer.baseColorTextureId = dropped;
+                    meshRenderer.cachedBaseColorTexture = resources.loadTextureAsync(dropped, JobPriority::High);
                 }
             }
 
@@ -816,7 +822,8 @@ void InspectorPanel::drawAssetHeader(const AssetEntry& entry) {
     const float tile = 52.0f;
     const ImVec2 min = ImGui::GetCursorScreenPos();
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const TextureData* thumbnail = entry.type == AssetType::Texture ? ThumbnailCache::instance().texture(entry.path) : nullptr;
+    const bool previewable = entry.type == AssetType::Texture && AssetDatabase::isLoadableTexture(entry.extension);
+    const TextureData* thumbnail = previewable ? ThumbnailCache::instance().texture(entry.path) : nullptr;
     if (thumbnail) {
         drawChecker(drawList, min, ImVec2(min.x + tile, min.y + tile), 6.0f);
         drawImageFit(drawList, *thumbnail, min, ImVec2(min.x + tile, min.y + tile), 4.0f);
@@ -850,6 +857,14 @@ void InspectorPanel::drawAssetHeader(const AssetEntry& entry) {
 }
 
 void InspectorPanel::drawTextureAsset(const AssetEntry& entry) {
+    if (!AssetDatabase::isLoadableTexture(entry.extension)) {
+        EditorUI::iconLabel(ICON_LC_IMAGE_OFF, "The engine cannot load this image format", kWarning, kTextDim);
+        if (EditorUI::beginProperties("##texture_info")) {
+            EditorUI::propertyValue("File Size", AssetDatabase::formatSize(entry.size).c_str());
+            EditorUI::endProperties();
+        }
+        return;
+    }
     ThumbnailCache& thumbnails = ThumbnailCache::instance();
     const TextureData* texture = thumbnails.texture(entry.path);
     const float width = ImGui::GetContentRegionAvail().x;

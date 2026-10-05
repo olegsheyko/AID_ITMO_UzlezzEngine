@@ -11,6 +11,7 @@
 // Запуск редактора для автоматических скриншотов: какое окно открыть, что выбрать, куда сохранить кадр.
 struct EditorStartupOptions {
     std::string screenshotPath;
+    std::string scriptPath;
     int screenshotFrames = 120;
     int windowWidth = 1600;
     int windowHeight = 1000;
