@@ -1,5 +1,6 @@
 #include "core/LaunchOptions.h"
 
+#include <cstdio>
 #include <cstdlib>
 
 bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::string& outError) {
@@ -31,6 +32,50 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
             if (!outOptions.animationBench) { outError=arg+" requires preceding --animation-bench"; return false; }
             if (arg=="--animation-wait-tracy") outOptions.animationBench->waitTracy=true;
             else outOptions.animationBench->exitLoading=true;
+        } else if (arg == "--editor-screenshot" || arg == "--editor-select" || arg == "--editor-asset" ||
+                   arg == "--editor-browse" || arg == "--editor-tab" || arg == "--editor-frames" || arg == "--window-size") {
+            if (i + 1 >= argc) {
+                outError = arg + " expects a value";
+                return false;
+            }
+            const std::string value = argv[++i];
+            EditorStartupOptions& editor = outOptions.editor;
+            if (arg == "--editor-screenshot") {
+                editor.screenshotPath = value;
+            } else if (arg == "--editor-select") {
+                editor.selectEntity = value;
+            } else if (arg == "--editor-asset") {
+                editor.selectAsset = value;
+            } else if (arg == "--editor-browse") {
+                editor.browseFolder = value;
+            } else if (arg == "--editor-tab") {
+                editor.focusWindows.push_back(value);
+            } else if (arg == "--editor-frames") {
+                char* end = nullptr;
+                const long frames = std::strtol(value.c_str(), &end, 10);
+                if (*end || frames < 1 || frames > 100000) {
+                    outError = "invalid --editor-frames value: " + value;
+                    return false;
+                }
+                editor.screenshotFrames = static_cast<int>(frames);
+            } else {
+                int width = 0;
+                int height = 0;
+                if (std::sscanf(value.c_str(), "%dx%d", &width, &height) != 2 || width < 320 || height < 240 || width > 8192 || height > 8192) {
+                    outError = "invalid --window-size, expected WIDTHxHEIGHT: " + value;
+                    return false;
+                }
+                editor.windowWidth = width;
+                editor.windowHeight = height;
+            }
+        } else if (arg == "--editor-play") {
+            outOptions.editor.play = true;
+        } else if (arg == "--editor-colliders") {
+            outOptions.editor.showColliders = true;
+        } else if (arg == "--editor-list-view") {
+            outOptions.editor.listView = true;
+        } else if (arg == "--editor-reset-layout") {
+            outOptions.editor.resetLayout = true;
         } else if (arg == "--no-vsync") {
             outOptions.vsync = false;
         } else if (arg == "--bench") {
@@ -127,5 +172,5 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
 }
 
 const char* launchUsage() {
-    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms] [--animation-bench sequential|parallel [--animation-characters N] [--animation-frames N] [--animation-out file.csv] [--animation-wait-tracy] [--animation-exit-loading]]";
+    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms] [--animation-bench sequential|parallel [--animation-characters N] [--animation-frames N] [--animation-out file.csv] [--animation-wait-tracy] [--animation-exit-loading]] [--editor-screenshot file.png [--editor-frames N] [--window-size WxH] [--editor-select name] [--editor-asset path] [--editor-browse folder] [--editor-tab window]... [--editor-play] [--editor-colliders] [--editor-list-view]] [--editor-reset-layout]";
 }

@@ -199,6 +199,13 @@ if(BUILD_TESTING)
     target_link_libraries(PhysicsSystemTests PRIVATE TracyHeaders)
     add_test(NAME PhysicsSystemTests COMMAND PhysicsSystemTests)
 
+    add_executable(AssetDatabaseTests
+        tests/AssetDatabaseTests.cpp
+        src/editor/AssetDatabase.cpp
+    )
+    target_include_directories(AssetDatabaseTests PRIVATE src)
+    add_test(NAME AssetDatabaseTests COMMAND AssetDatabaseTests "${CMAKE_CURRENT_BINARY_DIR}/asset-database-fixtures")
+
     add_executable(JobSystemTests
         tests/JobSystemTests.cpp
         src/jobs/JobSystem.cpp
@@ -228,7 +235,6 @@ add_executable(GameEngine
     src/animation/Animation.cpp
     src/animation/AnimationImporter.cpp
     src/ecs/AnimationSystem.cpp
-    src/states/EditorAnimation.cpp
     src/main.cpp
     src/core/Application.cpp
     src/core/LaunchOptions.cpp
@@ -246,8 +252,23 @@ add_executable(GameEngine
     src/input/GlfwInputHandler.cpp
     src/input/InputManager.cpp
     src/render/OpenGLRenderAdapter.cpp
+    src/editor/AssetDatabase.cpp
     src/editor/EditorCamera.cpp
+    src/editor/EditorContext.cpp
+    src/editor/EditorIcons.cpp
+    src/editor/EditorTheme.cpp
+    src/editor/EditorWidgets.cpp
+    src/editor/PlatformShell.cpp
+    src/editor/SyntaxHighlight.cpp
     src/editor/TexturePicker.cpp
+    src/editor/ThumbnailCache.cpp
+    src/editor/panels/ConsolePanel.cpp
+    src/editor/panels/ContentBrowserPanel.cpp
+    src/editor/panels/GameViewPanel.cpp
+    src/editor/panels/HierarchyPanel.cpp
+    src/editor/panels/InspectorPanel.cpp
+    src/editor/panels/RendererInfoPanel.cpp
+    src/editor/panels/SceneViewPanel.cpp
     src/states/EditorState.cpp
     src/states/StateManager.cpp
     src/states/LoadingState.cpp

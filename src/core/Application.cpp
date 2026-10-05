@@ -9,18 +9,33 @@
 #include "resources/ResourceManager.h"
 #include "resources/HotReload.h"
 #include "jobs/JobSystem.h"
+#include "editor/EditorTheme.h"
 
 #include <imgui.h>
 #include <ImGuizmo.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
+#include <stb_image_write.h>
 #include <tracy/Tracy.hpp>
+
+#include <filesystem>
+#include <vector>
 
 bool Application::init(int width, int height, const char* title, const LaunchOptions& options) {
     ZoneScoped;
 	LOG_INFO("Application: Initializing application");
-	renderer_ = std::make_unique<OpenGLRenderAdapter>();
-	
+	options_ = options;
+	auto openGl = std::make_unique<OpenGLRenderAdapter>();
+	const bool screenshotMode = !options.editor.screenshotPath.empty();
+	if (screenshotMode) {
+		// Скриншот снимается со скрытого окна фиксированного размера: кадр рисуется во внеэкранный буфер.
+		openGl->setHiddenWindow(true);
+		openGl->setOffscreenCapture(true);
+		width = options.editor.windowWidth;
+		height = options.editor.windowHeight;
+	}
+	renderer_ = std::move(openGl);
+
 	if (!renderer_->init(width, height, title)) {
 		LOG_ERROR("Application: Failed to initialize renderer");
 		return false;
@@ -136,7 +151,7 @@ void Application::update(float dt) {
 
 	if (auto* loading = dynamic_cast<LoadingState*>(current)) {
 		if (loading->isFinished()) {
-			stateManager_.change(std::make_unique<EditorState>(*renderer_));
+			stateManager_.change(std::make_unique<EditorState>(*renderer_, options_.editor));
 			if (benchmark_) {
 				benchmark_->onSceneReady();
 			}
@@ -155,12 +170,19 @@ void Application::render() {
     ZoneScoped;
 	auto* current = stateManager_.current();
 
-	renderer_->beginFrame(0.1f, 0.1f, 0.2f);
+	renderer_->beginFrame(0.075f, 0.075f, 0.08f);
 	beginEditorGuiFrame();
 	if (current) {
 		current->render();
 	}
 	renderEditorGuiFrame();
+	if (!options_.editor.screenshotPath.empty() && dynamic_cast<EditorState*>(current) != nullptr &&
+		++editorFrames_ >= options_.editor.screenshotFrames) {
+		exitCode_ = captureScreenshot() ? 0 : 1;
+		if (auto* openGlRenderer = dynamic_cast<OpenGLRenderAdapter*>(renderer_.get())) {
+			glfwSetWindowShouldClose(openGlRenderer->getWindow(), GLFW_TRUE);
+		}
+	}
     {
         ZoneScopedN("Present");
         renderer_->endFrame();
@@ -201,15 +223,14 @@ bool Application::initEditorGui() {
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	io.ConfigWindowsMoveFromTitleBarOnly = true;
+	io.ConfigDragClickToInputText = true;
+	// Раскладка окон и настройки редактора. Скриншоты всегда снимаются с раскладки по умолчанию.
+	io.IniFilename = options_.editor.screenshotPath.empty() ? "editor_layout.ini" : nullptr;
+	EditorState::registerSettingsHandler();
 
-	ImGui::StyleColorsDark();
-	ImGuiStyle& style = ImGui::GetStyle();
-	style.WindowRounding = 4.0f;
-	style.FrameRounding = 3.0f;
-	style.TabRounding = 3.0f;
-	style.GrabRounding = 3.0f;
-	style.WindowBorderSize = 1.0f;
-	style.FrameBorderSize = 0.0f;
+	EditorTheme::loadFonts();
+	EditorTheme::apply(1.0f);
 
 	if (!ImGui_ImplGlfw_InitForOpenGL(openGlRenderer->getWindow(), true)) {
 		return false;
@@ -242,6 +263,28 @@ void Application::renderEditorGuiFrame() {
 
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+bool Application::captureScreenshot() {
+	auto* openGlRenderer = dynamic_cast<OpenGLRenderAdapter*>(renderer_.get());
+	std::vector<unsigned char> pixels;
+	int width = 0;
+	int height = 0;
+	if (openGlRenderer == nullptr || !openGlRenderer->readCapturedFrame(pixels, width, height)) {
+		LOG_ERROR("Application: failed to read the editor frame");
+		return false;
+	}
+	const std::filesystem::path path(options_.editor.screenshotPath);
+	std::error_code error;
+	if (path.has_parent_path()) {
+		std::filesystem::create_directories(path.parent_path(), error);
+	}
+	if (!stbi_write_png(path.string().c_str(), width, height, 4, pixels.data(), width * 4)) {
+		LOG_ERROR("Application: failed to write " + path.string());
+		return false;
+	}
+	LOG_INFO("Application: editor screenshot saved to " + path.string() + " (" + std::to_string(width) + "x" + std::to_string(height) + ")");
+	return true;
 }
 
 void Application::shutdownEditorGui() {

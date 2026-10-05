@@ -22,6 +22,7 @@ struct Tag {
 
 struct MeshRenderer {
     bool colliderBoundsInitialized = false;
+    bool visible = true;
     std::string meshId;
     std::string baseColorTextureId;
     std::string normalTextureId;

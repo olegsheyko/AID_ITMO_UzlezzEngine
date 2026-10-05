@@ -5,6 +5,9 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#include <array>
+#include <vector>
+
 class OpenGLRenderAdapter : public IRenderAdapter {
 	public:
 	virtual ~OpenGLRenderAdapter() override;
@@ -13,9 +16,16 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual void pollEvents() override;
 	virtual void setVSync(bool enabled) override;
 	virtual void beginFrame(float r, float g, float b) override;
-	virtual void beginViewportFrame(int width, int height, float r, float g, float b) override;
+	using IRenderAdapter::beginViewportFrame;
+	using IRenderAdapter::getViewportTextureId;
+	virtual void beginViewportFrame(int target, int width, int height, float r, float g, float b) override;
 	virtual void endViewportFrame() override;
-	virtual unsigned int getViewportTextureId() const override;
+	virtual unsigned int getViewportTextureId(int target) const override;
+	virtual void drawGrid(const Mat4& viewMatrix, const Mat4& projectionMatrix, const Vec3& cameraPosition, float height) override;
+	virtual void drawSky(const Mat4& viewMatrix, const Mat4& projectionMatrix, const Vec3& cameraPosition, const Vec3& sunDirection) override;
+	virtual void beginSelectionMask() override;
+	virtual void endSelectionMask(const Vec4& color, float thicknessPixels) override;
+	virtual unsigned int selectionMaskProgram() const override { return maskProgram_; }
 	virtual void drawPrimitive(
 		PrimitiveType primitive,
 		const Mat4& modelMatrix,
@@ -72,6 +82,11 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 
 	GLFWwindow* getWindow() const { return window_; }
 
+	// Для скриншотов редактора: окно не показывается, кадр целиком рисуется во внеэкранный буфер.
+	void setHiddenWindow(bool hidden) { hiddenWindow_ = hidden; }
+	void setOffscreenCapture(bool enabled) { captureEnabled_ = enabled; }
+	bool readCapturedFrame(std::vector<unsigned char>& outRgba, int& outWidth, int& outHeight) const;
+
 private:
 	struct PrimitiveMesh {
 		GLuint vao = 0;
@@ -82,8 +97,18 @@ private:
 
 	bool createRenderResources();
 	void destroyRenderResources();
-	bool resizeViewportFramebuffer(int width, int height);
-	void destroyViewportFramebuffer();
+	struct RenderTarget {
+		GLuint fbo = 0;
+		GLuint color = 0;
+		GLuint depth = 0;
+		int width = 0;
+		int height = 0;
+	};
+
+	bool resizeTarget(RenderTarget& target, int width, int height, bool withDepth, GLenum colorFormat);
+	void destroyTarget(RenderTarget& target);
+	bool createEditorPrograms();
+	GLuint linkProgram(const std::string& vertexSource, const std::string& fragmentSource, const char* name);
 	bool setupMesh(PrimitiveMesh& mesh, const float* vertices, GLsizei vertexCount, GLenum drawMode);
 	const PrimitiveMesh* getMesh(PrimitiveType primitive) const;
 	bool compileShader(GLenum type, const std::string& source, GLuint& shaderId, std::string& outError) const;
@@ -97,14 +122,23 @@ private:
 	PrimitiveMesh quadMesh_;
 	PrimitiveMesh cubeMesh_;
 	PrimitiveMesh wireSphereMesh_;
-	GLuint viewportFbo_ = 0;
+	static constexpr int kMaxViewportTargets = 4;
+	std::array<RenderTarget, kMaxViewportTargets> viewportTargets_{};
+	RenderTarget maskTarget_;
+	RenderTarget captureTarget_;
+	int currentTarget_ = 0;
 	GLuint skinBuffer_ = 0;
-	GLuint viewportColorTexture_ = 0;
-	GLuint viewportDepthRbo_ = 0;
-	int viewportWidth_ = 0;
-	int viewportHeight_ = 0;
 	GLint previousFramebuffer_ = 0;
 	bool renderingViewport_ = false;
+	bool hiddenWindow_ = false;
+	bool captureEnabled_ = false;
+	GLuint gridProgram_ = 0;
+	GLuint gridVao_ = 0;
+	GLuint gridVbo_ = 0;
+	GLuint maskProgram_ = 0;
+	GLuint outlineProgram_ = 0;
+	GLuint skyProgram_ = 0;
+	GLuint emptyVao_ = 0;
 	GLint modelLocation_ = -1;
 	GLint viewLocation_ = -1;
 	GLint projectionLocation_ = -1;
