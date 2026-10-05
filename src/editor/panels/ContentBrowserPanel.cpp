@@ -460,7 +460,6 @@ void ContentBrowserPanel::drawFolderTree(EditorContext& context, const std::stri
 }
 
 void ContentBrowserPanel::drawTile(EditorContext& context, const AssetEntry& entry, const ImVec2& min, float size, bool selected, bool hovered) {
-    (void)context;
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const float labelHeight = ImGui::GetTextLineHeight() + 6.0f;
     const ImVec2 max(min.x + size, min.y + size + labelHeight);
@@ -492,6 +491,25 @@ void ContentBrowserPanel::drawTile(EditorContext& context, const AssetEntry& ent
         } else {
             drawDocumentIcon(drawList, min, iconSize, assetColor(AssetType::Texture), AssetDatabase::badgeText(entry).c_str(),
                 thumbnails.isLoading(entry.path) ? ICON_LC_LOADER_CIRCLE : ICON_LC_IMAGE, hovered);
+        }
+    } else if (entry.type == AssetType::Model) {
+        const ModelThumbnail thumbnail = context.modelThumbnail(entry.path);
+        if (thumbnail.texture != 0) {
+            // Превью модели — квадрат с её рендером и плашкой формата в углу.
+            const float inset = size * 0.06f;
+            const ImVec2 imageMin(min.x + inset, min.y + inset);
+            const ImVec2 imageMax(min.x + size - inset, min.y + size - inset);
+            drawList->AddImageRounded(static_cast<ImTextureID>(thumbnail.texture), imageMin, imageMax, ImVec2(0, 1), ImVec2(1, 0),
+                styled(IM_COL32_WHITE), 6.0f);
+            drawList->AddRect(imageMin, imageMax, styled(IM_COL32(255, 255, 255, hovered ? 40 : 18)), 6.0f);
+            const std::string badgeText = AssetDatabase::badgeText(entry);
+            const float fontSize = std::clamp(size * 0.12f, 8.0f, 11.0f);
+            const ImVec2 badge = EditorUI::badgeSize(badgeText.c_str(), fontSize);
+            EditorUI::badge(drawList, ImVec2(imageMax.x - badge.x - 4.0f, imageMax.y - badge.y - 4.0f), badgeText.c_str(),
+                assetColor(AssetType::Model), IM_COL32_WHITE, fontSize);
+        } else {
+            drawDocumentIcon(drawList, min, iconSize, assetColor(entry.type), AssetDatabase::badgeText(entry).c_str(),
+                thumbnail.loading ? ICON_LC_LOADER_CIRCLE : glyphFor(entry.type), hovered);
         }
     } else {
         drawDocumentIcon(drawList, min, iconSize, assetColor(entry.type), AssetDatabase::badgeText(entry).c_str(), glyphFor(entry.type), hovered);

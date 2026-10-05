@@ -34,7 +34,7 @@ private:
     void changeMesh(EditorContext& context, Entity entity, const std::string& meshPath);
 
     void drawAsset(EditorContext& context, const std::string& path);
-    void drawAssetHeader(const AssetEntry& entry);
+    void drawAssetHeader(EditorContext& context, const AssetEntry& entry);
     void drawTextureAsset(const AssetEntry& entry);
     void drawModelAsset(EditorContext& context, const AssetEntry& entry);
     void drawSceneAsset(EditorContext& context, const AssetEntry& entry);

@@ -38,6 +38,14 @@ enum class GizmoTool {
 // Цели рендера вьюпортов у IRenderAdapter.
 constexpr int kSceneViewTarget = 0;
 constexpr int kGameViewTarget = 1;
+constexpr int kThumbnailTarget = 2;
+
+// Миниатюра модели для Content Browser и инспектора.
+struct ModelThumbnail {
+    unsigned int texture = 0;
+    bool loading = false;
+    bool failed = false;
+};
 
 struct SceneViewSettings {
     GizmoTool tool = GizmoTool::Translate;
@@ -121,6 +129,10 @@ public:
     void updateEditorCamera(float dt, int width, int height, bool inputEnabled, float mouseWheel);
     Mat4 gameViewMatrix() const;
     Mat4 gameProjectionMatrix(float aspect) const;
+
+    // Превью 3D-модели: грузит меш с низким приоритетом и рисует его один раз в текстуру.
+    // Не больше одной новой миниатюры за кадр, чтобы листание папки не дёргало FPS.
+    ModelThumbnail modelThumbnail(const std::string& path);
 
     // Лаб-инструменты (ЛР 1)
     void rebuildAnimationDemo();
@@ -241,6 +253,15 @@ private:
     int sceneViewWidth_ = 1;
     int sceneViewHeight_ = 1;
     std::vector<PendingModelFit> pendingFits_;
+    struct ThumbnailEntry {
+        std::shared_ptr<Resource<MeshData>> mesh;
+        unsigned int texture = 0;
+        bool failed = false;
+    };
+    std::unordered_map<std::string, ThumbnailEntry> modelThumbnails_;
+    int thumbnailFrame_ = -1;
+    int frameIndex_ = 0;
+    bool renderModelThumbnail(const std::string& path, ThumbnailEntry& entry);
     struct CachedBounds {
         Vec3 min{};
         Vec3 max{};

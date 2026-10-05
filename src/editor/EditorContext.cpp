@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <functional>
 #include <limits>
@@ -203,6 +204,13 @@ void EditorContext::enter() {
 }
 
 void EditorContext::exit() {
+    for (auto& [path, entry] : modelThumbnails_) {
+        (void)path;
+        if (entry.texture != 0) {
+            renderer.destroyTexture(entry.texture);
+        }
+    }
+    modelThumbnails_.clear();
     ServiceLocator::getEventDispatcher().clear();
     world.clear();
     selected = kInvalidEntity;
@@ -221,6 +229,7 @@ void EditorContext::update(float dt) {
     });
 
     lastDt = dt;
+    ++frameIndex_;
     frameTimesMs[frameHistoryOffset] = dt * 1000.0f;
     frameHistoryOffset = (frameHistoryOffset + 1) % kFrameHistory;
     if (fpsAverage <= 0.0f && dt > 0.0f) {
@@ -1267,6 +1276,101 @@ void EditorContext::restoreSnapshot(const SceneSnapshot& snapshot) {
     selected = world.isAlive(snapshot.selected) ? snapshot.selected : kInvalidEntity;
     controllableEntity = snapshot.controllableEntity;
     gameCameraEntity = snapshot.gameCameraEntity;
+}
+
+ModelThumbnail EditorContext::modelThumbnail(const std::string& path) {
+    auto [it, inserted] = modelThumbnails_.try_emplace(path);
+    ThumbnailEntry& entry = it->second;
+    if (inserted) {
+        entry.mesh = ResourceManager::getInstance().loadMeshAsync(path, JobPriority::Low);
+        entry.failed = entry.mesh == nullptr;
+    }
+    ModelThumbnail result;
+    result.texture = entry.texture;
+    result.failed = entry.failed;
+    if (entry.texture != 0 || entry.failed) {
+        return result;
+    }
+    if (!entry.mesh || entry.mesh->isFailed()) {
+        entry.failed = true;
+        result.failed = true;
+        return result;
+    }
+    result.loading = true;
+    if (entry.mesh->isPending() || thumbnailFrame_ == frameIndex_) {
+        return result;
+    }
+    // Ждём и текстуры материалов, иначе на превью останется заглушка.
+    if (const MeshData* data = entry.mesh->getData()) {
+        for (const SubMesh& subMesh : data->subMeshes) {
+            if (subMesh.material.cachedDiffuseTexture && subMesh.material.cachedDiffuseTexture->isPending()) {
+                return result;
+            }
+        }
+    }
+    thumbnailFrame_ = frameIndex_;
+    if (!renderModelThumbnail(path, entry)) {
+        entry.failed = true;
+        result.failed = true;
+        result.loading = false;
+        return result;
+    }
+    result.texture = entry.texture;
+    result.loading = false;
+    return result;
+}
+
+bool EditorContext::renderModelThumbnail(const std::string& path, ThumbnailEntry& entry) {
+    ZoneScopedN("Model thumbnail");
+    const MeshData* data = entry.mesh->getData();
+    Vec3 localMin{};
+    Vec3 localMax{};
+    if (data == nullptr || !computeBindPoseBounds(*data, localMin, localMax)) {
+        return false;
+    }
+    auto shader = ResourceManager::getInstance().loadShader(kVertexShaderPath, kFragmentShaderPath);
+    if (!shader || !shader->isLoaded()) {
+        return false;
+    }
+
+    // Отдельный мир: модель и камера, ничего из сцены.
+    World preview;
+    const Entity model = preview.createEntity();
+    Transform transform;
+    if (isImportedModel(path)) {
+        transform.rotation.x = kPi * 0.5f;
+    }
+    const Mat4 rotation = Math::composeTransform({}, transform.rotation, {1.0f, 1.0f, 1.0f});
+    const AABB bounds = transformBounds(rotation, localMin, localMax);
+    // Кадрируем по наибольшей полуоси, а не по описанной сфере: модель занимает почти всю миниатюру.
+    const float radius = std::max({bounds.halfSize.x, bounds.halfSize.y, bounds.halfSize.z, 0.0001f}) * 1.12f;
+    preview.addComponent<Transform>(model, transform);
+    MeshRenderer& meshRenderer = preview.addComponent<MeshRenderer>(model);
+    meshRenderer.meshId = path;
+    meshRenderer.cachedMesh = entry.mesh;
+    meshRenderer.cachedShader = shader;
+
+    constexpr float kFov = 30.0f;
+    const float pitch = -0.32f;
+    const float yaw = -0.62f;
+    const Vec3 forward = CameraMath::forward(pitch, yaw);
+    const float distance = radius / std::tan(toRadians(kFov) * 0.5f) * 1.08f;
+    const Vec3 eye = sub(bounds.center, mul(forward, distance));
+    const Entity cameraEntity = preview.createEntity();
+    preview.addComponent<Transform>(cameraEntity, Transform{eye, {}, {1.0f, 1.0f, 1.0f}});
+    Camera previewCamera;
+    previewCamera.active = true;
+    previewCamera.viewMatrix = CameraMath::view(eye, pitch, yaw);
+    previewCamera.projectionMatrix = Math::perspective(toRadians(kFov), 1.0f, distance * 0.02f, distance + radius * 4.0f);
+    preview.addComponent<Camera>(cameraEntity, previewCamera);
+
+    constexpr int kSize = 512;
+    RenderSystem previewRenderer(renderer);
+    renderer.beginViewportFrame(kThumbnailTarget, kSize, kSize, 0.2f, 0.205f, 0.22f);
+    previewRenderer.render(preview);
+    renderer.endViewportFrame();
+    entry.texture = renderer.copyViewportTexture(kThumbnailTarget);
+    return entry.texture != 0;
 }
 
 void EditorContext::removeAnimationDemo() {

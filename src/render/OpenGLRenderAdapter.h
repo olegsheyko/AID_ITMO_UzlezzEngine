@@ -22,6 +22,7 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual void endViewportFrame() override;
 	virtual unsigned int getViewportTextureId(int target) const override;
 	virtual void drawGrid(const Mat4& viewMatrix, const Mat4& projectionMatrix, const Vec3& cameraPosition, float height) override;
+	virtual unsigned int copyViewportTexture(int target) override;
 	virtual void drawSky(const Mat4& viewMatrix, const Mat4& projectionMatrix, const Vec3& cameraPosition, const Vec3& sunDirection) override;
 	virtual void beginSelectionMask() override;
 	virtual void endSelectionMask(const Vec4& color, float thicknessPixels) override;

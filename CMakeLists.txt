@@ -310,6 +310,10 @@ target_link_libraries(GameEngine PRIVATE
 )
 
 target_link_libraries(GameEngine PRIVATE ${ENGINE_ASSIMP_TARGET})
+if(WIN32)
+    # ShellExecute для «Открыть» и «Показать в Проводнике» в Content Browser.
+    target_link_libraries(GameEngine PRIVATE shell32)
+endif()
 deploy_assimp_runtime(GameEngine)
 
 add_custom_target(CopyAssets ALL

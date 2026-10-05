@@ -41,6 +41,10 @@ class IRenderAdapter {
 		(void)viewMatrix; (void)projectionMatrix; (void)cameraPosition; (void)sunDirection;
 	}
 
+	// Копия текущего содержимого цели вьюпорта в новую текстуру — для миниатюр. 0 — не поддерживается.
+	// Текстуру потом освобождают через destroyTexture.
+	virtual unsigned int copyViewportTexture(int target) { (void)target; return 0; }
+
 	// Контур выделения: между begin/end выделенные меши рисуются программой selectionMaskProgram(),
 	// end обводит получившуюся маску. Работает внутри кадра вьюпорта; без поддержки — ничего не делает.
 	virtual void beginSelectionMask() {}

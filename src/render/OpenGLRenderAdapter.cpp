@@ -307,6 +307,41 @@ void OpenGLRenderAdapter::drawGrid(const Mat4& viewMatrix, const Mat4& projectio
 	glDepthMask(depthWrite);
 }
 
+unsigned int OpenGLRenderAdapter::copyViewportTexture(int target) {
+	if (target < 0 || target >= kMaxViewportTargets || viewportTargets_[target].fbo == 0) {
+		return 0;
+	}
+	const RenderTarget& source = viewportTargets_[target];
+	GLuint texture = 0;
+	glGenTextures(1, &texture);
+	if (texture == 0) {
+		return 0;
+	}
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, source.width, source.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	GLint previousDraw = 0;
+	GLint previousRead = 0;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDraw);
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousRead);
+	GLuint copyFbo = 0;
+	glGenFramebuffers(1, &copyFbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, copyFbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, source.fbo);
+	glBlitFramebuffer(0, 0, source.width, source.height, 0, 0, source.width, source.height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDraw));
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousRead));
+	glDeleteFramebuffers(1, &copyFbo);
+	++liveTextures_;
+	return texture;
+}
+
 void OpenGLRenderAdapter::drawSky(const Mat4& viewMatrix, const Mat4& projectionMatrix, const Vec3& cameraPosition, const Vec3& sunDirection) {
 	if (skyProgram_ == 0 || emptyVao_ == 0) {
 		return;

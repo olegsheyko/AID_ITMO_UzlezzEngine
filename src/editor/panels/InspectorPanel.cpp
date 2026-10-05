@@ -791,7 +791,7 @@ void InspectorPanel::drawAsset(EditorContext& context, const std::string& path) 
         EditorUI::emptyState(ICON_LC_FILE_QUESTION, "Asset not found", path.c_str());
         return;
     }
-    drawAssetHeader(*entry);
+    drawAssetHeader(context, *entry);
     switch (entry->type) {
     case AssetType::Texture:
         drawTextureAsset(*entry);
@@ -818,15 +818,19 @@ void InspectorPanel::drawAsset(EditorContext& context, const std::string& path) 
     drawAssetActions(context, *entry);
 }
 
-void InspectorPanel::drawAssetHeader(const AssetEntry& entry) {
+void InspectorPanel::drawAssetHeader(EditorContext& context, const AssetEntry& entry) {
     const float tile = 52.0f;
     const ImVec2 min = ImGui::GetCursorScreenPos();
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const bool previewable = entry.type == AssetType::Texture && AssetDatabase::isLoadableTexture(entry.extension);
     const TextureData* thumbnail = previewable ? ThumbnailCache::instance().texture(entry.path) : nullptr;
+    const ModelThumbnail model = entry.type == AssetType::Model ? context.modelThumbnail(entry.path) : ModelThumbnail{};
     if (thumbnail) {
         drawChecker(drawList, min, ImVec2(min.x + tile, min.y + tile), 6.0f);
         drawImageFit(drawList, *thumbnail, min, ImVec2(min.x + tile, min.y + tile), 4.0f);
+    } else if (model.texture != 0) {
+        drawList->AddImageRounded(static_cast<ImTextureID>(model.texture), min, ImVec2(min.x + tile, min.y + tile),
+            ImVec2(0, 1), ImVec2(1, 0), IM_COL32_WHITE, 8.0f);
     } else {
         ImU32 color = 0;
         const char* icon = assetIcon(entry.type, &color);
@@ -896,6 +900,19 @@ void InspectorPanel::drawTextureAsset(const AssetEntry& entry) {
 }
 
 void InspectorPanel::drawModelAsset(EditorContext& context, const AssetEntry& entry) {
+    const ModelThumbnail thumbnail = context.modelThumbnail(entry.path);
+    if (thumbnail.texture != 0) {
+        const float width = ImGui::GetContentRegionAvail().x;
+        const float height = std::min(width, 260.0f);
+        const ImVec2 min = ImGui::GetCursorScreenPos();
+        const float side = height;
+        const ImVec2 imageMin(min.x + (width - side) * 0.5f, min.y);
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(min, ImVec2(min.x + width, min.y + height), ImGui::GetColorU32(IM_COL32(51, 52, 56, 255)), 6.0f);
+        drawList->AddImageRounded(static_cast<ImTextureID>(thumbnail.texture), imageMin, ImVec2(imageMin.x + side, imageMin.y + side),
+            ImVec2(0, 1), ImVec2(1, 0), IM_COL32_WHITE, 6.0f);
+        ImGui::Dummy(ImVec2(width, height + 6.0f));
+    }
     if (modelPath_ != entry.path) {
         modelPath_ = entry.path;
         modelPreview_ = ResourceManager::getInstance().loadMeshAsync(entry.path, JobPriority::Low);
