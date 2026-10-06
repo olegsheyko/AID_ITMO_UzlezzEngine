@@ -18,7 +18,7 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual void beginFrame(float r, float g, float b) override;
 	using IRenderAdapter::beginViewportFrame;
 	using IRenderAdapter::getViewportTextureId;
-	virtual void beginViewportFrame(int target, int width, int height, float r, float g, float b) override;
+	virtual void beginViewportFrame(int target, int width, int height, float r, float g, float b, float a = 1.0f) override;
 	virtual void endViewportFrame() override;
 	virtual unsigned int getViewportTextureId(int target) const override;
 	virtual void drawGrid(const Mat4& viewMatrix, const Mat4& projectionMatrix, const Vec3& cameraPosition, float height) override;

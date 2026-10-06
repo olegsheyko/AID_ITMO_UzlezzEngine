@@ -143,10 +143,10 @@ void GameViewPanel::draw(EditorContext& context) {
 
     if (showStats) {
         char lines[3][64];
-        std::snprintf(lines[0], sizeof(lines[0]), "%.0f FPS  (%.2f ms)", context.fpsAverage, context.lastDt * 1000.0f);
+        std::snprintf(lines[0], sizeof(lines[0]), "%.0f FPS  (%.2f ms)", context.fpsAverage, context.frameTimeAverageMs);
         std::snprintf(lines[1], sizeof(lines[1]), "Collisions  %zu", context.physicsSystem.getLastCollisionCount());
         std::snprintf(lines[2], sizeof(lines[2]), "Animated  %zu", context.animationSystem.characterCount);
-        float width = 0.0f;
+        float width = ImGui::CalcTextSize("0000 FPS  (000.00 ms)").x;
         for (const auto& line : lines) {
             width = std::max(width, ImGui::CalcTextSize(line).x);
         }

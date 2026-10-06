@@ -236,7 +236,7 @@ void OpenGLRenderAdapter::beginFrame(float r, float g, float b) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void OpenGLRenderAdapter::beginViewportFrame(int target, int width, int height, float r, float g, float b) {
+void OpenGLRenderAdapter::beginViewportFrame(int target, int width, int height, float r, float g, float b, float a) {
 	width = std::max(1, width);
 	height = std::max(1, height);
 	target = std::clamp(target, 0, kMaxViewportTargets - 1);
@@ -251,7 +251,7 @@ void OpenGLRenderAdapter::beginViewportFrame(int target, int width, int height, 
 	glViewport(0, 0, renderTarget.width, renderTarget.height);
 	glEnable(GL_DEPTH_TEST);
 	glDepthMask(GL_TRUE);
-	glClearColor(r, g, b, 1.0f);
+	glClearColor(r, g, b, a);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	currentTarget_ = target;
 	renderingViewport_ = true;
@@ -319,7 +319,8 @@ unsigned int OpenGLRenderAdapter::copyViewportTexture(int target) {
 	}
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, source.width, source.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	// Миниатюры показываются мельче, чем рисуются: мипмапы убирают лесенку на краях.
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -338,6 +339,9 @@ unsigned int OpenGLRenderAdapter::copyViewportTexture(int target) {
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDraw));
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousRead));
 	glDeleteFramebuffers(1, &copyFbo);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glGenerateMipmap(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, 0);
 	++liveTextures_;
 	return texture;
 }

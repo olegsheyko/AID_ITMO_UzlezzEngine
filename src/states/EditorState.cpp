@@ -151,7 +151,7 @@ void EditorState::onExit() {
 
 void EditorState::loadPreferences() {
     uiScale_ = std::clamp(prefFloat("UiScale", 1.0f), 0.75f, 2.0f);
-    contentBrowser_.tileSize = std::clamp(prefFloat("TileSize", contentBrowser_.tileSize), 56.0f, 168.0f);
+    contentBrowser_.tileSize = std::clamp(prefFloat("TileSize", contentBrowser_.tileSize), 72.0f, 168.0f);
     contentBrowser_.listView = prefBool("ListView", false) || startup_.listView;
     console_.collapse = prefBool("ConsoleCollapse", false);
     console_.autoScroll = prefBool("ConsoleAutoScroll", true);
@@ -604,28 +604,37 @@ void EditorState::renderStatusBar() {
         EditorUI::pushSmallFont();
         const float smallY = windowPos.y + (height - ImGui::GetFontSize()) * 0.5f;
 
-        // Справа налево: FPS, сущности, загрузки, режим.
-        std::vector<std::pair<std::string, ImU32>> items;
-        char fps[32];
-        std::snprintf(fps, sizeof(fps), "%.0f FPS  %.1f ms", context_.fpsAverage, context_.lastDt * 1000.0f);
-        items.emplace_back(fps, kTextDim);
-        const std::size_t entities = context_.world.getEntityCount() - (context_.world.isAlive(context_.editorCameraEntity) ? 1u : 0u);
-        items.emplace_back(std::string(ICON_LC_BOXES "  ") + std::to_string(entities) + " entities", kTextDim);
+        // Справа налево: FPS, сущности, загрузки, режим. У каждого пункта слот фиксированной ширины
+        // по шаблону: меняющиеся цифры не двигают соседей, а значения сглажены за полсекунды.
+        struct Item {
+            std::string text;
+            ImU32 color;
+            const char* widthTemplate;
+        };
+        std::vector<Item> items;
+        char fps[48];
+        std::snprintf(fps, sizeof(fps), "%.0f FPS  %.1f ms", context_.fpsAverage, context_.frameTimeAverageMs);
+        items.push_back({fps, kTextDim, "0000 FPS  000.0 ms"});
+        const std::size_t entities = context_.world.getEntityCount() - (context_.world.isAlive(context_.editorCameraEntity) ? 1u : 0u)
+            - (context_.world.isAlive(context_.dragPreviewEntity) ? 1u : 0u);
+        items.push_back({std::string(ICON_LC_BOXES "  ") + std::to_string(entities) + " entities", kTextDim, ICON_LC_BOXES "  0000 entities"});
         const std::size_t pending = ResourceManager::getInstance().pendingLoadCount();
         if (pending > 0) {
-            items.emplace_back(std::string(ICON_LC_LOADER_CIRCLE "  Loading ") + std::to_string(pending), kAccentHovered);
+            items.push_back({std::string(ICON_LC_LOADER_CIRCLE "  Loading ") + std::to_string(pending), kAccentHovered,
+                ICON_LC_LOADER_CIRCLE "  Loading 000"});
         }
         if (context_.isPlaying()) {
-            items.emplace_back(context_.paused ? ICON_LC_PAUSE "  Paused" : ICON_LC_PLAY "  Playing", context_.paused ? kWarning : IM_COL32(150, 196, 255, 255));
+            items.push_back({context_.paused ? ICON_LC_PAUSE "  Paused" : ICON_LC_PLAY "  Playing",
+                context_.paused ? kWarning : IM_COL32(150, 196, 255, 255), nullptr});
         } else {
-            items.emplace_back(ICON_LC_PENCIL "  Edit Mode", kTextFaint);
+            items.push_back({ICON_LC_PENCIL "  Edit Mode", kTextFaint, nullptr});
         }
         float x = windowPos.x + windowWidth - 12.0f;
-        for (const auto& [text, color] : items) {
-            const float width = ImGui::CalcTextSize(text.c_str()).x;
-            x -= width;
-            drawList->AddText(ImVec2(x, smallY), ImGui::GetColorU32(color), text.c_str());
-            x -= 22.0f;
+        for (const Item& item : items) {
+            const float textWidth = ImGui::CalcTextSize(item.text.c_str()).x;
+            const float slotWidth = item.widthTemplate ? std::max(textWidth, ImGui::CalcTextSize(item.widthTemplate).x) : textWidth;
+            drawList->AddText(ImVec2(x - textWidth, smallY), ImGui::GetColorU32(item.color), item.text.c_str());
+            x -= slotWidth + 22.0f;
             drawList->AddLine(ImVec2(x + 11.0f, windowPos.y + 6.0f), ImVec2(x + 11.0f, windowPos.y + height - 6.0f), ImGui::GetColorU32(kBorderStrong));
         }
 

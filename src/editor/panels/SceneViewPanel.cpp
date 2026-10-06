@@ -107,7 +107,15 @@ bool toolShortcutAllowed() {
 
 void SceneViewPanel::draw(EditorContext& context) {
     context.sceneViewInputActive = false;
+    // Превью перетаскиваемой модели живёт, только пока над вьюпортом; вкладку закрыли или спрятали — убираем.
+    auto dropDragState = [&context]() {
+        if (context.dragPreviewEntity != kInvalidEntity) {
+            context.cancelDragPreview();
+        }
+        context.dropHighlight = kInvalidEntity;
+    };
     if (!open) {
+        dropDragState();
         return;
     }
     applyGizmoStyle();
@@ -117,6 +125,7 @@ void SceneViewPanel::draw(EditorContext& context) {
     if (!visible) {
         hovered_ = false;
         navigating_ = false;
+        dropDragState();
         ImGui::End();
         return;
     }
@@ -630,12 +639,13 @@ void SceneViewPanel::drawStatusOverlay(EditorContext& context, const ImVec2& min
     }
     ResourceManager& resources = ResourceManager::getInstance();
     char lines[4][64];
-    std::snprintf(lines[0], sizeof(lines[0]), "%.0f FPS  \xC2\xB7  %.2f ms", context.fpsAverage, context.lastDt * 1000.0f);
+    std::snprintf(lines[0], sizeof(lines[0]), "%.0f FPS  \xC2\xB7  %.2f ms", context.fpsAverage, context.frameTimeAverageMs);
     std::snprintf(lines[1], sizeof(lines[1]), "Meshes drawn  %zu", context.sceneDrawnMeshes);
     std::snprintf(lines[2], sizeof(lines[2]), "Entities  %zu", context.world.getEntityCount() - 1);
     std::snprintf(lines[3], sizeof(lines[3]), "Loads pending  %zu", resources.pendingLoadCount());
     EditorUI::pushSmallFont();
-    float width = 0.0f;
+    // Ширина по шаблону, а не по тексту: рамка не прыгает вместе с цифрами.
+    float width = ImGui::CalcTextSize("0000 FPS  \xC2\xB7  000.00 ms").x;
     for (const auto& line : lines) {
         width = std::max(width, ImGui::CalcTextSize(line).x);
     }
@@ -650,41 +660,64 @@ void SceneViewPanel::drawStatusOverlay(EditorContext& context, const ImVec2& min
 }
 
 void SceneViewPanel::handleDrop(EditorContext& context, const ImVec2& min, const ImVec2& size) {
-    if (!ImGui::BeginDragDropTarget()) {
-        return;
+    // Что сейчас тащат из Content Browser и где курсор — для превью модели и подсветки цели.
+    const ImGuiPayload* dragging = ImGui::GetDragDropPayload();
+    std::string draggedPath;
+    AssetType draggedType = AssetType::Other;
+    if (dragging && dragging->IsDataType(kAssetPayload) && dragging->Data) {
+        draggedPath = static_cast<const char*>(dragging->Data);
+        draggedType = AssetDatabase::classify(draggedPath);
     }
-    const ImGuiPayload* peek = ImGui::GetDragDropPayload();
+    const ImVec2 max(min.x + size.x, min.y + size.y);
+    const bool overViewport = !draggedPath.empty() && ImGui::IsMouseHoveringRect(min, max) &&
+        ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
     Vec3 origin{};
     Vec3 direction{};
-    const bool hasRay = mouseRay(context, min, size, origin, direction);
-    if (peek && peek->IsDataType(kAssetPayload)) {
-        const std::string path(static_cast<const char*>(peek->Data));
-        const AssetType type = AssetDatabase::classify(path);
-        const char* hint = type == AssetType::Model ? ICON_LC_PLUS "  Add model to the scene"
-            : type == AssetType::Texture ? ICON_LC_IMAGE "  Drop on an object to apply the texture"
-            : type == AssetType::Scene ? ICON_LC_CLAPPERBOARD "  Open this scene" : nullptr;
+    const bool hasRay = overViewport && mouseRay(context, min, size, origin, direction);
+    const bool applies = draggedType == AssetType::Texture || draggedType == AssetType::Material;
+
+    bool dropped = false;
+    if (ImGui::BeginDragDropTarget()) {
+        const char* hint = nullptr;
+        if (context.isPlaying() && draggedType != AssetType::Scene) {
+            hint = ICON_LC_BAN "  Stop Play mode to edit the scene";
+        } else if (draggedType == AssetType::Scene) {
+            hint = ICON_LC_CLAPPERBOARD "  Open this scene";
+        } else if (applies) {
+            hint = context.dropHighlight != kInvalidEntity ? ICON_LC_BRUSH "  Apply to the highlighted object"
+                                                           : ICON_LC_BRUSH "  Drop on an object to apply";
+        }
         if (hint) {
             ImGui::SetTooltip("%s", hint);
         }
-    }
-    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kAssetPayload)) {
-        const std::string path(static_cast<const char*>(payload->Data));
-        const AssetType type = AssetDatabase::classify(path);
-        if (type == AssetType::Scene) {
-            context.loadScene(path);
-        } else if (!context.isPlaying() && hasRay) {
-            if (type == AssetType::Model) {
-                context.createModel(path, context.dropPoint(origin, direction));
-            } else if (type == AssetType::Texture) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kAssetPayload, ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
+            dropped = true;
+            const std::string path(static_cast<const char*>(payload->Data));
+            const AssetType type = AssetDatabase::classify(path);
+            if (type == AssetType::Scene) {
+                context.loadScene(path);
+            } else if (!context.isPlaying() && type == AssetType::Model) {
+                if (context.commitDragPreview() == kInvalidEntity && hasRay) {
+                    context.createModel(path, context.dropPoint(origin, direction));
+                }
+            } else if (!context.isPlaying() && applies && hasRay) {
                 const Entity hit = context.pick(origin, direction);
-                if (hit != kInvalidEntity && context.world.hasComponent<MeshRenderer>(hit)) {
-                    MeshRenderer& meshRenderer = context.world.getComponent<MeshRenderer>(hit);
-                    meshRenderer.baseColorTextureId = path;
-                    meshRenderer.cachedBaseColorTexture = ResourceManager::getInstance().loadTextureAsync(path, JobPriority::High);
+                if (context.applyAssetToEntity(path, hit)) {
                     context.select(hit);
                 }
             }
         }
+        ImGui::EndDragDropTarget();
     }
-    ImGui::EndDragDropTarget();
+
+    // Модель живёт в сцене, пока курсор над вьюпортом; ушёл или отпустил мимо — убираем.
+    if (!dropped && hasRay && draggedType == AssetType::Model && !context.isPlaying()) {
+        context.updateDragPreview(draggedPath, origin, direction);
+    } else if (!dropped && context.dragPreviewEntity != kInvalidEntity) {
+        context.cancelDragPreview();
+    }
+    context.dropHighlight = (!dropped && hasRay && applies && !context.isPlaying()) ? context.pick(origin, direction) : kInvalidEntity;
+    if (context.dropHighlight != kInvalidEntity && !context.world.hasComponent<MeshRenderer>(context.dropHighlight)) {
+        context.dropHighlight = kInvalidEntity;
+    }
 }

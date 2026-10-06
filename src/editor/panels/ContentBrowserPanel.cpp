@@ -24,7 +24,7 @@ using namespace EditorTheme;
 
 namespace {
 constexpr float kRefreshInterval = 2.0f;
-constexpr float kTileSpacing = 10.0f;
+constexpr float kTileSpacing = 12.0f;
 
 ImU32 styled(ImU32 color) {
     return ImGui::GetColorU32(color);
@@ -54,6 +54,12 @@ std::string formatTime(std::filesystem::file_time_type time) {
         std::strftime(buffer, sizeof(buffer), "%d.%m.%Y %H:%M", local);
     }
     return buffer;
+}
+
+void drawTextCenteredLarge(ImDrawList* drawList, const ImVec2& center, const char* text, float fontSize, ImU32 color) {
+    ImGui::PushFont(nullptr, fontSize);
+    EditorUI::drawTextCentered(drawList, center, text, color);
+    ImGui::PopFont();
 }
 
 void drawFolderIcon(ImDrawList* drawList, const ImVec2& min, float size, bool hovered) {
@@ -118,6 +124,60 @@ void drawChecker(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, flo
         }
     }
     drawList->PopClipRect();
+}
+
+// Подпись типа под именем, как в карточках UE5.
+const char* cardTypeName(AssetType type) {
+    switch (type) {
+    case AssetType::Model: return "Mesh";
+    case AssetType::Material: return "Material";
+    case AssetType::Texture: return "Texture";
+    case AssetType::Shader: return "Shader";
+    case AssetType::Scene: return "Scene";
+    case AssetType::Json: return "Data";
+    case AssetType::Text: return "Text";
+    case AssetType::Font: return "Font";
+    case AssetType::Audio: return "Sound";
+    case AssetType::Script: return "Script";
+    case AssetType::Folder: return "Folder";
+    case AssetType::Other: return "File";
+    }
+    return "File";
+}
+
+bool isBreakChar(char c) {
+    return c == ' ' || c == '_' || c == '-' || c == '.';
+}
+
+// Имя в две строки: перенос по пробелу или «_», вторая строка — с многоточием.
+std::pair<std::string, std::string> wrapTwoLines(const std::string& text, float width) {
+    if (ImGui::CalcTextSize(text.c_str()).x <= width) {
+        return {text, std::string()};
+    }
+    std::size_t fit = 0;
+    std::size_t lastBreak = 0;
+    for (std::size_t i = 1; i <= text.size(); ++i) {
+        if (i < text.size() && (static_cast<unsigned char>(text[i]) & 0xC0) == 0x80) {
+            continue;
+        }
+        if (ImGui::CalcTextSize(text.c_str(), text.c_str() + i).x > width) {
+            break;
+        }
+        fit = i;
+        if (isBreakChar(text[i - 1])) {
+            lastBreak = i;
+        }
+    }
+    const std::size_t cut = (lastBreak > fit / 2) ? lastBreak : std::max<std::size_t>(fit, 1);
+    std::string first = text.substr(0, cut);
+    std::string rest = text.substr(cut);
+    while (!first.empty() && first.back() == ' ') {
+        first.pop_back();
+    }
+    while (!rest.empty() && rest.front() == ' ') {
+        rest.erase(rest.begin());
+    }
+    return {first, EditorUI::ellipsize(rest.c_str(), width)};
 }
 
 const char* glyphFor(AssetType type) {
@@ -242,7 +302,7 @@ void ContentBrowserPanel::draw(EditorContext& context, float dt) {
         }
         // Ctrl/Cmd + колесо — размер плиток, как в Unity.
         if (ImGui::IsWindowHovered() && ImGui::GetIO().KeyCtrl && ImGui::GetIO().MouseWheel != 0.0f) {
-            tileSize = std::clamp(tileSize + ImGui::GetIO().MouseWheel * 8.0f, 56.0f, 168.0f);
+            tileSize = std::clamp(tileSize + ImGui::GetIO().MouseWheel * 8.0f, 72.0f, 168.0f);
         }
         if (ImGui::IsWindowFocused() && !ImGui::IsAnyItemActive() && !searching &&
             ImGui::IsKeyPressed(ImGuiKey_Backspace) && currentFolder_ != context.assets.root()) {
@@ -311,7 +371,7 @@ void ContentBrowserPanel::drawToolbar(EditorContext& context) {
     ImGui::SetNextItemWidth(sliderWidth);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, 3.0f));
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.0f);
-    ImGui::SliderFloat("##tile_size", &tileSize, 56.0f, 168.0f, "");
+    ImGui::SliderFloat("##tile_size", &tileSize, 72.0f, 168.0f, "");
     ImGui::PopStyleVar();
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
@@ -462,67 +522,116 @@ void ContentBrowserPanel::drawFolderTree(EditorContext& context, const std::stri
     ImGui::PopID();
 }
 
+float ContentBrowserPanel::cardHeight(float size) const {
+    const float lineHeight = ImGui::GetTextLineHeight();
+    return size + EditorUI::px(3.0f) + EditorUI::px(6.0f) + lineHeight * 2.0f + EditorTheme::kSmallFontSize * EditorTheme::uiScale() +
+        EditorUI::px(10.0f);
+}
+
+const std::pair<std::string, std::string>& ContentBrowserPanel::wrappedName(const AssetEntry& entry, float width) {
+    const std::string key = entry.path + "|" + std::to_string(static_cast<int>(width)) + "|" + std::to_string(EditorTheme::uiScale());
+    auto it = nameCache_.find(key);
+    if (it == nameCache_.end()) {
+        if (nameCache_.size() > 4096) {
+            nameCache_.clear();
+        }
+        it = nameCache_.emplace(key, wrapTwoLines(displayName(entry), width)).first;
+    }
+    return it->second;
+}
+
 void ContentBrowserPanel::drawTile(EditorContext& context, const AssetEntry& entry, const ImVec2& min, float size, bool selected, bool hovered) {
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const float labelHeight = ImGui::GetTextLineHeight() + 6.0f;
-    const ImVec2 max(min.x + size, min.y + size + labelHeight);
-    if (selected) {
-        drawList->AddRectFilled(ImVec2(min.x - 4.0f, min.y - 4.0f), ImVec2(max.x + 4.0f, max.y + 2.0f), styled(kAccentSoft), 7.0f);
-        drawList->AddRect(ImVec2(min.x - 4.0f, min.y - 4.0f), ImVec2(max.x + 4.0f, max.y + 2.0f), styled(withAlpha(kAccent, 0.55f)), 7.0f);
-    } else if (hovered) {
-        drawList->AddRectFilled(ImVec2(min.x - 4.0f, min.y - 4.0f), ImVec2(max.x + 4.0f, max.y + 2.0f), styled(IM_COL32(255, 255, 255, 13)), 7.0f);
-    }
+    const float height = cardHeight(size);
+    const ImVec2 max(min.x + size, min.y + height);
+    const float rounding = EditorUI::px(6.0f);
+    const ImU32 accent = assetColor(entry.type);
 
-    const float iconSize = size;
     if (entry.type == AssetType::Folder) {
-        drawFolderIcon(drawList, min, iconSize, hovered);
-    } else if (entry.type == AssetType::Texture && AssetDatabase::isLoadableTexture(entry.extension)) {
-        ThumbnailCache& thumbnails = ThumbnailCache::instance();
-        const float inset = size * 0.08f;
-        const ImVec2 imageMin(min.x + inset, min.y + inset);
-        const ImVec2 imageMax(min.x + size - inset, min.y + size - inset);
-        const TextureData* texture = thumbnails.texture(entry.path);
-        if (texture && texture->width > 0 && texture->height > 0) {
-            const float boxSize = imageMax.x - imageMin.x;
-            const float scale = boxSize / static_cast<float>(std::max(texture->width, texture->height));
-            const ImVec2 dims(texture->width * scale, texture->height * scale);
-            const ImVec2 start(imageMin.x + (boxSize - dims.x) * 0.5f, imageMin.y + (boxSize - dims.y) * 0.5f);
-            const ImVec2 end(start.x + dims.x, start.y + dims.y);
-            drawChecker(drawList, start, end, std::max(4.0f, size * 0.08f));
-            drawList->AddImageRounded(static_cast<ImTextureID>(texture->textureId), start, end, ImVec2(0, 1), ImVec2(1, 0), styled(IM_COL32_WHITE), 4.0f);
-            drawList->AddRect(start, end, styled(IM_COL32(0, 0, 0, 90)), 4.0f);
-        } else {
-            drawDocumentIcon(drawList, min, iconSize, assetColor(AssetType::Texture), AssetDatabase::badgeText(entry).c_str(),
-                thumbnails.isLoading(entry.path) ? ICON_LC_LOADER_CIRCLE : ICON_LC_IMAGE, hovered);
+        // Папки — без карточки, как в UE5: иконка и подпись, подсветка при наведении и выделении.
+        if (selected || hovered) {
+            drawList->AddRectFilled(min, max, styled(selected ? kAccentSoft : IM_COL32(255, 255, 255, 12)), rounding);
+            if (selected) {
+                drawList->AddRect(min, max, styled(withAlpha(kAccent, 0.6f)), rounding, 0, 1.5f);
+            }
         }
-    } else if (entry.type == AssetType::Model) {
-        const ModelThumbnail thumbnail = context.modelThumbnail(entry.path);
-        if (thumbnail.texture != 0) {
-            // Превью модели — квадрат с её рендером и плашкой формата в углу.
-            const float inset = size * 0.06f;
-            const ImVec2 imageMin(min.x + inset, min.y + inset);
-            const ImVec2 imageMax(min.x + size - inset, min.y + size - inset);
-            drawList->AddImageRounded(static_cast<ImTextureID>(thumbnail.texture), imageMin, imageMax, ImVec2(0, 1), ImVec2(1, 0),
-                styled(IM_COL32_WHITE), 6.0f);
-            drawList->AddRect(imageMin, imageMax, styled(IM_COL32(255, 255, 255, hovered ? 40 : 18)), 6.0f);
-            const std::string badgeText = AssetDatabase::badgeText(entry);
-            const float fontSize = std::clamp(size * 0.12f, 8.0f, 11.0f);
-            const ImVec2 badge = EditorUI::badgeSize(badgeText.c_str(), fontSize);
-            EditorUI::badge(drawList, ImVec2(imageMax.x - badge.x - 4.0f, imageMax.y - badge.y - 4.0f), badgeText.c_str(),
-                assetColor(AssetType::Model), IM_COL32_WHITE, fontSize);
-        } else {
-            drawDocumentIcon(drawList, min, iconSize, assetColor(entry.type), AssetDatabase::badgeText(entry).c_str(),
-                thumbnail.loading ? ICON_LC_LOADER_CIRCLE : glyphFor(entry.type), hovered);
-        }
+        drawFolderIcon(drawList, min, size, hovered);
     } else {
-        drawDocumentIcon(drawList, min, iconSize, assetColor(entry.type), AssetDatabase::badgeText(entry).c_str(), glyphFor(entry.type), hovered);
+        // Карточка: превью, цветная полоса типа, имя и тип.
+        const ImU32 cardColor = selected ? IM_COL32(36, 52, 80, 255) : (hovered ? IM_COL32(48, 48, 52, 255) : IM_COL32(38, 38, 41, 255));
+        drawList->AddRectFilled(min, max, styled(cardColor), rounding);
+        const ImVec2 thumbMax(max.x, min.y + size);
+        drawList->AddRectFilled(min, thumbMax, styled(hovered ? IM_COL32(58, 59, 64, 255) : IM_COL32(50, 51, 56, 255)), rounding,
+            ImDrawFlags_RoundCornersTop);
+        // Мягкий «софтбокс» сверху — фон студийного рендера.
+        drawList->AddCircleFilled(ImVec2(min.x + size * 0.5f, min.y + size * 0.35f), size * 0.42f,
+            styled(IM_COL32(255, 255, 255, hovered ? 12 : 8)), 48);
+
+        bool drawn = false;
+        if (entry.type == AssetType::Texture && AssetDatabase::isLoadableTexture(entry.extension)) {
+            ThumbnailCache& thumbnails = ThumbnailCache::instance();
+            const TextureData* texture = thumbnails.texture(entry.path);
+            if (texture && texture->width > 0 && texture->height > 0) {
+                const float inset = size * 0.1f;
+                const float boxSize = size - inset * 2.0f;
+                const float scale = boxSize / static_cast<float>(std::max(texture->width, texture->height));
+                const ImVec2 dims(texture->width * scale, texture->height * scale);
+                const ImVec2 start(min.x + inset + (boxSize - dims.x) * 0.5f, min.y + inset + (boxSize - dims.y) * 0.5f);
+                const ImVec2 end(start.x + dims.x, start.y + dims.y);
+                drawChecker(drawList, start, end, std::max(4.0f, size * 0.08f));
+                drawList->AddImageRounded(static_cast<ImTextureID>(texture->textureId), start, end, ImVec2(0, 1), ImVec2(1, 0),
+                    styled(IM_COL32_WHITE), 3.0f);
+                drawList->AddRect(start, end, styled(IM_COL32(0, 0, 0, 80)), 3.0f);
+                drawn = true;
+            } else if (thumbnails.isLoading(entry.path)) {
+                drawTextCenteredLarge(drawList, ImVec2(min.x + size * 0.5f, min.y + size * 0.5f), ICON_LC_LOADER_CIRCLE, size * 0.22f, kTextFaint);
+                drawn = true;
+            }
+        } else if (AssetPreviewer::supports(entry.type)) {
+            const AssetThumbnail thumbnail = context.previewer.thumbnail(entry.path);
+            if (thumbnail.texture != 0) {
+                drawList->AddImageRounded(static_cast<ImTextureID>(thumbnail.texture), min, thumbMax, ImVec2(0, 1), ImVec2(1, 0),
+                    styled(IM_COL32_WHITE), rounding, ImDrawFlags_RoundCornersTop);
+                drawn = true;
+            } else if (thumbnail.loading) {
+                drawTextCenteredLarge(drawList, ImVec2(min.x + size * 0.5f, min.y + size * 0.5f), ICON_LC_LOADER_CIRCLE, size * 0.22f, kTextFaint);
+                drawn = true;
+            }
+        }
+        if (!drawn) {
+            const float iconSize = size * 0.82f;
+            drawDocumentIcon(drawList, ImVec2(min.x + (size - iconSize) * 0.5f, min.y + (size - iconSize) * 0.5f), iconSize, accent,
+                AssetDatabase::badgeText(entry).c_str(), glyphFor(entry.type), hovered);
+        }
+        drawList->AddRectFilled(ImVec2(min.x, thumbMax.y), ImVec2(max.x, thumbMax.y + EditorUI::px(3.0f)), styled(accent));
+        if (selected) {
+            drawList->AddRect(min, max, styled(withAlpha(kAccent, 0.85f)), rounding, 0, 1.5f);
+        }
     }
 
-    const std::string name = displayName(entry);
-    const std::string fitted = EditorUI::ellipsize(name.c_str(), size + 6.0f);
-    const float textWidth = ImGui::CalcTextSize(fitted.c_str()).x;
-    drawList->AddText(ImVec2(std::floor(min.x + (size - textWidth) * 0.5f), min.y + size + 2.0f),
-        styled(selected ? IM_COL32(255, 255, 255, 255) : IM_COL32(206, 206, 210, 255)), fitted.c_str());
+    // Имя в две строки и тип.
+    const float padding = EditorUI::px(6.0f);
+    const float textWidth = size - padding * 2.0f;
+    const auto& name = wrappedName(entry, textWidth);
+    const float lineHeight = ImGui::GetTextLineHeight();
+    float y = min.y + size + EditorUI::px(3.0f) + EditorUI::px(5.0f);
+    const ImU32 nameColor = selected ? IM_COL32(255, 255, 255, 255) : IM_COL32(222, 222, 226, 255);
+    const bool centered = entry.type == AssetType::Folder;
+    auto drawLine = [&](const std::string& line, ImU32 color) {
+        const float width = ImGui::CalcTextSize(line.c_str()).x;
+        const float x = centered ? std::floor(min.x + (size - width) * 0.5f) : min.x + padding;
+        drawList->AddText(ImVec2(x, y), styled(color), line.c_str());
+        y += lineHeight;
+    };
+    drawLine(name.first, nameColor);
+    if (!name.second.empty()) {
+        drawLine(name.second, nameColor);
+    }
+    if (entry.type != AssetType::Folder) {
+        EditorUI::pushSmallFont();
+        drawList->AddText(ImVec2(min.x + padding, min.y + height - padding - ImGui::GetFontSize()), styled(kTextFaint), cardTypeName(entry.type));
+        EditorUI::popFont();
+    }
 }
 
 void ContentBrowserPanel::handleItemInteraction(EditorContext& context, const AssetEntry& entry) {
@@ -637,22 +746,23 @@ void ContentBrowserPanel::itemContextMenu(EditorContext& context, const AssetEnt
 }
 
 void ContentBrowserPanel::drawGrid(EditorContext& context, const std::vector<AssetEntry>& entries) {
-    const float size = std::round(tileSize);
-    const float labelHeight = ImGui::GetTextLineHeight() + 6.0f;
-    const float cellWidth = size + kTileSpacing + 8.0f;
-    const float cellHeight = size + labelHeight + kTileSpacing + 4.0f;
+    const float size = std::round(tileSize * EditorTheme::uiScale());
+    const float tileHeight = cardHeight(size);
+    const float spacing = EditorUI::px(kTileSpacing);
+    const float cellWidth = size + spacing;
+    const float cellHeight = tileHeight + spacing;
     const float available = ImGui::GetContentRegionAvail().x;
-    const int columns = std::max(1, static_cast<int>((available + kTileSpacing) / cellWidth));
-    const ImVec2 origin(ImGui::GetCursorScreenPos().x + 4.0f, ImGui::GetCursorScreenPos().y + 4.0f);
+    const int columns = std::max(1, static_cast<int>((available + spacing) / cellWidth));
+    const ImVec2 origin(ImGui::GetCursorScreenPos().x + 2.0f, ImGui::GetCursorScreenPos().y + 2.0f);
 
     for (std::size_t i = 0; i < entries.size(); ++i) {
         const AssetEntry& entry = entries[i];
         const int column = static_cast<int>(i) % columns;
         const int row = static_cast<int>(i) / columns;
         const ImVec2 min(origin.x + column * cellWidth, origin.y + row * cellHeight);
-        ImGui::SetCursorScreenPos(ImVec2(min.x - 4.0f, min.y - 4.0f));
+        ImGui::SetCursorScreenPos(min);
         ImGui::PushID(entry.path.c_str());
-        ImGui::InvisibleButton("##tile", ImVec2(size + 8.0f, size + labelHeight + 6.0f));
+        ImGui::InvisibleButton("##tile", ImVec2(size, tileHeight));
         const bool hovered = ImGui::IsItemHovered();
         if (scrollToPath_ == entry.path) {
             ImGui::SetScrollHereY(0.4f);

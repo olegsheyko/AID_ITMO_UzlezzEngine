@@ -4,6 +4,8 @@
 
 #include <array>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 class EditorContext;
@@ -17,7 +19,7 @@ public:
 
     bool open = true;
     // Размер плиток и режим показа — сохраняются вместе с остальными настройками редактора.
-    float tileSize = 84.0f;
+    float tileSize = 96.0f;
     bool listView = false;
 
 private:
@@ -28,6 +30,8 @@ private:
     void drawGrid(EditorContext& context, const std::vector<AssetEntry>& entries);
     void drawList(EditorContext& context, const std::vector<AssetEntry>& entries);
     void drawTile(EditorContext& context, const AssetEntry& entry, const ImVec2& min, float size, bool selected, bool hovered);
+    float cardHeight(float size) const;
+    const std::pair<std::string, std::string>& wrappedName(const AssetEntry& entry, float width);
     void drawFooter(EditorContext& context, std::size_t itemCount);
     void handleItemInteraction(EditorContext& context, const AssetEntry& entry);
     void itemContextMenu(EditorContext& context, const AssetEntry& entry);
@@ -40,6 +44,7 @@ private:
     std::string scrollToPath_;
     std::string draggingPath_;
     bool revealFolder_ = false;
+    std::unordered_map<std::string, std::pair<std::string, std::string>> nameCache_;
     float refreshTimer_ = 0.0f;
     float treeWidth_ = 190.0f;
     bool initialized_ = false;

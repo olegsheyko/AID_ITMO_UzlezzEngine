@@ -253,12 +253,14 @@ add_executable(GameEngine
     src/input/InputManager.cpp
     src/render/OpenGLRenderAdapter.cpp
     src/editor/AssetDatabase.cpp
+    src/editor/AssetPreview.cpp
     src/editor/EditorCamera.cpp
     src/editor/EditorContext.cpp
     src/editor/EditorIcons.cpp
     src/editor/EditorScript.cpp
     src/editor/EditorTheme.cpp
     src/editor/EditorWidgets.cpp
+    src/editor/MeshBounds.cpp
     src/editor/PlatformShell.cpp
     src/editor/SyntaxHighlight.cpp
     src/editor/TexturePicker.cpp

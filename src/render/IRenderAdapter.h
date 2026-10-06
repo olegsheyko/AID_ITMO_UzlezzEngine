@@ -24,7 +24,8 @@ class IRenderAdapter {
 	// Clear the framebuffer and prepare for drawing.
 	virtual void beginFrame(float r, float g, float b) = 0;
 	// Внеэкранные цели вьюпортов редактора (Scene View, Game View...). Цель 0 — по умолчанию.
-	virtual void beginViewportFrame(int target, int width, int height, float r, float g, float b) = 0;
+	// a — альфа фона: 0 даёт прозрачный фон для миниатюр.
+	virtual void beginViewportFrame(int target, int width, int height, float r, float g, float b, float a = 1.0f) = 0;
 	void beginViewportFrame(int width, int height, float r, float g, float b) {
 		beginViewportFrame(0, width, height, r, g, b);
 	}

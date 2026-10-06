@@ -804,8 +804,12 @@ void InspectorPanel::drawAsset(EditorContext& context, const std::string& path) 
     case AssetType::Scene:
         drawSceneAsset(context, *entry);
         break;
-    case AssetType::Shader:
     case AssetType::Material:
+        drawMaterialAsset(context, *entry);
+        drawAssetActions(context, *entry);
+        drawTextAsset(*entry);
+        return;
+    case AssetType::Shader:
     case AssetType::Json:
     case AssetType::Text:
     case AssetType::Script:
@@ -826,7 +830,7 @@ void InspectorPanel::drawAssetHeader(EditorContext& context, const AssetEntry& e
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const bool previewable = entry.type == AssetType::Texture && AssetDatabase::isLoadableTexture(entry.extension);
     const TextureData* thumbnail = previewable ? ThumbnailCache::instance().texture(entry.path) : nullptr;
-    const ModelThumbnail model = entry.type == AssetType::Model ? context.modelThumbnail(entry.path) : ModelThumbnail{};
+    const AssetThumbnail model = AssetPreviewer::supports(entry.type) ? context.previewer.thumbnail(entry.path) : AssetThumbnail{};
     if (thumbnail) {
         drawChecker(drawList, min, ImVec2(min.x + tile, min.y + tile), 6.0f);
         drawImageFit(drawList, *thumbnail, min, ImVec2(min.x + tile, min.y + tile), 4.0f);
@@ -901,20 +905,102 @@ void InspectorPanel::drawTextureAsset(const AssetEntry& entry) {
     }
 }
 
-void InspectorPanel::drawModelAsset(EditorContext& context, const AssetEntry& entry) {
-    const ModelThumbnail thumbnail = context.modelThumbnail(entry.path);
-    if (thumbnail.texture != 0) {
-        const float width = ImGui::GetContentRegionAvail().x;
-        const float height = std::min(width, 260.0f);
-        const ImVec2 min = ImGui::GetCursorScreenPos();
-        const float side = height;
-        const ImVec2 imageMin(min.x + (width - side) * 0.5f, min.y);
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        drawList->AddRectFilled(min, ImVec2(min.x + width, min.y + height), ImGui::GetColorU32(IM_COL32(51, 52, 56, 255)), 6.0f);
-        drawList->AddImageRounded(static_cast<ImTextureID>(thumbnail.texture), imageMin, ImVec2(imageMin.x + side, imageMin.y + side),
-            ImVec2(0, 1), ImVec2(1, 0), IM_COL32_WHITE, 6.0f);
-        ImGui::Dummy(ImVec2(width, height + 6.0f));
+void InspectorPanel::drawLivePreview(EditorContext& context, const std::string& path) {
+    if (previewPath_ != path) {
+        previewPath_ = path;
+        previewYaw_ = -0.62f;
+        previewPitch_ = -0.32f;
+        previewZoom_ = 1.0f;
     }
+    const float width = ImGui::GetContentRegionAvail().x;
+    const float height = std::min(width, EditorUI::px(280.0f));
+    const ImVec2 min = ImGui::GetCursorScreenPos();
+    const ImVec2 max(min.x + width, min.y + height);
+    ImGui::InvisibleButton("##live_preview", ImVec2(width, height));
+    const bool hovered = ImGui::IsItemHovered();
+    const ImGuiIO& io = ImGui::GetIO();
+    // Орбита перетаскиванием, зум колесом, двойной клик — исходный ракурс.
+    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f)) {
+        previewYaw_ -= io.MouseDelta.x * 0.01f;
+        previewPitch_ = std::clamp(previewPitch_ - io.MouseDelta.y * 0.01f, -1.4f, 1.4f);
+    }
+    if (hovered && io.MouseWheel != 0.0f) {
+        previewZoom_ = std::clamp(previewZoom_ * (1.0f - io.MouseWheel * 0.1f), 0.4f, 3.0f);
+    }
+    if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        previewYaw_ = -0.62f;
+        previewPitch_ = -0.32f;
+        previewZoom_ = 1.0f;
+    }
+    if (ImGui::IsItemActive()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    }
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    drawList->AddRectFilled(min, max, ImGui::GetColorU32(IM_COL32(50, 51, 56, 255)), 8.0f);
+    drawList->AddCircleFilled(ImVec2(min.x + width * 0.5f, min.y + height * 0.36f), height * 0.45f,
+        ImGui::GetColorU32(IM_COL32(255, 255, 255, 9)), 64);
+    const int pixelWidth = std::max(1, static_cast<int>(width * io.DisplayFramebufferScale.x));
+    const int pixelHeight = std::max(1, static_cast<int>(height * io.DisplayFramebufferScale.y));
+    const unsigned int texture = context.previewer.renderLive(path, pixelWidth, pixelHeight, previewYaw_, previewPitch_, previewZoom_, context.lastDt);
+    if (texture != 0) {
+        drawList->AddImageRounded(static_cast<ImTextureID>(texture), min, max, ImVec2(0, 1), ImVec2(1, 0), IM_COL32_WHITE, 8.0f);
+    } else {
+        ImGui::PushFont(nullptr, 24.0f);
+        EditorUI::drawTextCentered(drawList, ImVec2(min.x + width * 0.5f, min.y + height * 0.5f), ICON_LC_LOADER_CIRCLE, kTextFaint);
+        ImGui::PopFont();
+    }
+    if (hovered && texture != 0) {
+        EditorUI::pushSmallFont();
+        const char* hint = ICON_LC_ROTATE_3D "  Drag to orbit  \xC2\xB7  scroll to zoom  \xC2\xB7  double-click to reset";
+        const std::string fitted = EditorUI::ellipsize(hint, width - 16.0f);
+        drawList->AddText(ImVec2(min.x + 8.0f, max.y - ImGui::GetFontSize() - 8.0f), ImGui::GetColorU32(IM_COL32(220, 220, 226, 170)), fitted.c_str());
+        EditorUI::popFont();
+    }
+    ImGui::Dummy(ImVec2(0.0f, 6.0f));
+}
+
+void InspectorPanel::drawMaterialAsset(EditorContext& context, const AssetEntry& entry) {
+    drawLivePreview(context, entry.path);
+    MtlInfo info;
+    if (!readMtl(entry.path, info)) {
+        EditorUI::iconLabel(ICON_LC_CIRCLE_ALERT, "No materials in this file", kWarning, kTextDim);
+        return;
+    }
+    EditorUI::pushSemibold();
+    ImGui::TextUnformatted(info.materials.size() == 1 ? "Material" : "Materials");
+    EditorUI::popFont();
+    for (std::size_t i = 0; i < info.materials.size() && i < 64; ++i) {
+        const MtlInfo::Entry& material = info.materials[i];
+        ImGui::PushID(static_cast<int>(i));
+        const float size = ImGui::GetFrameHeight();
+        const ImVec2 swatch = ImGui::GetCursorScreenPos();
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const TextureData* texture = material.diffuseTexture.empty() ? nullptr : ThumbnailCache::instance().texture(material.diffuseTexture);
+        if (texture) {
+            drawImageFit(drawList, *texture, swatch, ImVec2(swatch.x + size, swatch.y + size), 4.0f);
+        } else {
+            drawList->AddRectFilled(swatch, ImVec2(swatch.x + size, swatch.y + size),
+                ImGui::ColorConvertFloat4ToU32(ImVec4(material.color.x, material.color.y, material.color.z, 1.0f)), 4.0f);
+        }
+        ImGui::Dummy(ImVec2(size, size));
+        ImGui::SameLine(0.0f, 8.0f);
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted(material.name.c_str());
+        EditorUI::pushSmallFont();
+        EditorUI::textFaint(material.diffuseTexture.empty() ? "Color only" : fileName(material.diffuseTexture).c_str());
+        EditorUI::popFont();
+        ImGui::EndGroup();
+        ImGui::PopID();
+    }
+    EditorUI::pushSmallFont();
+    EditorUI::textFaint("Drag the material onto an object in the Scene to apply its base texture.");
+    EditorUI::popFont();
+    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+}
+
+void InspectorPanel::drawModelAsset(EditorContext& context, const AssetEntry& entry) {
+    drawLivePreview(context, entry.path);
     if (modelPath_ != entry.path) {
         modelPath_ = entry.path;
         modelPreview_ = ResourceManager::getInstance().loadMeshAsync(entry.path, JobPriority::Low);

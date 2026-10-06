@@ -12,6 +12,7 @@
 #include "ecs/SpinSystem.h"
 #include "ecs/World.h"
 #include "editor/AssetDatabase.h"
+#include "editor/AssetPreview.h"
 #include "editor/EditorCamera.h"
 
 #include <array>
@@ -38,14 +39,6 @@ enum class GizmoTool {
 // Цели рендера вьюпортов у IRenderAdapter.
 constexpr int kSceneViewTarget = 0;
 constexpr int kGameViewTarget = 1;
-constexpr int kThumbnailTarget = 2;
-
-// Миниатюра модели для Content Browser и инспектора.
-struct ModelThumbnail {
-    unsigned int texture = 0;
-    bool loading = false;
-    bool failed = false;
-};
 
 struct SceneViewSettings {
     GizmoTool tool = GizmoTool::Translate;
@@ -101,9 +94,9 @@ public:
     void setWorldMatrix(Entity entity, const Mat4& world);
     // Габариты в мире: меш (поза привязки), коллайдер или масштаб трансформа.
     bool worldBounds(Entity entity, AABB& outBounds) const;
-    Entity pick(const Vec3& origin, const Vec3& direction, float* outDistance = nullptr) const;
+    Entity pick(const Vec3& origin, const Vec3& direction, float* outDistance = nullptr, Entity ignore = kInvalidEntity) const;
     // Точка для бросания ассета: попадание в объект, иначе плоскость сетки, иначе перед камерой.
-    Vec3 dropPoint(const Vec3& origin, const Vec3& direction) const;
+    Vec3 dropPoint(const Vec3& origin, const Vec3& direction, Entity ignore = kInvalidEntity) const;
     void focusSelection();
 
     // Переименование — общее для иерархии, меню и F2.
@@ -130,9 +123,13 @@ public:
     Mat4 gameViewMatrix() const;
     Mat4 gameProjectionMatrix(float aspect) const;
 
-    // Превью 3D-модели: грузит меш с низким приоритетом и рисует его один раз в текстуру.
-    // Не больше одной новой миниатюры за кадр, чтобы листание папки не дёргало FPS.
-    ModelThumbnail modelThumbnail(const std::string& path);
+    // Перетаскивание модели из Content Browser во вьюпорт, как в UE5: модель появляется сразу
+    // и едет за курсором; отпускание оставляет её в сцене, уход курсора — убирает.
+    void updateDragPreview(const std::string& path, const Vec3& origin, const Vec3& direction);
+    Entity commitDragPreview();
+    void cancelDragPreview();
+    // Материал или текстура, брошенные на объект: базовая текстура меша.
+    bool applyAssetToEntity(const std::string& path, Entity entity);
 
     // Лаб-инструменты (ЛР 1)
     void rebuildAnimationDemo();
@@ -140,6 +137,7 @@ public:
 
     IRenderAdapter& renderer;
     AssetDatabase assets{"assets"};
+    AssetPreviewer previewer;
     World world;
     EditorCamera camera;
     PhysicsSystem physicsSystem;
@@ -154,6 +152,9 @@ public:
     Entity gameCameraEntity = kInvalidEntity;
     Entity editorCameraEntity = kInvalidEntity;
     Entity renamingEntity = kInvalidEntity;
+    // Модель, которую сейчас тащат во вьюпорт, и объект под курсором при перетаскивании текстуры.
+    Entity dragPreviewEntity = kInvalidEntity;
+    Entity dropHighlight = kInvalidEntity;
     std::array<char, 128> renameBuffer{};
     // Кадр, на котором начато переименование: поле ввода берёт фокус один раз.
     bool renameNeedsFocus = false;
@@ -172,7 +173,9 @@ public:
     // Статистика кадра
     std::size_t sceneDrawnMeshes = 0;
     float lastDt = 0.0f;
+    // Сглаженные за полсекунды значения — для подписей, чтобы цифры не мельтешили.
     float fpsAverage = 0.0f;
+    float frameTimeAverageMs = 0.0f;
     static constexpr int kFrameHistory = 240;
     std::array<float, kFrameHistory> frameTimesMs{};
     int frameHistoryOffset = 0;
@@ -253,15 +256,12 @@ private:
     int sceneViewWidth_ = 1;
     int sceneViewHeight_ = 1;
     std::vector<PendingModelFit> pendingFits_;
-    struct ThumbnailEntry {
-        std::shared_ptr<Resource<MeshData>> mesh;
-        unsigned int texture = 0;
-        bool failed = false;
-    };
-    std::unordered_map<std::string, ThumbnailEntry> modelThumbnails_;
-    int thumbnailFrame_ = -1;
-    int frameIndex_ = 0;
-    bool renderModelThumbnail(const std::string& path, ThumbnailEntry& entry);
+    // Подгонка импортированной модели: поворот Y-up → Z-up, масштаб и смещение «низ по центру» к точке опоры.
+    bool computeModelFit(const MeshRenderer& meshRenderer, Vec3& outRotation, float& outScale, Vec3& outOffset) const;
+    std::string dragPreviewPath_;
+    bool dragPreviewFitted_ = false;
+    Vec3 dragPreviewOffset_{};
+    Vec3 dragPreviewPoint_{};
     struct CachedBounds {
         Vec3 min{};
         Vec3 max{};

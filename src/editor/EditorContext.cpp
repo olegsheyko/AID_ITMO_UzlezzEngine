@@ -4,6 +4,7 @@
 #include "core/Logger.h"
 #include "core/ServiceLocator.h"
 #include "editor/EditorMath.h"
+#include "editor/MeshBounds.h"
 #include "events/CollisionEvent.h"
 #include "input/InputManager.h"
 #include "input/KeyCode.h"
@@ -111,76 +112,11 @@ void fitColliderToMeshBounds(const MeshRenderer& renderer, Collider& collider) {
     collider.halfExtents = boundsHalfExtents;
 }
 
-std::size_t vertexCount(const MeshData& data) {
-    std::size_t count = data.vertices.size();
-    for (const SubMesh& subMesh : data.subMeshes) {
-        count += subMesh.vertices.size();
-    }
-    return count;
-}
-
-// Габариты меша в позе привязки — так же, как его рисует RenderSystem без анимации.
-bool computeBindPoseBounds(const MeshData& data, Vec3& outMin, Vec3& outMax) {
-    outMin = {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max()};
-    outMax = {-outMin.x, -outMin.y, -outMin.z};
-    bool any = false;
-    auto consume = [&](const Vec3& p) {
-        any = true;
-        outMin = {std::min(outMin.x, p.x), std::min(outMin.y, p.y), std::min(outMin.z, p.z)};
-        outMax = {std::max(outMax.x, p.x), std::max(outMax.y, p.y), std::max(outMax.z, p.z)};
-    };
-
-    if (data.subMeshes.empty()) {
-        for (const Vertex& vertex : data.vertices) {
-            consume(vertex.position);
-        }
-        return any;
-    }
-
-    const bool hasSkeleton = !data.skeleton.nodes.empty();
-    AnimationPose bind;
-    if (hasSkeleton) {
-        Animation::preparePose(data, bind);
-        Animation::evaluate(data, std::numeric_limits<unsigned int>::max(), 0, bind);
-    }
-    for (std::size_t s = 0; s < data.subMeshes.size(); ++s) {
-        const SubMesh& sub = data.subMeshes[s];
-        Mat4 nodeTransform = Mat4::identity();
-        if (hasSkeleton && sub.skeletonNode < bind.globals.size()) {
-            nodeTransform = Math::multiply(data.skeleton.rootInverse, bind.globals[sub.skeletonNode]);
-        }
-        const bool skinned = hasSkeleton && !sub.bones.empty() && s < bind.palettes.size();
-        for (const Vertex& vertex : sub.vertices) {
-            Mat4 transform = nodeTransform;
-            float total = 0.0f;
-            for (float weight : vertex.boneWeights) {
-                total += weight;
-            }
-            if (skinned && total > 0.0f) {
-                transform = {};
-                for (std::size_t b = 0; b < 4; ++b) {
-                    const int bone = vertex.boneIds[b];
-                    if (bone < 0 || static_cast<std::size_t>(bone) >= bind.palettes[s].size()) {
-                        continue;
-                    }
-                    for (std::size_t k = 0; k < 16; ++k) {
-                        transform.values[k] += bind.palettes[s][bone].values[k] * vertex.boneWeights[b];
-                    }
-                }
-            }
-            consume(transformPoint(transform, vertex.position));
-        }
-    }
-    return any;
-}
-
-bool isImportedModel(const std::string& path) {
-    return path.rfind("primitive:", 0) != 0;
-}
 }
 
 EditorContext::EditorContext(IRenderAdapter& renderer)
     : renderer(renderer),
+      previewer(renderer),
       renderSystem(renderer),
       debugRenderSystem(renderer),
       stress(renderer) {
@@ -204,13 +140,7 @@ void EditorContext::enter() {
 }
 
 void EditorContext::exit() {
-    for (auto& [path, entry] : modelThumbnails_) {
-        (void)path;
-        if (entry.texture != 0) {
-            renderer.destroyTexture(entry.texture);
-        }
-    }
-    modelThumbnails_.clear();
+    previewer.release();
     ServiceLocator::getEventDispatcher().clear();
     world.clear();
     selected = kInvalidEntity;
@@ -229,16 +159,18 @@ void EditorContext::update(float dt) {
     });
 
     lastDt = dt;
-    ++frameIndex_;
+    previewer.beginFrame();
     frameTimesMs[frameHistoryOffset] = dt * 1000.0f;
     frameHistoryOffset = (frameHistoryOffset + 1) % kFrameHistory;
     if (fpsAverage <= 0.0f && dt > 0.0f) {
         fpsAverage = 1.0f / dt;
+        frameTimeAverageMs = dt * 1000.0f;
     }
     fpsAccumulator_ += dt;
     ++fpsFrames_;
     if (fpsAccumulator_ >= 0.5f) {
         fpsAverage = static_cast<float>(fpsFrames_) / fpsAccumulator_;
+        frameTimeAverageMs = fpsAccumulator_ * 1000.0f / static_cast<float>(fpsFrames_);
         fpsAccumulator_ = 0.0f;
         fpsFrames_ = 0;
     }
@@ -271,6 +203,8 @@ void EditorContext::update(float dt) {
 }
 
 bool EditorContext::loadScene(const std::string& manifestPath) {
+    cancelDragPreview();
+    dropHighlight = kInvalidEntity;
     if (mode == EditorMode::Play) {
         stop();
     }
@@ -525,6 +459,31 @@ Entity EditorContext::createModel(const std::string& path, const Vec3& position)
     return entity;
 }
 
+bool EditorContext::computeModelFit(const MeshRenderer& meshRenderer, Vec3& outRotation, float& outScale, Vec3& outOffset) const {
+    outRotation = {};
+    // Assimp отдаёт модели в Y-up, мир движка — Z-up.
+    if (MeshBounds::isImportedModel(meshRenderer.meshId)) {
+        outRotation.x = kPi * 0.5f;
+    }
+    outScale = 1.0f;
+    outOffset = {};
+    Vec3 localMin{};
+    Vec3 localMax{};
+    if (!localMeshBounds(meshRenderer, localMin, localMax)) {
+        return false;
+    }
+    const Mat4 rotationOnly = Math::composeTransform({}, outRotation, {1.0f, 1.0f, 1.0f});
+    const AABB rotated = transformBounds(rotationOnly, localMin, localMax);
+    const float size = std::max({rotated.halfSize.x, rotated.halfSize.y, rotated.halfSize.z}) * 2.0f;
+    // Единицы исходников гуляют (сантиметры FBX и т.п.) — подгоняем только явно нелепые размеры.
+    if (size > 25.0f || (size > 0.0f && size < 0.05f)) {
+        outScale = 2.0f / std::max(0.001f, rotated.halfSize.z * 2.0f);
+    }
+    // Точка опоры — центр низа габаритов.
+    outOffset = {rotated.center.x * outScale, rotated.center.y * outScale, (rotated.center.z - rotated.halfSize.z) * outScale};
+    return true;
+}
+
 void EditorContext::fitPendingModels() {
     for (auto it = pendingFits_.begin(); it != pendingFits_.end();) {
         const Entity entity = it->entity;
@@ -544,27 +503,16 @@ void EditorContext::fitPendingModels() {
         }
 
         Transform& transform = world.getComponent<Transform>(entity);
-        // Assimp отдаёт модели в Y-up, мир движка — Z-up.
-        if (isImportedModel(meshRenderer.meshId)) {
-            transform.rotation.x = kPi * 0.5f;
-        }
-        Vec3 localMin{};
-        Vec3 localMax{};
-        if (localMeshBounds(meshRenderer, localMin, localMax)) {
-            const Mat4 rotationOnly = Math::composeTransform({}, transform.rotation, {1.0f, 1.0f, 1.0f});
-            const AABB rotated = transformBounds(rotationOnly, localMin, localMax);
-            const float size = std::max({rotated.halfSize.x, rotated.halfSize.y, rotated.halfSize.z}) * 2.0f;
-            float scale = 1.0f;
-            // Единицы исходников гуляют (сантиметры FBX и т.п.) — подгоняем только явно нелепые размеры.
-            if (size > 25.0f || (size > 0.0f && size < 0.05f)) {
-                scale = 2.0f / std::max(0.001f, rotated.halfSize.z * 2.0f);
+        Vec3 rotation{};
+        float scale = 1.0f;
+        Vec3 offset{};
+        if (computeModelFit(meshRenderer, rotation, scale, offset)) {
+            transform.rotation = rotation;
+            transform.scale = {scale, scale, scale};
+            transform.position = sub(it->groundPoint, offset);
+            if (scale != 1.0f) {
                 LOG_INFO("Editor: scaled " + displayName(entity) + " by " + std::to_string(scale) + " to fit the scene");
             }
-            transform.scale = {scale, scale, scale};
-            transform.position = {
-                it->groundPoint.x - rotated.center.x * scale,
-                it->groundPoint.y - rotated.center.y * scale,
-                it->groundPoint.z - (rotated.center.z - rotated.halfSize.z) * scale};
         }
         const MeshData* data = meshRenderer.cachedMesh->getData();
         if (data && !data->skeleton.clips.empty() && !world.hasComponent<Animator>(entity)) {
@@ -572,6 +520,108 @@ void EditorContext::fitPendingModels() {
         }
         it = pendingFits_.erase(it);
     }
+}
+
+void EditorContext::updateDragPreview(const std::string& path, const Vec3& origin, const Vec3& direction) {
+    if (isPlaying()) {
+        return;
+    }
+    if (world.isAlive(dragPreviewEntity) && dragPreviewPath_ != path) {
+        cancelDragPreview();
+    }
+    const Vec3 point = dropPoint(origin, direction, dragPreviewEntity);
+    if (!world.isAlive(dragPreviewEntity)) {
+        ResourceManager& resourceManager = ResourceManager::getInstance();
+        MeshRenderer meshRenderer;
+        meshRenderer.meshId = path;
+        meshRenderer.shaderId = ResourceManager::makeShaderKey(kVertexShaderPath, kFragmentShaderPath);
+        meshRenderer.cachedMesh = resourceManager.loadMeshAsync(path);
+        meshRenderer.cachedShader = resourceManager.loadShader(kVertexShaderPath, kFragmentShaderPath);
+        if (!meshRenderer.cachedMesh || !meshRenderer.cachedShader) {
+            return;
+        }
+        dragPreviewEntity = world.createEntity();
+        world.addComponent<Tag>(dragPreviewEntity, Tag{std::filesystem::path(path).stem().string()});
+        Transform transform;
+        if (MeshBounds::isImportedModel(path)) {
+            transform.rotation.x = kPi * 0.5f;
+        }
+        world.addComponent<Transform>(dragPreviewEntity, transform);
+        world.addComponent<MeshRenderer>(dragPreviewEntity, meshRenderer);
+        dragPreviewPath_ = path;
+        dragPreviewFitted_ = false;
+        dragPreviewOffset_ = {};
+    }
+
+    const MeshRenderer& meshRenderer = world.getComponent<MeshRenderer>(dragPreviewEntity);
+    if (!dragPreviewFitted_ && meshRenderer.cachedMesh && meshRenderer.cachedMesh->isLoaded()) {
+        Vec3 rotation{};
+        float scale = 1.0f;
+        if (computeModelFit(meshRenderer, rotation, scale, dragPreviewOffset_)) {
+            Transform& transform = world.getComponent<Transform>(dragPreviewEntity);
+            transform.rotation = rotation;
+            transform.scale = {scale, scale, scale};
+        }
+        const MeshData* data = meshRenderer.cachedMesh->getData();
+        if (data && !data->skeleton.clips.empty() && !world.hasComponent<Animator>(dragPreviewEntity)) {
+            world.addComponent<Animator>(dragPreviewEntity);
+        }
+        dragPreviewFitted_ = true;
+    }
+    // Пока меш грузится, RenderSystem рисует на его месте куб-заглушку.
+    world.getComponent<Transform>(dragPreviewEntity).position = sub(point, dragPreviewOffset_);
+    dragPreviewPoint_ = point;
+}
+
+Entity EditorContext::commitDragPreview() {
+    const Entity entity = dragPreviewEntity;
+    dragPreviewEntity = kInvalidEntity;
+    if (!world.isAlive(entity)) {
+        return kInvalidEntity;
+    }
+    if (!dragPreviewFitted_) {
+        // Модель ещё грузится — подгоним, когда загрузится, на ту же точку.
+        pendingFits_.push_back(PendingModelFit{entity, dragPreviewPoint_});
+    }
+    select(entity);
+    LOG_INFO("Editor: added model " + dragPreviewPath_);
+    return entity;
+}
+
+void EditorContext::cancelDragPreview() {
+    if (world.isAlive(dragPreviewEntity)) {
+        world.destroyEntity(dragPreviewEntity);
+    }
+    dragPreviewEntity = kInvalidEntity;
+}
+
+bool EditorContext::applyAssetToEntity(const std::string& path, Entity entity) {
+    if (!isEditable(entity) || !world.hasComponent<MeshRenderer>(entity)) {
+        return false;
+    }
+    std::string texture;
+    const AssetType type = AssetDatabase::classify(path);
+    if (type == AssetType::Texture) {
+        texture = path;
+    } else if (type == AssetType::Material) {
+        MtlInfo info;
+        if (readMtl(path, info)) {
+            for (const MtlInfo::Entry& material : info.materials) {
+                if (!material.diffuseTexture.empty()) {
+                    texture = material.diffuseTexture;
+                    break;
+                }
+            }
+        }
+    }
+    if (texture.empty()) {
+        LOG_WARN("Editor: " + path + " has no diffuse texture to apply");
+        return false;
+    }
+    MeshRenderer& meshRenderer = world.getComponent<MeshRenderer>(entity);
+    meshRenderer.baseColorTextureId = texture;
+    meshRenderer.cachedBaseColorTexture = ResourceManager::getInstance().loadTextureAsync(texture, JobPriority::High);
+    return true;
 }
 
 Entity EditorContext::duplicate(Entity source) {
@@ -683,7 +733,7 @@ std::vector<Entity> EditorContext::childrenOf(Entity entity) const {
 std::vector<Entity> EditorContext::rootEntities() const {
     std::vector<Entity> roots;
     for (Entity entity : world.getEntities()) {
-        if (!isEditorEntity(entity) && parentOf(entity) == kInvalidEntity) {
+        if (isEditable(entity) && parentOf(entity) == kInvalidEntity) {
             roots.push_back(entity);
         }
     }
@@ -741,7 +791,8 @@ bool EditorContext::isEditorEntity(Entity entity) const {
 }
 
 bool EditorContext::isEditable(Entity entity) const {
-    return world.isAlive(entity) && !isEditorEntity(entity);
+    // Модель, которую ещё тащат из Content Browser, — не часть сцены, пока её не отпустили.
+    return world.isAlive(entity) && !isEditorEntity(entity) && entity != dragPreviewEntity;
 }
 
 Vec3 EditorContext::defaultSpawnPosition() const {
@@ -793,12 +844,12 @@ bool EditorContext::localMeshBounds(const MeshRenderer& meshRenderer, Vec3& outM
         return false;
     }
     // Ключ — адрес данных; число вершин отсекает чужой меш, занявший освобождённый адрес.
-    const std::size_t vertices = vertexCount(*data);
+    const std::size_t vertices = MeshBounds::vertexCount(*data);
     auto it = boundsCache_.find(data);
     if (it == boundsCache_.end() || it->second.vertices != vertices) {
         CachedBounds bounds;
         bounds.vertices = vertices;
-        if (!computeBindPoseBounds(*data, bounds.min, bounds.max)) {
+        if (!MeshBounds::computeBindPose(*data, bounds.min, bounds.max)) {
             return false;
         }
         it = boundsCache_.insert_or_assign(data, bounds).first;
@@ -838,12 +889,13 @@ bool EditorContext::worldBounds(Entity entity, AABB& outBounds) const {
     return true;
 }
 
-Entity EditorContext::pick(const Vec3& origin, const Vec3& direction, float* outDistance) const {
+Entity EditorContext::pick(const Vec3& origin, const Vec3& direction, float* outDistance, Entity ignore) const {
     Entity best = kInvalidEntity;
     float bestDistance = std::numeric_limits<float>::max();
     for (Entity entity : world.getEntities()) {
         // Скрытые глазиком объекты не ловят клики, как в Unity.
-        if (isEditorEntity(entity) || (world.hasComponent<MeshRenderer>(entity) && !world.getComponent<MeshRenderer>(entity).visible)) {
+        if (isEditorEntity(entity) || entity == ignore ||
+            (world.hasComponent<MeshRenderer>(entity) && !world.getComponent<MeshRenderer>(entity).visible)) {
             continue;
         }
         AABB bounds;
@@ -862,9 +914,9 @@ Entity EditorContext::pick(const Vec3& origin, const Vec3& direction, float* out
     return best;
 }
 
-Vec3 EditorContext::dropPoint(const Vec3& origin, const Vec3& direction) const {
+Vec3 EditorContext::dropPoint(const Vec3& origin, const Vec3& direction, Entity ignore) const {
     float distance = 0.0f;
-    if (pick(origin, direction, &distance) != kInvalidEntity && distance < 1000.0f) {
+    if (pick(origin, direction, &distance, ignore) != kInvalidEntity && distance < 1000.0f) {
         return add(origin, mul(direction, distance));
     }
     if (std::abs(direction.z) > 0.0001f) {
@@ -933,6 +985,8 @@ void EditorContext::play() {
     if (renamingEntity != kInvalidEntity) {
         commitRename();
     }
+    cancelDragPreview();
+    dropHighlight = kInvalidEntity;
     playSnapshot_ = captureSnapshot();
     mode = EditorMode::Play;
     setCameraMode();
@@ -1043,6 +1097,13 @@ void EditorContext::renderSceneView(int width, int height) {
         renderSystem.renderMask(world, outlined, renderer.selectionMaskProgram());
         const float scale = ImGui::GetIO().DisplayFramebufferScale.x;
         renderer.endSelectionMask(Vec4{1.0f, 0.6f, 0.18f, 1.0f}, 1.6f * std::max(1.0f, scale));
+    }
+    // Объект, на который сейчас бросят текстуру или материал, — синим контуром.
+    if (isEditable(dropHighlight) && renderer.selectionMaskProgram() != 0) {
+        renderer.beginSelectionMask();
+        renderSystem.renderMask(world, {dropHighlight}, renderer.selectionMaskProgram());
+        const float scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        renderer.endSelectionMask(Vec4{0.36f, 0.62f, 1.0f, 1.0f}, 2.0f * std::max(1.0f, scale));
     }
     renderer.endViewportFrame();
     setCameraMode();
@@ -1277,101 +1338,6 @@ void EditorContext::restoreSnapshot(const SceneSnapshot& snapshot) {
     selected = world.isAlive(snapshot.selected) ? snapshot.selected : kInvalidEntity;
     controllableEntity = snapshot.controllableEntity;
     gameCameraEntity = snapshot.gameCameraEntity;
-}
-
-ModelThumbnail EditorContext::modelThumbnail(const std::string& path) {
-    auto [it, inserted] = modelThumbnails_.try_emplace(path);
-    ThumbnailEntry& entry = it->second;
-    if (inserted) {
-        entry.mesh = ResourceManager::getInstance().loadMeshAsync(path, JobPriority::Low);
-        entry.failed = entry.mesh == nullptr;
-    }
-    ModelThumbnail result;
-    result.texture = entry.texture;
-    result.failed = entry.failed;
-    if (entry.texture != 0 || entry.failed) {
-        return result;
-    }
-    if (!entry.mesh || entry.mesh->isFailed()) {
-        entry.failed = true;
-        result.failed = true;
-        return result;
-    }
-    result.loading = true;
-    if (entry.mesh->isPending() || thumbnailFrame_ == frameIndex_) {
-        return result;
-    }
-    // Ждём и текстуры материалов, иначе на превью останется заглушка.
-    if (const MeshData* data = entry.mesh->getData()) {
-        for (const SubMesh& subMesh : data->subMeshes) {
-            if (subMesh.material.cachedDiffuseTexture && subMesh.material.cachedDiffuseTexture->isPending()) {
-                return result;
-            }
-        }
-    }
-    thumbnailFrame_ = frameIndex_;
-    if (!renderModelThumbnail(path, entry)) {
-        entry.failed = true;
-        result.failed = true;
-        result.loading = false;
-        return result;
-    }
-    result.texture = entry.texture;
-    result.loading = false;
-    return result;
-}
-
-bool EditorContext::renderModelThumbnail(const std::string& path, ThumbnailEntry& entry) {
-    ZoneScopedN("Model thumbnail");
-    const MeshData* data = entry.mesh->getData();
-    Vec3 localMin{};
-    Vec3 localMax{};
-    if (data == nullptr || !computeBindPoseBounds(*data, localMin, localMax)) {
-        return false;
-    }
-    auto shader = ResourceManager::getInstance().loadShader(kVertexShaderPath, kFragmentShaderPath);
-    if (!shader || !shader->isLoaded()) {
-        return false;
-    }
-
-    // Отдельный мир: модель и камера, ничего из сцены.
-    World preview;
-    const Entity model = preview.createEntity();
-    Transform transform;
-    if (isImportedModel(path)) {
-        transform.rotation.x = kPi * 0.5f;
-    }
-    const Mat4 rotation = Math::composeTransform({}, transform.rotation, {1.0f, 1.0f, 1.0f});
-    const AABB bounds = transformBounds(rotation, localMin, localMax);
-    // Кадрируем по наибольшей полуоси, а не по описанной сфере: модель занимает почти всю миниатюру.
-    const float radius = std::max({bounds.halfSize.x, bounds.halfSize.y, bounds.halfSize.z, 0.0001f}) * 1.12f;
-    preview.addComponent<Transform>(model, transform);
-    MeshRenderer& meshRenderer = preview.addComponent<MeshRenderer>(model);
-    meshRenderer.meshId = path;
-    meshRenderer.cachedMesh = entry.mesh;
-    meshRenderer.cachedShader = shader;
-
-    constexpr float kFov = 30.0f;
-    const float pitch = -0.32f;
-    const float yaw = -0.62f;
-    const Vec3 forward = CameraMath::forward(pitch, yaw);
-    const float distance = radius / std::tan(toRadians(kFov) * 0.5f) * 1.08f;
-    const Vec3 eye = sub(bounds.center, mul(forward, distance));
-    const Entity cameraEntity = preview.createEntity();
-    preview.addComponent<Transform>(cameraEntity, Transform{eye, {}, {1.0f, 1.0f, 1.0f}});
-    Camera previewCamera;
-    previewCamera.active = true;
-    previewCamera.viewMatrix = CameraMath::view(eye, pitch, yaw);
-    previewCamera.projectionMatrix = Math::perspective(toRadians(kFov), 1.0f, distance * 0.02f, distance + radius * 4.0f);
-    preview.addComponent<Camera>(cameraEntity, previewCamera);
-
-    constexpr int kSize = 512;
-    RenderSystem previewRenderer(renderer);
-    renderer.beginViewportFrame(kThumbnailTarget, kSize, kSize, 0.2f, 0.205f, 0.22f);
-    previewRenderer.render(preview);
-    renderer.endViewportFrame();
-    entry.texture = renderer.copyViewportTexture(kThumbnailTarget);
-    return entry.texture != 0;
 }
 
 void EditorContext::removeAnimationDemo() {

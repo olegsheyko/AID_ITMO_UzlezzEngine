@@ -171,7 +171,7 @@ void ResourceManager::discardMesh(MeshData& mesh) {
 
 std::shared_ptr<Resource<MeshData>> ResourceManager::loadMeshAsync(const std::string& path, JobPriority priority) {
     if (shuttingDown_.load(std::memory_order_acquire)) return nullptr;
-    if (path == "primitive:cube") return loadMesh(path); // Generated locally; no file to read.
+    if (path.rfind("primitive:", 0) == 0) return loadMesh(path); // Generated locally; no file to read.
     if (auto it = meshCache_.find(path); it != meshCache_.end()) return it->second;
     auto resource = std::make_shared<Resource<MeshData>>(path);
     meshCache_[path] = resource;

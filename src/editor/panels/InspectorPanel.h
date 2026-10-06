@@ -37,6 +37,9 @@ private:
     void drawAssetHeader(EditorContext& context, const AssetEntry& entry);
     void drawTextureAsset(const AssetEntry& entry);
     void drawModelAsset(EditorContext& context, const AssetEntry& entry);
+    void drawMaterialAsset(EditorContext& context, const AssetEntry& entry);
+    // Живой 3D-вид модели или материала: вращение мышью, зум колесом, анимация персонажа.
+    void drawLivePreview(EditorContext& context, const std::string& path);
     void drawSceneAsset(EditorContext& context, const AssetEntry& entry);
     void drawTextAsset(const AssetEntry& entry);
     void drawAssetActions(EditorContext& context, const AssetEntry& entry);
@@ -54,6 +57,11 @@ private:
     std::vector<bool> lineInComment_;
     int textLines_ = 0;
     bool textTruncated_ = false;
+
+    std::string previewPath_;
+    float previewYaw_ = -0.62f;
+    float previewPitch_ = -0.32f;
+    float previewZoom_ = 1.0f;
 
     std::string modelPath_;
     std::shared_ptr<Resource<MeshData>> modelPreview_;
