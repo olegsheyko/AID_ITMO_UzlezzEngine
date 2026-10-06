@@ -51,6 +51,7 @@ struct Spin {
 };
 
 struct Animator {
+    std::string inPlaceNode; // opt-in X/Z root translation lock for Y-up source clips
     unsigned int clip = 0;
     double time = 0;
     float speed = 1;

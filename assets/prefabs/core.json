@@ -1,0 +1,9 @@
+{
+  "components": {
+    "tag": "Core",
+    "transform": {"position": [0, 0, 0.75], "scale": [1.5, 1.5, 1.5]},
+    "meshRenderer": {"mesh": "primitive:cube", "texture": "assets/textures/WoodCrate02.dds"},
+    "collider": {"type": "box"},
+    "script": {"path": "assets/scripts/core.lua", "class": "Core", "fields": {"health": 10, "pulse_radius": 6.0, "pulse_cooldown": 2.0}}
+  }
+}

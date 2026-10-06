@@ -61,7 +61,8 @@ void Animation::preparePose(const MeshData& mesh, AnimationPose& pose) {
     pose.palettes.resize(mesh.subMeshes.size());
     for (size_t i=0; i<mesh.subMeshes.size(); ++i) pose.palettes[i].resize(mesh.subMeshes[i].bones.size());
 }
-void Animation::evaluate(const MeshData& mesh, unsigned int clipIndex, double time, AnimationPose& pose) {
+void Animation::evaluate(const MeshData& mesh, unsigned int clipIndex, double time, AnimationPose& pose,
+    const std::string& inPlaceNode) {
     const auto& skeleton = mesh.skeleton;
     const AnimationClip* clip = clipIndex < skeleton.clips.size() ? &skeleton.clips[clipIndex] : nullptr;
     if (clip) time = wrapTime(time, clip->duration);
@@ -70,9 +71,15 @@ void Animation::evaluate(const MeshData& mesh, unsigned int clipIndex, double ti
         Mat4 local = node.bindLocal;
         if (clip && i < clip->tracks.size()) {
             const auto& track = clip->tracks[i];
-            if (!track.positions.empty() || !track.rotations.empty() || !track.scales.empty())
-                local = compose(sample(track.positions,time,node.translation),
+            if (!track.positions.empty() || !track.rotations.empty() || !track.scales.empty()) {
+                auto position = sample(track.positions,time,node.translation);
+                if (!inPlaceNode.empty() && node.name == inPlaceNode && !track.positions.empty()) {
+                    position.x = track.positions.front().value.x;
+                    position.z = track.positions.front().value.z;
+                }
+                local = compose(position,
                     sample(track.rotations,time,node.rotation), sample(track.scales,time,node.scale));
+            }
         }
         pose.globals[i] = node.parent < 0 ? local : Math::multiply(pose.globals[node.parent], local);
     }

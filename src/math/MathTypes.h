@@ -109,8 +109,9 @@ inline Mat4 scale(const Vec3& scale) {
 }
 
 inline Mat4 composeTransform(const Vec3& position, const Vec3& rotation, const Vec3& scaleValue) {
-    // Применяем вращения в порядке: Y -> X -> Z (стандартный порядок Euler)
-    Mat4 rotMatrix = multiply(rotationY(rotation.y), multiply(rotationX(rotation.x), rotationZ(rotation.z)));
+    // Column vectors: local X/Y orientation first, world Z yaw last.
+    // In particular, a Y-up mesh tilted by Rx(pi/2) must remain upright at every yaw.
+    Mat4 rotMatrix = multiply(rotationZ(rotation.z), multiply(rotationY(rotation.y), rotationX(rotation.x)));
     return multiply(translation(position), multiply(rotMatrix, scale(scaleValue)));
 }
 

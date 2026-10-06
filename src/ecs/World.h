@@ -17,6 +17,9 @@
 
 class World {
 public:
+    // Weak lifetime token invalidates handles on clear and World destruction.
+    std::weak_ptr<int> lifetime() const { return lifetime_; }
+    std::uint64_t generation(Entity e) const { auto it = generations_.find(e); return it == generations_.end() ? 0 : it->second; }
     Entity createEntity();
     Entity createEntityWithId(Entity entity);
     void destroyEntity(Entity entity);
@@ -152,6 +155,9 @@ private:
     }
 
     Entity nextEntity_ = 1;
+    std::shared_ptr<int> lifetime_ = std::make_shared<int>(0);
+    std::uint64_t nextGeneration_ = 0;
+    std::unordered_map<Entity, std::uint64_t> generations_;
     std::unordered_set<Entity> aliveEntities_;
     std::unordered_map<std::type_index, std::unique_ptr<IStorage>> storages_;
     std::vector<UpdateSystem*> updateSystems_;

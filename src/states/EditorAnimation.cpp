@@ -7,7 +7,7 @@
 
 void EditorState::renderAnimationPanel() {
     ImGui::Separator();
-    if (!ImGui::CollapsingHeader("Animation (lab 1)", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    if (!ImGui::CollapsingHeader("Animation", ImGuiTreeNodeFlags_DefaultOpen)) return;
     ImGui::Checkbox("Parallel poses (job system)", &animationSystem_.parallel);
     ImGui::Checkbox("Pause all animations", &animationSystem_.paused);
     ImGui::SliderFloat("Global animation speed", &animationSystem_.speed, -2, 3);

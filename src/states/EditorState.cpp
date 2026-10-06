@@ -257,6 +257,7 @@ void EditorState::onEnter() {
 }
 
 void EditorState::onExit() {
+    scripts_.stop();
     LOG_INFO("EditorState: exited");
     ServiceLocator::getEventDispatcher().clear();
     world_.clear();
@@ -309,6 +310,7 @@ void EditorState::render() {
     renderDockSpace();
     renderMainMenu();
     renderToolbar();
+    renderScriptingPanel();
 
     const ImGuiIO& io = ImGui::GetIO();
     if (mode_ == EditorMode::Edit && !io.WantTextInput && world_.isAlive(selectedEntity_) && !isEditorEntity(selectedEntity_)) {
@@ -345,6 +347,8 @@ void EditorState::bindActions() {
     inputManager.bindAction("MoveBackward", KeyCode::Down);
     inputManager.bindAction("MoveBackward", KeyCode::S);
     inputManager.bindAction("Jump", KeyCode::Space);
+    inputManager.bindAction("StartWave", KeyCode::Space);
+    inputManager.bindAction("DefensePulse", KeyCode::F);
     inputManager.bindAction("CameraForward", KeyCode::W);
     inputManager.bindAction("CameraBackward", KeyCode::S);
     inputManager.bindAction("CameraLeft", KeyCode::A);
@@ -507,6 +511,8 @@ Entity EditorState::duplicateEntity(Entity source) {
     }
 
     Entity entity = world_.createEntity();
+    if (world_.hasComponent<ScriptComponent>(source))
+        world_.addComponent<ScriptComponent>(entity, world_.getComponent<ScriptComponent>(source));
 
     if (world_.hasComponent<Tag>(source)) {
         world_.addComponent<Tag>(entity, Tag{world_.getComponent<Tag>(source).name + " Copy"});
@@ -621,6 +627,7 @@ void EditorState::setCameraMode() {
 }
 
 void EditorState::updateGameplay(float dt, bool allowInput) {
+    scripts_.update(dt, allowInput);
     ZoneScopedN("Simulation");
     if (allowInput) {
         processGameplayInput(dt);
@@ -1023,6 +1030,7 @@ void EditorState::renderInspectorPanel() {
 
     const bool readOnly = mode_ == EditorMode::Play;
     ImGui::BeginDisabled(readOnly);
+    renderScriptInspector();
 
     if (world_.hasComponent<Tag>(selectedEntity_) && ImGui::TreeNodeEx("Tag", ImGuiTreeNodeFlags_DefaultOpen)) {
         Tag& tag = world_.getComponent<Tag>(selectedEntity_);
@@ -1189,7 +1197,7 @@ void EditorState::renderStatisticsPanel() {
     renderAnimationPanel();
 
     ImGui::Separator();
-    ImGui::TextUnformatted("Heavy load (lab 1)");
+    ImGui::TextUnformatted("Resource Loading");
     ImGui::BeginDisabled(heavyLoad_.isRunning() || stress_.isRunning());
     ImGui::Checkbox("Async (job system)", &heavyLoadAsync_);
     ImGui::SetItemTooltip("On: decode on job workers, upload to GPU a few textures per frame.\n"
@@ -1219,7 +1227,7 @@ void EditorState::renderStatisticsPanel() {
     }
 
     ImGui::Separator();
-    ImGui::TextUnformatted("Stress (lab 1)");
+    ImGui::TextUnformatted("Stability Test");
     bool stressOn = stress_.isRunning();
     ImGui::BeginDisabled(heavyLoad_.isRunning() && !stressOn);
     if (ImGui::Checkbox("Load and unload in a loop", &stressOn)) {
@@ -1436,6 +1444,13 @@ void EditorState::startPlayMode() {
     }
 
     playSnapshot_ = captureSnapshot();
+    if (world_.isAlive(prefabPreview_)) world_.destroyEntity(prefabPreview_);
+    if (!scripts_.start()) {
+        restoreSnapshot(playSnapshot_);
+        createEditorCameraEntity();
+        setCameraMode();
+        return;
+    }
     mode_ = EditorMode::Play;
     setCameraMode();
     updateGameCamera(0.0f, false);
@@ -1449,6 +1464,7 @@ void EditorState::stopPlayMode() {
         return;
     }
 
+    scripts_.stop();
     restoreSnapshot(playSnapshot_);
     mode_ = EditorMode::Edit;
     createEditorCameraEntity();
@@ -1468,6 +1484,10 @@ EditorState::SceneSnapshot EditorState::captureSnapshot() const {
 
         EntitySnapshot entitySnapshot;
         entitySnapshot.entity = entity;
+        if (world_.hasComponent<ScriptComponent>(entity)) {
+            entitySnapshot.hasScript = true;
+            entitySnapshot.script = world_.getComponent<ScriptComponent>(entity);
+        }
         if (world_.hasComponent<Tag>(entity)) {
             entitySnapshot.hasTag = true;
             entitySnapshot.tag = world_.getComponent<Tag>(entity);
@@ -1521,6 +1541,7 @@ void EditorState::restoreSnapshot(const SceneSnapshot& snapshot) {
 
     for (const EntitySnapshot& entitySnapshot : snapshot.entities) {
         const Entity entity = entitySnapshot.entity;
+        if (entitySnapshot.hasScript) world_.addComponent<ScriptComponent>(entity, entitySnapshot.script);
         if (entitySnapshot.hasTag) world_.addComponent<Tag>(entity, entitySnapshot.tag);
         if (entitySnapshot.hasTransform) world_.addComponent<Transform>(entity, entitySnapshot.transform);
         if (entitySnapshot.hasMeshRenderer) world_.addComponent<MeshRenderer>(entity, entitySnapshot.meshRenderer);

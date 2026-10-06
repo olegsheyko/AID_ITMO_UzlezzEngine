@@ -13,6 +13,8 @@
 #include "states/IGameState.h"
 #include "bench/LoadScenario.h"
 #include "bench/StressRun.h"
+#include "scripting/ScriptSystem.h"
+#include "scripting/ScriptComponent.h"
 
 #include <array>
 #include <string>
@@ -43,6 +45,8 @@ private:
     };
 
     struct EntitySnapshot {
+        bool hasScript = false;
+        ScriptComponent script{};
         Entity entity = kInvalidEntity;
         bool hasTag = false;
         Tag tag{};
@@ -72,6 +76,9 @@ private:
     };
 
     void bindActions();
+    void loadArenaScene();
+    void renderScriptingPanel();
+    void renderScriptInspector();
     void createScene();
     bool createSceneFromManifest();
     void createFallbackScene();
@@ -112,6 +119,9 @@ private:
 
     IRenderAdapter& renderer_;
     World world_;
+    ScriptSystem scripts_{world_};
+    Entity prefabPreview_ = kInvalidEntity;
+    std::string scriptUiMessage_;
     EditorCamera editorCamera_;
     TexturePicker texturePicker_;
     PhysicsSystem physicsSystem_;

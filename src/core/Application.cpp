@@ -176,11 +176,10 @@ void Application::shutdown() {
 	JobSystem::getInstance().shutdown();
 
 	// Очищаем кэш ресурсов
-	ResourceManager::getInstance().clearCache();
-
 	while (!stateManager_.isEmpty()) {
 		stateManager_.pop();
 	}
+	ResourceManager::getInstance().clearCache();
 
 	shutdownEditorGui();
 	if (renderer_) {

@@ -41,5 +41,8 @@ Mat4 compose(Vec3 position, Quaternion rotation, Vec3 scale);
 double wrapTime(double time, double duration);
 void preparePose(const MeshData& mesh, AnimationPose& pose);
 // No allocation after preparePose; no ECS, renderer or mutable shared resources.
-void evaluate(const MeshData& mesh, unsigned int clip, double time, AnimationPose& pose);
+// Optional Y-up locomotion node: keep its X/Z translation at the first key,
+// preserving vertical gait motion. Entity Transform owns world locomotion.
+void evaluate(const MeshData& mesh, unsigned int clip, double time, AnimationPose& pose,
+    const std::string& inPlaceNode = {});
 }

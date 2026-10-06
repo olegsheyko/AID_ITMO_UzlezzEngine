@@ -1,0 +1,6 @@
+{
+  "components": {
+    "tag": "Waves",
+    "script": {"path": "assets/scripts/waves.lua", "class": "Waves", "fields": {"first_wave_count": 4, "count_increment": 2, "spawn_interval": 0.6, "spawn_radius": 10.0, "enemy_prefab": "assets/prefabs/enemy.json"}}
+  }
+}

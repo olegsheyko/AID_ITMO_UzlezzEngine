@@ -27,6 +27,18 @@ compile_commands.json
 # Logs
 *.log
 
+# Local team handover guide (not part of repository documentation)
+/docs/lab2/IMPLEMENTATION_AND_BUILD_GUIDE.md
+
+# Downloaded scripting dependencies (tools/setup_lua.ps1 restores Lua/sol2)
+external/lua/
+external/sol2/
+# Legacy local downloads from the previous Python implementation
+external/python311/
+external/pybind11/
+__pycache__/
+*.pyc
+
 # OS
 .DS_Store
 Thumbs.db

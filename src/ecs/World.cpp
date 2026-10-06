@@ -5,6 +5,7 @@
 
 Entity World::createEntity() {
     const Entity entity = nextEntity_++;
+    generations_[entity] = ++nextGeneration_;
     aliveEntities_.insert(entity);
     return entity;
 }
@@ -14,6 +15,7 @@ Entity World::createEntityWithId(Entity entity) {
         return createEntity();
     }
 
+    if (!isAlive(entity)) generations_[entity] = ++nextGeneration_;
     aliveEntities_.insert(entity);
     nextEntity_ = std::max(nextEntity_, entity + 1);
     return entity;
@@ -40,6 +42,7 @@ void World::destroyEntity(Entity entity) {
     }
 
     aliveEntities_.erase(entity);
+    generations_.erase(entity);
 
     for (auto& [type, storage] : storages_) {
         (void)type;
@@ -48,7 +51,9 @@ void World::destroyEntity(Entity entity) {
 }
 
 void World::clear() {
+    lifetime_ = std::make_shared<int>(0);
     aliveEntities_.clear();
+    generations_.clear();
     storages_.clear();
     updateSystems_.clear();
     renderSystems_.clear();

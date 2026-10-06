@@ -3,6 +3,7 @@ project(GameEngine VERSION 1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+include(cmake/LuaRuntime.cmake)
 
 # --- Tracy (vendored client, no network or vcpkg required) ---
 option(ENGINE_ENABLE_TRACY "Enable Tracy in Release and RelWithDebInfo" ON)
@@ -175,6 +176,21 @@ endfunction()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(ScriptSystemTests
+        tests/ScriptSystemTests.cpp
+        src/scripting/ScriptSystem.cpp
+        src/prefabs/PrefabManager.cpp src/ecs/World.cpp
+        src/resources/SceneManifest.cpp
+        src/resources/ResourceManager.cpp src/resources/MeshLoader.cpp
+        src/resources/TextureLoader.cpp src/resources/ShaderLoader.cpp
+        src/resources/stb_image_impl.cpp src/render/ShaderProgram.cpp
+        src/animation/Animation.cpp src/animation/AnimationImporter.cpp
+        src/jobs/JobSystem.cpp)
+    target_include_directories(ScriptSystemTests PRIVATE src external external/stb_image)
+    target_link_libraries(ScriptSystemTests PRIVATE EngineLua enkiTS TracyHeaders glad glfw ${ENGINE_OPENGL_LIB} ${ENGINE_ASSIMP_TARGET})
+    deploy_assimp_runtime(ScriptSystemTests)
+    add_test(NAME ScriptSystemTests COMMAND ScriptSystemTests "${CMAKE_CURRENT_BINARY_DIR}/script-test-fixtures")
+    set_tests_properties(ScriptSystemTests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
     add_executable(AnimationTests
         tests/AnimationTests.cpp
         src/animation/Animation.cpp
@@ -224,6 +240,9 @@ endif()
 
 # --- Game target ---
 add_executable(GameEngine
+    src/scripting/ScriptSystem.cpp
+    src/prefabs/PrefabManager.cpp
+    src/states/EditorScripting.cpp
     src/bench/AnimationBenchmark.cpp
     src/animation/Animation.cpp
     src/animation/AnimationImporter.cpp
@@ -288,6 +307,7 @@ target_link_libraries(GameEngine PRIVATE
 )
 
 target_link_libraries(GameEngine PRIVATE ${ENGINE_ASSIMP_TARGET})
+target_link_libraries(GameEngine PRIVATE EngineLua)
 deploy_assimp_runtime(GameEngine)
 
 add_custom_target(CopyAssets ALL
@@ -296,6 +316,13 @@ add_custom_target(CopyAssets ALL
     "$<TARGET_FILE_DIR:GameEngine>/assets"
 )
 add_dependencies(CopyAssets GameEngine)
+
+add_custom_target(CopyLuaLicenses ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GameEngine>/licenses"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ENGINE_LUA_ROOT}/doc/readme.html" "$<TARGET_FILE_DIR:GameEngine>/licenses/Lua.html"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ENGINE_SOL_ROOT}/LICENSE.txt" "$<TARGET_FILE_DIR:GameEngine>/licenses/sol2.txt"
+    DEPENDS GameEngine
+    VERBATIM)
 
 # Several MSBuild executables share Release/. A later project's stale-output
 # cleanup can delete the runtime deployed by an earlier target. Copy once after
@@ -307,7 +334,7 @@ if(WIN32 AND assimp_final_type STREQUAL "SHARED_LIBRARY")
         DEPENDS GameEngine
         VERBATIM)
     if(BUILD_TESTING)
-        add_dependencies(DeploySharedRuntime AnimationTests)
+        add_dependencies(DeploySharedRuntime AnimationTests ScriptSystemTests)
     endif()
 endif()
 

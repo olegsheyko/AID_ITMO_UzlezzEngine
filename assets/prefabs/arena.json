@@ -1,0 +1,8 @@
+{
+  "components": {
+    "tag": "Arena",
+    "transform": {"position": [0, 0, -0.25], "scale": [24, 24, 0.5]},
+    "meshRenderer": {"mesh": "primitive:cube", "texture": "assets/textures/stone.dds"},
+    "collider": {"type": "box"}
+  }
+}
