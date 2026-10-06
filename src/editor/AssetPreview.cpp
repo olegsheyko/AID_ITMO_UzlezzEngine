@@ -136,17 +136,14 @@ bool AssetPreviewer::buildScene(Scene& scene, bool animate) {
         return false;
     }
 
-    Transform transform;
-    if (MeshBounds::isImportedModel(scene.mesh->getPath())) {
-        // Assimp отдаёт модели в Y-up, мир движка — Z-up.
-        transform.rotation.x = kPi * 0.5f;
-    }
-    const Mat4 rotation = Math::composeTransform({}, transform.rotation, {1.0f, 1.0f, 1.0f});
-    scene.bounds = transformBounds(rotation, localMin, localMax);
+    // Assimp отдаёт модели в Y-up, мир движка — Z-up: поворачивает сам меш.
+    const bool yUpSource = MeshBounds::isImportedModel(scene.mesh->getPath());
+    scene.bounds = transformBounds(MeshBounds::sourceBasis(yUpSource), localMin, localMax);
 
     scene.model = scene.world.createEntity();
-    scene.world.addComponent<Transform>(scene.model, transform);
+    scene.world.addComponent<Transform>(scene.model, Transform{});
     MeshRenderer& meshRenderer = scene.world.addComponent<MeshRenderer>(scene.model);
+    meshRenderer.yUpSource = yUpSource;
     meshRenderer.meshId = scene.mesh->getPath();
     meshRenderer.cachedMesh = scene.mesh;
     meshRenderer.cachedShader = shader;

@@ -206,6 +206,12 @@ if(BUILD_TESTING)
     target_include_directories(AssetDatabaseTests PRIVATE src)
     add_test(NAME AssetDatabaseTests COMMAND AssetDatabaseTests "${CMAKE_CURRENT_BINARY_DIR}/asset-database-fixtures")
 
+    add_executable(EditorMathTests
+        tests/EditorMathTests.cpp
+    )
+    target_include_directories(EditorMathTests PRIVATE src external)
+    add_test(NAME EditorMathTests COMMAND EditorMathTests)
+
     add_executable(JobSystemTests
         tests/JobSystemTests.cpp
         src/jobs/JobSystem.cpp

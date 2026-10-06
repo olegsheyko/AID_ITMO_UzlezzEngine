@@ -87,7 +87,10 @@ bool RenderSystem::drawEntity(World& world, Entity entity, const MeshRenderer& m
     const unsigned int program = mask ? maskProgram : shaderData->programId;
 
     std::unordered_set<Entity> visited;
-    const Mat4 modelMatrix = buildWorldMatrix(world, entity, visited);
+    Mat4 modelMatrix = buildWorldMatrix(world, entity, visited);
+    if (meshRenderer.yUpSource) {
+        modelMatrix = Math::multiply(modelMatrix, Math::rotationX(1.5707963f));
+    }
 
     renderer_.useShaderProgram(program);
     setupMatrices(world, program, modelMatrix);

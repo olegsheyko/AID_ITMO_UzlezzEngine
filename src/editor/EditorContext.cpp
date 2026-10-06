@@ -108,6 +108,11 @@ void fitColliderToMeshBounds(const MeshRenderer& renderer, Collider& collider) {
         return;
     }
 
+    if (renderer.yUpSource) {
+        // Тот же поворот Y-up → Z-up, что делает RenderSystem: (x, y, z) → (x, −z, y).
+        boundsCenter = Vec3{boundsCenter.x, -boundsCenter.z, boundsCenter.y};
+        boundsHalfExtents = Vec3{boundsHalfExtents.x, boundsHalfExtents.z, boundsHalfExtents.y};
+    }
     collider.offset = boundsCenter;
     collider.halfExtents = boundsHalfExtents;
 }
@@ -463,6 +468,7 @@ Entity EditorContext::createModel(const std::string& path, const Vec3& position)
     ResourceManager& resourceManager = ResourceManager::getInstance();
     MeshRenderer meshRenderer;
     meshRenderer.meshId = path;
+    meshRenderer.yUpSource = MeshBounds::isImportedModel(path);
     meshRenderer.shaderId = ResourceManager::makeShaderKey(kVertexShaderPath, kFragmentShaderPath);
     meshRenderer.cachedMesh = resourceManager.loadMeshAsync(path);
     meshRenderer.cachedShader = resourceManager.loadShader(kVertexShaderPath, kFragmentShaderPath);
@@ -482,11 +488,8 @@ Entity EditorContext::createModel(const std::string& path, const Vec3& position)
 }
 
 bool EditorContext::computeModelFit(const MeshRenderer& meshRenderer, Vec3& outRotation, float& outScale, Vec3& outOffset) const {
+    // Перевод Y-up → Z-up делает сам меш (MeshRenderer::yUpSource) — трансформ остаётся без поворота.
     outRotation = {};
-    // Assimp отдаёт модели в Y-up, мир движка — Z-up.
-    if (MeshBounds::isImportedModel(meshRenderer.meshId)) {
-        outRotation.x = kPi * 0.5f;
-    }
     outScale = 1.0f;
     outOffset = {};
     Vec3 localMin{};
@@ -494,8 +497,7 @@ bool EditorContext::computeModelFit(const MeshRenderer& meshRenderer, Vec3& outR
     if (!localMeshBounds(meshRenderer, localMin, localMax)) {
         return false;
     }
-    const Mat4 rotationOnly = Math::composeTransform({}, outRotation, {1.0f, 1.0f, 1.0f});
-    const AABB rotated = transformBounds(rotationOnly, localMin, localMax);
+    const AABB rotated = transformBounds(MeshBounds::sourceBasis(meshRenderer.yUpSource), localMin, localMax);
     const float size = std::max({rotated.halfSize.x, rotated.halfSize.y, rotated.halfSize.z}) * 2.0f;
     // Единицы исходников гуляют (сантиметры FBX и т.п.) — подгоняем только явно нелепые размеры.
     if (size > 25.0f || (size > 0.0f && size < 0.05f)) {
@@ -557,6 +559,7 @@ void EditorContext::updateDragPreview(const std::string& path, const Vec3& origi
         ResourceManager& resourceManager = ResourceManager::getInstance();
         MeshRenderer meshRenderer;
         meshRenderer.meshId = path;
+        meshRenderer.yUpSource = MeshBounds::isImportedModel(path);
         meshRenderer.shaderId = ResourceManager::makeShaderKey(kVertexShaderPath, kFragmentShaderPath);
         meshRenderer.cachedMesh = resourceManager.loadMeshAsync(path);
         meshRenderer.cachedShader = resourceManager.loadShader(kVertexShaderPath, kFragmentShaderPath);
@@ -565,11 +568,7 @@ void EditorContext::updateDragPreview(const std::string& path, const Vec3& origi
         }
         dragPreviewEntity = world.createEntity();
         world.addComponent<Tag>(dragPreviewEntity, Tag{std::filesystem::path(path).stem().string()});
-        Transform transform;
-        if (MeshBounds::isImportedModel(path)) {
-            transform.rotation.x = kPi * 0.5f;
-        }
-        world.addComponent<Transform>(dragPreviewEntity, transform);
+        world.addComponent<Transform>(dragPreviewEntity, Transform{});
         world.addComponent<MeshRenderer>(dragPreviewEntity, meshRenderer);
         dragPreviewPath_ = path;
         dragPreviewFitted_ = false;
@@ -853,9 +852,8 @@ void EditorContext::setWorldMatrix(Entity entity, const Mat4& worldValue) {
     }
     Transform& transform = world.getComponent<Transform>(entity);
     const Mat4 local = Math::multiply(inverse(parentWorldMatrix(entity)), worldValue);
-    Vec3 rotation{};
-    decompose(local, transform.position, rotation, transform.scale);
-    transform.rotation = nearestEquivalentEuler(rotation, transform.rotation);
+    const Vec3 previous = transform.rotation;
+    decomposeNear(local, previous, transform.position, transform.rotation, transform.scale);
 }
 
 bool EditorContext::localMeshBounds(const MeshRenderer& meshRenderer, Vec3& outMin, Vec3& outMax) const {
@@ -888,10 +886,11 @@ bool EditorContext::worldBounds(Entity entity, AABB& outBounds) const {
     }
     const Mat4 matrix = worldMatrix(entity);
     if (world.hasComponent<MeshRenderer>(entity)) {
+        const MeshRenderer& meshRenderer = world.getComponent<MeshRenderer>(entity);
         Vec3 localMin{};
         Vec3 localMax{};
-        if (localMeshBounds(world.getComponent<MeshRenderer>(entity), localMin, localMax)) {
-            outBounds = transformBounds(matrix, localMin, localMax);
+        if (localMeshBounds(meshRenderer, localMin, localMax)) {
+            outBounds = transformBounds(Math::multiply(matrix, MeshBounds::sourceBasis(meshRenderer.yUpSource)), localMin, localMax);
             return true;
         }
     }
@@ -1439,9 +1438,10 @@ void EditorContext::rebuildAnimationDemo() {
         transform.position = {20 + (i % columns - (columns - 1) * 0.5f) * spacing - (minimum.x + maximum.x) * 0.5f * scale,
             (i / columns - (columns - 1) * 0.5f) * spacing - (minimum.y + maximum.y) * 0.5f * scale, -minimum.z * scale};
         transform.scale = {scale, scale, scale};
-        if (animationYUp) transform.rotation.x = 1.57079632679f;
         world.addComponent<Transform>(entity, transform);
         auto& meshRenderer = world.addComponent<MeshRenderer>(entity);
+        // Y-up модели поворачивает сам меш, как и брошенные из Content Browser.
+        meshRenderer.yUpSource = animationYUp;
         meshRenderer.meshId = animationPath.data();
         meshRenderer.cachedMesh = mesh;
         meshRenderer.cachedShader = shader;

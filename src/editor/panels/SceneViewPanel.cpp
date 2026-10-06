@@ -374,7 +374,6 @@ void SceneViewPanel::drawGizmo(EditorContext& context, const ImVec2& min, const 
     }
     const Entity entity = context.selected;
     Mat4 model = context.worldMatrix(entity);
-    Mat4 delta = Mat4::identity();
 
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::AllowAxisFlip(false);
@@ -395,16 +394,19 @@ void SceneViewPanel::drawGizmo(EditorContext& context, const ImVec2& min, const 
     const ImGuizmo::MODE mode = (settings.localSpace || operation == ImGuizmo::SCALE) ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
     const Mat4 view = context.camera.getViewMatrix();
     const Mat4 projection = context.camera.getProjectionMatrix();
-    if (!ImGuizmo::Manipulate(view.data(), projection.data(), operation, mode, model.data(), delta.data(), snap ? snapValues : nullptr)) {
+    if (!ImGuizmo::Manipulate(view.data(), projection.data(), operation, mode, model.data(), nullptr, snap ? snapValues : nullptr)) {
         return;
     }
 
-    Transform& transform = context.world.getComponent<Transform>(entity);
-    if (context.parentOf(entity) != kInvalidEntity) {
-        // У потомка всё считается через локальную матрицу относительно родителя.
+    // Поворот (и любые правки потомка) берём из итоговой матрицы гизмо целиком: она уже повёрнута
+    // вокруг нужной оси, а прибавлять углы к эйлеровым нельзя — движок применяет их в порядке Y·X·Z,
+    // и после первого поворота кольца начинали крутить вокруг чужих осей.
+    if (operation == ImGuizmo::ROTATE || context.parentOf(entity) != kInvalidEntity) {
         context.setWorldMatrix(entity, model);
         return;
     }
+    // Перемещение и масштаб поворот не меняют — оставляем углы как есть, без пересчёта.
+    Transform& transform = context.world.getComponent<Transform>(entity);
     Vec3 position{};
     Vec3 rotation{};
     Vec3 scale{};
@@ -412,15 +414,6 @@ void SceneViewPanel::drawGizmo(EditorContext& context, const ImVec2& min, const 
     transform.position = position;
     if (operation == ImGuizmo::SCALE) {
         transform.scale = {std::max(0.01f, scale.x), std::max(0.01f, scale.y), std::max(0.01f, scale.z)};
-    } else if (operation == ImGuizmo::ROTATE) {
-        // Поворот копим приращениями: так углы в инспекторе не прыгают между равноценными записями.
-        float deltaTranslation[3] = {};
-        float deltaRotation[3] = {};
-        float deltaScale[3] = {};
-        ImGuizmo::DecomposeMatrixToComponents(delta.data(), deltaTranslation, deltaRotation, deltaScale);
-        transform.rotation.x += toRadians(deltaRotation[0]);
-        transform.rotation.y += toRadians(deltaRotation[1]);
-        transform.rotation.z += toRadians(deltaRotation[2]);
     }
 }
 

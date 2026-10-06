@@ -6,6 +6,7 @@
 #include "editor/EditorTheme.h"
 #include "editor/EditorWidgets.h"
 #include "editor/EditorWindows.h"
+#include "editor/MeshBounds.h"
 #include "editor/IconsLucide.h"
 #include "editor/PlatformShell.h"
 #include "editor/SyntaxHighlight.h"
@@ -339,6 +340,7 @@ void InspectorPanel::changeMesh(EditorContext& context, Entity entity, const std
     ResourceManager& resources = ResourceManager::getInstance();
     MeshRenderer& meshRenderer = context.world.getComponent<MeshRenderer>(entity);
     meshRenderer.meshId = meshPath;
+    meshRenderer.yUpSource = MeshBounds::isImportedModel(meshPath);
     meshRenderer.cachedMesh = resources.loadMeshAsync(meshPath);
     meshRenderer.colliderBoundsInitialized = false;
     if (meshRenderer.cachedMesh && meshRenderer.cachedMesh->isLoaded()) {
@@ -369,6 +371,11 @@ void InspectorPanel::drawMeshRenderer(EditorContext& context, Entity entity, boo
         ImGui::BeginDisabled(locked);
         if (EditorUI::beginProperties("##mesh_renderer")) {
             EditorUI::propertyCheckbox("Visible", meshRenderer.visible);
+            EditorUI::propertyLabel("Y-Up Source", "The mesh was authored Y-up (FBX, glTF): rotate it into the Z-up world.\n"
+                "Turn off for models exported Z-up.");
+            if (EditorUI::checkbox("##y_up", &meshRenderer.yUpSource)) {
+                meshRenderer.colliderBoundsInitialized = false;
+            }
 
             // Меш
             EditorUI::propertyLabel("Mesh");

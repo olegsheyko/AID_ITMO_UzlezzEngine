@@ -99,6 +99,20 @@ inline Vec3 nearestEquivalentEuler(const Vec3& candidate, const Vec3& reference)
         nearestEquivalentAngle(candidate.z, reference.z)};
 }
 
+// Как decompose, но из двух равноценных записей поворота выбирает ближайшую к reference.
+// Для R = Ry(y) Rx(x) Rz(z) то же вращение даёт и (π − x, y + π, z + π): без выбора углы
+// в инспекторе прыгали бы при переходе X через ±90°.
+inline void decomposeNear(const Mat4& matrix, const Vec3& reference, Vec3& position, Vec3& rotation, Vec3& scale) {
+    Vec3 first{};
+    decompose(matrix, position, first, scale);
+    first = nearestEquivalentEuler(first, reference);
+    const Vec3 second = nearestEquivalentEuler(Vec3{kPi - first.x, first.y + kPi, first.z + kPi}, reference);
+    auto distance = [&reference](const Vec3& value) {
+        return std::abs(value.x - reference.x) + std::abs(value.y - reference.y) + std::abs(value.z - reference.z);
+    };
+    rotation = distance(second) + 1e-4f < distance(first) ? second : first;
+}
+
 // AABB в мире для локального бокса min..max под матрицей.
 inline AABB transformBounds(const Mat4& matrix, const Vec3& localMin, const Vec3& localMax) {
     Vec3 worldMin{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max()};

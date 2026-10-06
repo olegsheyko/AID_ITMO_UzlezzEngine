@@ -75,4 +75,8 @@ bool computeBindPose(const MeshData& data, Vec3& outMin, Vec3& outMax) {
 bool isImportedModel(const std::string& path) {
     return path.rfind("primitive:", 0) != 0;
 }
+
+Mat4 sourceBasis(bool yUpSource) {
+    return yUpSource ? Math::rotationX(kPi * 0.5f) : Mat4::identity();
+}
 } // namespace MeshBounds
