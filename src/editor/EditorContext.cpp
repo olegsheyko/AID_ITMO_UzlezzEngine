@@ -499,7 +499,8 @@ bool EditorContext::computeModelFit(const MeshRenderer& meshRenderer, Vec3& outR
     const float size = std::max({rotated.halfSize.x, rotated.halfSize.y, rotated.halfSize.z}) * 2.0f;
     // Единицы исходников гуляют (сантиметры FBX и т.п.) — подгоняем только явно нелепые размеры.
     if (size > 25.0f || (size > 0.0f && size < 0.05f)) {
-        outScale = 2.0f / std::max(0.001f, rotated.halfSize.z * 2.0f);
+        // По наибольшему габариту: человек — по росту, животное — по длине.
+        outScale = 2.0f / std::max(0.001f, size);
     }
     // Точка опоры — центр низа габаритов.
     outOffset = {rotated.center.x * outScale, rotated.center.y * outScale, (rotated.center.z - rotated.halfSize.z) * outScale};
