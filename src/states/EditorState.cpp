@@ -438,6 +438,9 @@ void EditorState::renderMainMenu() {
         if (ImGui::MenuItem(ICON_LC_BOX "  Cube")) {
             context_.createCube("Cube", context_.defaultSpawnPosition());
         }
+        if (ImGui::MenuItem(ICON_LC_CIRCLE "  Sphere")) {
+            context_.createSphere("Sphere", context_.defaultSpawnPosition());
+        }
         if (ImGui::BeginMenu(ICON_LC_PACKAGE "  Model")) {
             int models = 0;
             for (const AssetEntry& entry : context_.assets.search(".", 2000)) {

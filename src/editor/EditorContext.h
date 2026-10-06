@@ -74,6 +74,7 @@ public:
     // Сущности
     Entity createEmpty(const std::string& name, const Vec3& position);
     Entity createCube(const std::string& name, const Vec3& position);
+    Entity createSphere(const std::string& name, const Vec3& position);
     Entity createModel(const std::string& path, const Vec3& position);
     Entity duplicate(Entity source);
     void destroy(Entity entity);

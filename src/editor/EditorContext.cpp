@@ -437,6 +437,28 @@ Entity EditorContext::createCube(const std::string& name, const Vec3& position) 
     return entity;
 }
 
+Entity EditorContext::createSphere(const std::string& name, const Vec3& position) {
+    ResourceManager& resourceManager = ResourceManager::getInstance();
+    MeshRenderer meshRenderer;
+    meshRenderer.meshId = "primitive:sphere";
+    meshRenderer.shaderId = ResourceManager::makeShaderKey(kVertexShaderPath, kFragmentShaderPath);
+    meshRenderer.cachedMesh = resourceManager.loadMeshAsync(meshRenderer.meshId);
+    meshRenderer.cachedShader = resourceManager.loadShader(kVertexShaderPath, kFragmentShaderPath);
+    if (!meshRenderer.cachedMesh || !meshRenderer.cachedShader) {
+        LOG_ERROR("EditorContext: failed to create sphere entity resources");
+        return kInvalidEntity;
+    }
+    const Entity entity = world.createEntity();
+    world.addComponent<Tag>(entity, Tag{name});
+    world.addComponent<Transform>(entity, Transform{position, {}, {1.0f, 1.0f, 1.0f}});
+    world.addComponent<MeshRenderer>(entity, meshRenderer);
+    world.addComponent<Collider>(entity, Collider{ColliderType::Sphere, Vec3{0.5f, 0.5f, 0.5f}, Vec3{}, 0.5f});
+    // Сфера уже совпадает с коллайдером — подгонка под меш не нужна.
+    world.getComponent<MeshRenderer>(entity).colliderBoundsInitialized = true;
+    select(entity);
+    return entity;
+}
+
 Entity EditorContext::createModel(const std::string& path, const Vec3& position) {
     ResourceManager& resourceManager = ResourceManager::getInstance();
     MeshRenderer meshRenderer;

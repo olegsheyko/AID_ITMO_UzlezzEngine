@@ -131,6 +131,9 @@ void HierarchyPanel::createMenuItems(EditorContext& context, Entity parent) {
     if (ImGui::MenuItem(ICON_LC_BOX "  Cube")) {
         created = context.createCube("Cube", spawn);
     }
+    if (ImGui::MenuItem(ICON_LC_CIRCLE "  Sphere")) {
+        created = context.createSphere("Sphere", spawn);
+    }
     if (created != kInvalidEntity && parent != kInvalidEntity) {
         context.setParent(created, parent);
         if (context.world.hasComponent<Transform>(created)) {

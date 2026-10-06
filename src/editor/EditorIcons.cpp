@@ -21,8 +21,9 @@ const char* entityIcon(const EditorContext& context, Entity entity, ImU32* outCo
         color = IM_COL32(120, 214, 160, 255);
     } else if (world.hasComponent<MeshRenderer>(entity)) {
         const std::string& mesh = world.getComponent<MeshRenderer>(entity).meshId;
+        const bool sphere = mesh == "primitive:sphere";
         const bool primitive = mesh.rfind("primitive:", 0) == 0 || mesh == "cube" || mesh.find("cube") != std::string::npos;
-        icon = primitive ? ICON_LC_BOX : ICON_LC_PACKAGE;
+        icon = sphere ? ICON_LC_CIRCLE : (primitive ? ICON_LC_BOX : ICON_LC_PACKAGE);
         color = IM_COL32(150, 196, 236, 255);
     } else if (!context.childrenOf(entity).empty()) {
         icon = ICON_LC_LAYERS;
