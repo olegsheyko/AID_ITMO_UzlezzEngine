@@ -164,7 +164,9 @@ void RenderSystem::bindMaterial(const Material& material, const ShaderData& shad
         textureId = ResourceManager::getInstance().placeholderTextureId();
     }
     const bool hasTexture = textureId != 0;
-    renderer_.bindTexture2D(textureId, 0);
+    // Сэмплер в шейдере есть всегда: без текстуры привязываем заглушку, иначе драйвер macOS
+    // ругается на «unloadable» текстуру 0, хотя useBaseColorTexture = 0 её и не читает.
+    renderer_.bindTexture2D(hasTexture ? textureId : ResourceManager::getInstance().placeholderTextureId(), 0);
     renderer_.setInt(shaderData.programId, "baseColorTexture", 0);
     renderer_.setInt(shaderData.programId, "useBaseColorTexture", hasTexture ? 1 : 0);
     renderer_.setVec3(shaderData.programId, "materialColor", material.diffuseColor);
