@@ -53,7 +53,7 @@ void decomposeRestoresComposedMatrix() {
     }
 }
 
-// Тот самый баг: у импортированной модели X = 90°, гизмо крутит её вокруг мировой вертикали.
+// Тот самый баг: у модели X = 90°, гизмо крутит её вокруг мировой вертикали.
 // Старый код прибавлял углы поворота к эйлеровым и получал вращение вокруг другой оси.
 void gizmoRotationAboutWorldAxisIsPreserved() {
     const Vec3 starts[] = {{1.5707963f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.4f, -0.9f, 1.1f}, {1.5707963f, 0.7f, 0.0f}};
@@ -76,16 +76,32 @@ void gizmoRotationAboutWorldAxisIsPreserved() {
 }
 
 void decomposeNearKeepsAnglesContinuous() {
-    // Вращаем вокруг X через 90°: углы должны идти 80°, 100°, 120°, а не прыгать на 60° с Y=Z=180°.
+    // Вращаем вокруг Y через 90°: углы должны идти 80°, 100°, 120°, а не прыгать на 60° с X=Z=180°.
     Vec3 rotation{};
     for (float degrees = 0.0f; degrees <= 170.0f; degrees += 10.0f) {
-        const Mat4 model = compose(Vec3{toRadians(degrees), 0.0f, 0.0f});
+        const Mat4 model = compose(Vec3{0.0f, toRadians(degrees), 0.0f});
         Vec3 position{};
         Vec3 scale{};
         decomposeNear(model, rotation, position, rotation, scale);
-        require(std::abs(toDegrees(rotation.x) - degrees) < 0.05f && std::abs(rotation.y) < 1e-3f && std::abs(rotation.z) < 1e-3f,
-            "rotation about X must stay continuous at " + std::to_string(degrees) + " degrees, got x=" +
-            std::to_string(toDegrees(rotation.x)) + " y=" + std::to_string(toDegrees(rotation.y)));
+        require(std::abs(toDegrees(rotation.y) - degrees) < 0.05f && std::abs(rotation.x) < 1e-3f && std::abs(rotation.z) < 1e-3f,
+            "rotation about Y must stay continuous at " + std::to_string(degrees) + " degrees, got y=" +
+            std::to_string(toDegrees(rotation.y)) + " x=" + std::to_string(toDegrees(rotation.x)));
+    }
+}
+
+// Персонаж Y-up с X = 90° (как префаб врага) при повороте гизмо вокруг мировой Z меняет только рысканье.
+void yawOfTiltedCharacterStaysInZ() {
+    Vec3 rotation{1.5707963f, 0.0f, 0.0f};
+    Mat4 model = compose(rotation);
+    for (int step = 1; step <= 30; ++step) {
+        model = rotateAboutWorldAxis(model, 2, 0.15f);
+        Vec3 position{};
+        Vec3 scale{};
+        decomposeNear(model, rotation, position, rotation, scale);
+        require(std::abs(rotation.x - 1.5707963f) < 1e-3f && std::abs(rotation.y) < 1e-3f &&
+            std::abs(nearestEquivalentAngle(rotation.z, 0.15f * step) - 0.15f * step) < 1e-3f,
+            "yaw of a Y-up character must stay in Z, step " + std::to_string(step) + ": x=" + std::to_string(toDegrees(rotation.x)) +
+            " y=" + std::to_string(toDegrees(rotation.y)) + " z=" + std::to_string(toDegrees(rotation.z)));
     }
 }
 }
@@ -95,6 +111,7 @@ int main() {
         decomposeRestoresComposedMatrix();
         gizmoRotationAboutWorldAxisIsPreserved();
         decomposeNearKeepsAnglesContinuous();
+        yawOfTiltedCharacterStaysInZ();
     } catch (const std::exception& error) {
         std::cerr << "FAILED: " << error.what() << "\n";
         return 1;

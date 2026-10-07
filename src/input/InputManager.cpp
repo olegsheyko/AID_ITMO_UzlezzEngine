@@ -81,7 +81,7 @@ void InputManager::update() {
     for (KeyCode key : trackedKeys_) {
         ButtonState& state = keyStates_[key];
         state.previous = state.current;
-        state.current = handler_->isKeyPressed(key);
+        state.current = handler_->isKeyPressed(key) || simulatedKeys_.count(key) > 0;
     }
 
     for (KeyCode button : trackedMouseButtons_) {
@@ -219,4 +219,13 @@ void InputManager::trackKey(KeyCode key) {
 void InputManager::trackMouseButton(KeyCode button) {
     trackedMouseButtons_.insert(button);
     mouseButtonStates_.try_emplace(button, ButtonState{});
+}
+
+void InputManager::setSimulatedKey(KeyCode key, bool down) {
+    if (down) {
+        simulatedKeys_.insert(key);
+        trackKey(key);
+    } else {
+        simulatedKeys_.erase(key);
+    }
 }

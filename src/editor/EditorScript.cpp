@@ -1,5 +1,7 @@
 #include "editor/EditorScript.h"
 
+#include "input/InputManager.h"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -7,11 +9,31 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <utility>
 
 namespace {
+// Отложенное отпускание клавиши игры, а не ImGui.
+constexpr int kGameKey = -2;
+
 std::string lower(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
+}
+
+// Та же клавиша для игры: InputManager опрашивает GLFW, и событий ImGui он не видит.
+KeyCode gameKeyByName(const std::string& name) {
+    static const std::pair<const char*, KeyCode> keys[] = {{"space", KeyCode::Space}, {"enter", KeyCode::Enter},
+        {"left", KeyCode::Left}, {"right", KeyCode::Right}, {"up", KeyCode::Up}, {"down", KeyCode::Down},
+        {"w", KeyCode::W}, {"a", KeyCode::A}, {"s", KeyCode::S}, {"d", KeyCode::D}, {"q", KeyCode::Q},
+        {"e", KeyCode::E}, {"f", KeyCode::F}, {"i", KeyCode::I}, {"j", KeyCode::J}, {"k", KeyCode::K},
+        {"l", KeyCode::L}, {"u", KeyCode::U}, {"o", KeyCode::O}};
+    const std::string wanted = lower(name);
+    for (const auto& [keyName, code] : keys) {
+        if (wanted == keyName) {
+            return code;
+        }
+    }
+    return KeyCode::Unknown;
 }
 
 ImGuiKey keyByName(const std::string& name) {
@@ -86,7 +108,9 @@ void EditorScript::apply(int frame) {
             ++it;
             continue;
         }
-        if (it->mouseButton >= 0) {
+        if (it->mouseButton == kGameKey) {
+            InputManager::getInstance().setSimulatedKey(static_cast<KeyCode>(it->key), it->down);
+        } else if (it->mouseButton >= 0) {
             io.AddMouseButtonEvent(it->mouseButton, it->down);
         } else {
             io.AddKeyEvent(static_cast<ImGuiKey>(it->key), it->down);
@@ -129,10 +153,17 @@ void EditorScript::apply(int frame) {
                     pending_.push_back({frame + 2, -1, modifier, false});
                 }
             }
-            const ImGuiKey key = keyByName(parts.empty() ? std::string() : parts.back());
+            const std::string name = parts.empty() ? std::string() : parts.back();
+            const ImGuiKey key = keyByName(name);
             if (key != ImGuiKey_None) {
                 io.AddKeyEvent(key, true);
                 pending_.push_back({frame + 1, -1, key, false});
+            }
+            // Без модификаторов клавиша уходит и в игру; держим два кадра, чтобы опрос ввода её застал.
+            const KeyCode gameKey = gameKeyByName(name);
+            if (parts.size() == 1 && gameKey != KeyCode::Unknown) {
+                InputManager::getInstance().setSimulatedKey(gameKey, true);
+                pending_.push_back({frame + 2, kGameKey, static_cast<int>(gameKey), false});
             }
         } else if (step.action == "text" && !args.empty()) {
             io.AddInputCharactersUTF8(args[0].c_str());

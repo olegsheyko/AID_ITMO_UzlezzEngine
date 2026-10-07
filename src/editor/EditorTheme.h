@@ -38,6 +38,7 @@ constexpr ImU32 kFolder = IM_COL32(232, 184, 76, 255);
 constexpr ImU32 kAssetModel = IM_COL32(242, 140, 64, 255);
 constexpr ImU32 kAssetShader = IM_COL32(170, 120, 250, 255);
 constexpr ImU32 kAssetScene = IM_COL32(72, 196, 140, 255);
+constexpr ImU32 kAssetPrefab = IM_COL32(96, 168, 255, 255);
 constexpr ImU32 kAssetMaterial = IM_COL32(236, 102, 160, 255);
 constexpr ImU32 kAssetText = IM_COL32(120, 160, 200, 255);
 constexpr ImU32 kAssetFont = IM_COL32(200, 200, 120, 255);

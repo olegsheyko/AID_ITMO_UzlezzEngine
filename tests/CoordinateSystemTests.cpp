@@ -95,6 +95,14 @@ void testCamera() {
 }
 
 void testPhysicsAndScene() {
+    // A Y-up character must face its XY target without tilting below the ground.
+    for (float yaw : {0.0f, 0.7f, 1.570796327f, 3.141592654f, -2.0f}) {
+        const auto m = Math::composeTransform({2,3,0}, {1.570796327f,0,yaw}, {1,1,1});
+        const auto head = project(m, {0,2,0});
+        require(near(head.x,2) && near(head.y,3) && near(head.z,2), "Yaw tilted the Y-up character into the floor");
+        const auto forward = project(m, {0,0,1});
+        require(near(forward.x-2,std::sin(yaw)) && near(forward.y-3,-std::cos(yaw)) && near(forward.z,0), "Character facing direction must stay in XY");
+    }
     World world;
     const auto body = world.createEntity();
     world.addComponent<Transform>(body).position = Vec3{1, 2, 3};

@@ -32,6 +32,9 @@ const char* const kGlslTypes[] = {"void", "bool", "int", "uint", "float", "doubl
     "ivec4", "uvec2", "uvec3", "uvec4", "bvec2", "bvec3", "bvec4", "mat2", "mat3", "mat4", "sampler2D", "samplerCube",
     "sampler2DShadow", "sampler3D", nullptr};
 const char* const kJsonKeywords[] = {"true", "false", "null", nullptr};
+const char* const kLuaKeywords[] = {"and", "break", "do", "else", "elseif", "end", "for", "function", "goto", "if", "in",
+    "local", "not", "or", "repeat", "return", "then", "until", "while", nullptr};
+const char* const kLuaConstants[] = {"nil", "true", "false", "self", nullptr};
 
 struct Cursor {
     ImDrawList* drawList;
@@ -48,6 +51,7 @@ struct Cursor {
 };
 
 void highlight(Cursor* cursor, const char* p, const char* end, SyntaxLanguage language, bool& inBlockComment) {
+    const char* const begin = p;
     auto emit = [cursor](const char* a, const char* b, ImU32 color) {
         if (cursor) {
             cursor->emit(a, b, color);
@@ -84,13 +88,18 @@ void highlight(Cursor* cursor, const char* p, const char* end, SyntaxLanguage la
             p += 2;
             continue;
         }
+        // В Lua «--» до конца строки; блочные --[[ ]] тоже считаем строчными — для превью этого хватает.
+        if (language == SyntaxLanguage::Lua && c == '-' && p + 1 < end && p[1] == '-') {
+            emit(p, end, kComment);
+            return;
+        }
         if (language == SyntaxLanguage::Glsl && c == '#') {
             emit(p, end, kPreprocessor);
             return;
         }
-        if (c == '"') {
+        if (c == '"' || (c == '\'' && language == SyntaxLanguage::Lua)) {
             const char* q = p + 1;
-            while (q < end && *q != '"') {
+            while (q < end && *q != c) {
                 q += (*q == '\\' && q + 1 < end) ? 2 : 1;
             }
             q = q < end ? q + 1 : end;
@@ -131,6 +140,21 @@ void highlight(Cursor* cursor, const char* p, const char* end, SyntaxLanguage la
                 } else if (isAny(word, kGlslKeywords)) {
                     color = kKeyword;
                 } else if (next < end && *next == '(') {
+                    color = kFunction;
+                }
+            } else if (language == SyntaxLanguage::Lua) {
+                const char* next = q;
+                while (next < end && *next == ' ') {
+                    ++next;
+                }
+                // Метод после «:» и вызов перед «(», «{» или строкой — как функции.
+                const bool called = next < end && (*next == '(' || *next == '{' || *next == '"');
+                const bool method = p > begin && p[-1] == ':';
+                if (isAny(word, kLuaKeywords)) {
+                    color = kKeyword;
+                } else if (isAny(word, kLuaConstants)) {
+                    color = kType;
+                } else if (called || method) {
                     color = kFunction;
                 }
             } else if (isAny(word, kJsonKeywords)) {

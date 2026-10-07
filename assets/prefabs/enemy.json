@@ -1,0 +1,9 @@
+{
+  "components": {
+    "tag": "Enemy",
+    "transform": {"rotation": [1.570796327, 0, 0], "scale": [0.01106, 0.01106, 0.01106]},
+    "meshRenderer": {"mesh": "assets/models/animation/Walking.fbx"},
+    "animator": {"speed": 1.0, "inPlaceNode": "mixamorig:Hips"},
+    "script": {"path": "assets/scripts/enemy.lua", "class": "Enemy", "fields": {"speed": 1.5, "damage": 1, "attack_radius": 1.2, "animation_speed": 1.0, "target_tag": "Core"}}
+  }
+}

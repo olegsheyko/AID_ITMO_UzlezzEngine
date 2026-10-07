@@ -19,6 +19,10 @@ const char* entityIcon(const EditorContext& context, Entity entity, ImU32* outCo
     } else if (entity == context.controllableEntity) {
         icon = ICON_LC_GAMEPAD_2;
         color = IM_COL32(120, 214, 160, 255);
+    } else if (world.hasComponent<ScriptComponent>(entity) && !world.hasComponent<MeshRenderer>(entity)) {
+        // Чистый Lua-объект без меша (менеджер волн).
+        icon = ICON_LC_FILE_CODE;
+        color = IM_COL32(110, 160, 255, 255);
     } else if (world.hasComponent<MeshRenderer>(entity)) {
         const std::string& mesh = world.getComponent<MeshRenderer>(entity).meshId;
         const bool sphere = mesh == "primitive:sphere";
@@ -46,6 +50,7 @@ ImU32 assetColor(AssetType type) {
     case AssetType::Material: return kAssetMaterial;
     case AssetType::Shader: return kAssetShader;
     case AssetType::Scene: return kAssetScene;
+    case AssetType::Prefab: return kAssetPrefab;
     case AssetType::Json: return IM_COL32(222, 196, 92, 255);
     case AssetType::Text: return kAssetText;
     case AssetType::Font: return kAssetFont;
@@ -67,6 +72,7 @@ const char* assetIcon(AssetType type, ImU32* outColor) {
     case AssetType::Material: return ICON_LC_PALETTE;
     case AssetType::Shader: return ICON_LC_FILE_CODE_2;
     case AssetType::Scene: return ICON_LC_CLAPPERBOARD;
+    case AssetType::Prefab: return ICON_LC_PACKAGE;
     case AssetType::Json: return ICON_LC_FILE_JSON;
     case AssetType::Text: return ICON_LC_FILE_TEXT;
     case AssetType::Font: return ICON_LC_FILE_TYPE;

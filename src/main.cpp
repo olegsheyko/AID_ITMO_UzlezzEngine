@@ -19,8 +19,10 @@ int main(int argc, char** argv) {
 	Logger::getInstance().openFile("engine.log");
 
 	Application app;
-	if (!app.init(800, 600, "Uzlezz Engine", options))
+	if (!app.init(800, 600, "Uzlezz Engine", options)) {
+		app.shutdown();
 		return -1;
+	}
 
 	app.run();
 	app.shutdown();

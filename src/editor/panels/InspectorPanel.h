@@ -30,6 +30,7 @@ private:
     void drawCollider(EditorContext& context, Entity entity, bool locked);
     void drawSpin(EditorContext& context, Entity entity, bool locked);
     void drawCamera(EditorContext& context, Entity entity, bool locked);
+    void drawScript(EditorContext& context, Entity entity, bool locked);
     void drawAddComponent(EditorContext& context, Entity entity);
     void changeMesh(EditorContext& context, Entity entity, const std::string& meshPath);
 
@@ -49,6 +50,10 @@ private:
     std::array<char, 64> componentSearch_{};
     std::array<char, 128> nameBuffer_{};
     Entity nameEntity_ = 0;
+    // Итог последнего «Save to Prefab» — показываем под кнопкой у той же сущности.
+    Entity scriptResultEntity_ = 0;
+    std::string scriptResult_;
+    bool scriptResultError_ = false;
 
     std::string textPath_;
     std::filesystem::file_time_type textModified_{};

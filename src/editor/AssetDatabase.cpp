@@ -185,9 +185,11 @@ AssetType AssetDatabase::classify(const std::filesystem::path& path) {
     if (matches(shaders)) return AssetType::Shader;
     if (extension == ".scene") return AssetType::Scene;
     if (extension == ".json") {
-        // Манифесты сцен движка лежат в папке scenes.
+        // Манифесты сцен движка лежат в папке scenes, префабы — в prefabs.
         const std::string parent = toLower(path.parent_path().filename().string());
-        return parent == "scenes" ? AssetType::Scene : AssetType::Json;
+        if (parent == "scenes") return AssetType::Scene;
+        if (parent == "prefabs") return AssetType::Prefab;
+        return AssetType::Json;
     }
     if (matches(texts)) return AssetType::Text;
     if (matches(fonts)) return AssetType::Font;
@@ -210,6 +212,7 @@ const char* AssetDatabase::typeName(AssetType type) {
     case AssetType::Material: return "Material";
     case AssetType::Shader: return "Shader";
     case AssetType::Scene: return "Scene";
+    case AssetType::Prefab: return "Prefab";
     case AssetType::Json: return "JSON";
     case AssetType::Text: return "Text";
     case AssetType::Font: return "Font";
@@ -225,6 +228,7 @@ std::string AssetDatabase::badgeText(const AssetEntry& entry) {
     case AssetType::Folder: return "";
     case AssetType::Shader: return "GLSL";
     case AssetType::Scene: return "SCENE";
+    case AssetType::Prefab: return "PREFAB";
     case AssetType::Material: return "MTL";
     case AssetType::Audio: return "AUDIO";
     case AssetType::Font: return "FONT";

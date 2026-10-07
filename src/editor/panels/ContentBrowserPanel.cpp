@@ -134,6 +134,7 @@ const char* cardTypeName(AssetType type) {
     case AssetType::Texture: return "Texture";
     case AssetType::Shader: return "Shader";
     case AssetType::Scene: return "Scene";
+    case AssetType::Prefab: return "Prefab";
     case AssetType::Json: return "Data";
     case AssetType::Text: return "Text";
     case AssetType::Font: return "Font";
@@ -185,6 +186,7 @@ const char* glyphFor(AssetType type) {
     case AssetType::Model: return ICON_LC_BOX;
     case AssetType::Shader: return ICON_LC_BRACES;
     case AssetType::Scene: return ICON_LC_CLAPPERBOARD;
+    case AssetType::Prefab: return ICON_LC_PACKAGE;
     case AssetType::Material: return ICON_LC_PALETTE;
     case AssetType::Json: return ICON_LC_BRACES;
     case AssetType::Text: return ICON_LC_FILE_TEXT;
@@ -698,6 +700,11 @@ void ContentBrowserPanel::activate(EditorContext& context, const AssetEntry& ent
             context.createModel(entry.path, context.dropPoint(context.camera.getPosition(), context.camera.getForward()));
         }
         break;
+    case AssetType::Prefab:
+        if (!context.isPlaying()) {
+            context.spawnPrefab(entry.path, context.dropPoint(context.camera.getPosition(), context.camera.getForward()));
+        }
+        break;
     default:
         PlatformShell::openFile(entry.path);
         break;
@@ -716,7 +723,7 @@ void ContentBrowserPanel::itemContextMenu(EditorContext& context, const AssetEnt
         if (ImGui::MenuItem(ICON_LC_CLAPPERBOARD "  Open Scene")) {
             activate(context, entry);
         }
-    } else if (entry.type == AssetType::Model) {
+    } else if (entry.type == AssetType::Model || entry.type == AssetType::Prefab) {
         ImGui::BeginDisabled(context.isPlaying());
         if (ImGui::MenuItem(ICON_LC_PLUS "  Add to Scene")) {
             activate(context, entry);

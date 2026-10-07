@@ -43,6 +43,8 @@ public:
     bool isActionPressed(const std::string& actionName) const;
     bool isActionReleased(const std::string& actionName) const;
     bool isActionActive(const std::string& actionName) const { return isActionDown(actionName); }
+    // Клавиша, зажатая не рукой, а сценарием редактора (проверка Play со скрытым окном).
+    void setSimulatedKey(KeyCode key, bool down);
     bool IsActionActive(const std::string& actionName) const { return isActionActive(actionName); }
 
 private:
@@ -63,6 +65,7 @@ private:
     std::unordered_map<KeyCode, ButtonState> mouseButtonStates_;
     std::unordered_map<std::string, std::vector<KeyCode>> actionBindings_;
     std::unordered_set<KeyCode> trackedKeys_;
+    std::unordered_set<KeyCode> simulatedKeys_;
     std::unordered_set<KeyCode> trackedMouseButtons_;
     Vec2 mousePosition_{};
     Vec2 previousMousePosition_{};

@@ -8,7 +8,8 @@ void AnimationSystem::evaluateRange(size_t begin, size_t end) {
     ZoneScopedNC("Animation poses", 0x65B891);
     for (size_t i=begin; i<end; ++i) {
         auto& item = work_[i];
-        Animation::evaluate(*item.mesh, item.animator->clip, item.animator->time, item.animator->pose);
+        Animation::evaluate(*item.mesh, item.animator->clip, item.animator->time, item.animator->pose,
+            item.animator->inPlaceNode);
         item.animator->evaluatedMesh = item.mesh;
     }
 }

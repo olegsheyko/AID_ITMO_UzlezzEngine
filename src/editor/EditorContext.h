@@ -14,6 +14,8 @@
 #include "editor/AssetDatabase.h"
 #include "editor/AssetPreview.h"
 #include "editor/EditorCamera.h"
+#include "scripting/ScriptComponent.h"
+#include "scripting/ScriptSystem.h"
 
 #include <array>
 #include <cstddef>
@@ -132,6 +134,13 @@ public:
     // Материал или текстура, брошенные на объект: базовая текстура меша.
     bool applyAssetToEntity(const std::string& path, Entity entity);
 
+    // Префабы и Lua (ЛР 2). Позиция из префаба — смещение от точки, куда его ставят.
+    Entity spawnPrefab(const std::string& path, const Vec3& position);
+    void loadArenaScene();
+    bool isArenaScene() const;
+    bool reloadScripts();
+    bool savePrefabFields(Entity entity);
+
     // Лаб-инструменты (ЛР 1)
     void rebuildAnimationDemo();
     void removeAnimationDemo();
@@ -140,6 +149,8 @@ public:
     AssetDatabase assets{"assets"};
     AssetPreviewer previewer;
     World world;
+    // Одна Lua VM на редактор; объявлена после world и уничтожается раньше него.
+    ScriptSystem scripts{world};
     EditorCamera camera;
     PhysicsSystem physicsSystem;
     SpinSystem spinSystem;
@@ -156,6 +167,11 @@ public:
     // Модель, которую сейчас тащат во вьюпорт, и объект под курсором при перетаскивании текстуры.
     Entity dragPreviewEntity = kInvalidEntity;
     Entity dropHighlight = kInvalidEntity;
+    // Враг из префаба, показанный в Edit для настройки полей; в Play не участвует.
+    Entity prefabPreview = kInvalidEntity;
+    // Последнее сообщение скриптинга для панели Gameplay.
+    std::string scriptMessage;
+    bool scriptMessageIsError = false;
     std::array<char, 128> renameBuffer{};
     // Кадр, на котором начато переименование: поле ввода берёт фокус один раз.
     bool renameNeedsFocus = false;
@@ -195,6 +211,8 @@ public:
 private:
     struct EntitySnapshot {
         Entity entity = kInvalidEntity;
+        bool hasScript = false;
+        ScriptComponent script{};
         bool hasTag = false;
         Tag tag{};
         bool hasTransform = false;
@@ -218,6 +236,7 @@ private:
     struct SceneSnapshot {
         std::vector<EntitySnapshot> entities;
         Entity selected = kInvalidEntity;
+        Entity prefabPreview = kInvalidEntity;
         Entity controllableEntity = kInvalidEntity;
         Entity gameCameraEntity = kInvalidEntity;
     };
@@ -229,6 +248,8 @@ private:
     };
 
     void bindActions();
+    void resetSceneState();
+    void setScriptMessage(const std::string& message, bool isError);
     void createScene();
     bool createSceneFromManifest();
     void createFallbackScene();

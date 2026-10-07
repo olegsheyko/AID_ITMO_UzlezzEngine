@@ -8,7 +8,7 @@
 #include <limits>
 
 // Векторные мелочи и разбор матриц для редактора. Порядок вращений совпадает с Math::composeTransform:
-// R = Ry * Rx * Rz (векторы-столбцы), матрицы хранятся по столбцам.
+// R = Rz * Ry * Rx (векторы-столбцы), матрицы хранятся по столбцам.
 namespace EditorMath {
 constexpr float kPi = 3.1415926f;
 
@@ -67,17 +67,18 @@ inline void decompose(const Mat4& matrix, Vec3& position, Vec3& rotation, Vec3& 
     const float r00 = m[0] / sx, r10 = m[1] / sx, r20 = m[2] / sx;
     const float r01 = m[4] / sy, r11 = m[5] / sy, r21 = m[6] / sy;
     const float r02 = m[8] / sz, r12 = m[9] / sz, r22 = m[10] / sz;
-    const float sinX = std::clamp(-r12, -1.0f, 1.0f);
-    rotation.x = std::asin(sinX);
-    if (std::abs(sinX) < 0.9999f) {
-        rotation.y = std::atan2(r02, r22);
-        rotation.z = std::atan2(r10, r11);
+    // Rz·Ry·Rx: r20 = −sin y, r21 = cos y · sin x, r22 = cos y · cos x, r10 = sin z · cos y, r00 = cos z · cos y.
+    const float sinY = std::clamp(-r20, -1.0f, 1.0f);
+    rotation.y = std::asin(sinY);
+    if (std::abs(sinY) < 0.9999f) {
+        rotation.x = std::atan2(r21, r22);
+        rotation.z = std::atan2(r10, r00);
     } else {
-        // Шарнирный замок: Y и Z вращают вокруг одной оси, всё отдаём Y.
-        rotation.z = 0.0f;
-        rotation.y = std::atan2(-r20, r00);
-        (void)r01;
-        (void)r21;
+        // Шарнирный замок: X и Z вращают вокруг одной оси, всё отдаём Z (рысканье).
+        rotation.x = 0.0f;
+        rotation.z = std::atan2(-r01, r11);
+        (void)r02;
+        (void)r12;
     }
 }
 
@@ -100,13 +101,13 @@ inline Vec3 nearestEquivalentEuler(const Vec3& candidate, const Vec3& reference)
 }
 
 // Как decompose, но из двух равноценных записей поворота выбирает ближайшую к reference.
-// Для R = Ry(y) Rx(x) Rz(z) то же вращение даёт и (π − x, y + π, z + π): без выбора углы
-// в инспекторе прыгали бы при переходе X через ±90°.
+// Для R = Rz(z) Ry(y) Rx(x) то же вращение даёт и (x + π, π − y, z + π): без выбора углы
+// в инспекторе прыгали бы при переходе Y через ±90°.
 inline void decomposeNear(const Mat4& matrix, const Vec3& reference, Vec3& position, Vec3& rotation, Vec3& scale) {
     Vec3 first{};
     decompose(matrix, position, first, scale);
     first = nearestEquivalentEuler(first, reference);
-    const Vec3 second = nearestEquivalentEuler(Vec3{kPi - first.x, first.y + kPi, first.z + kPi}, reference);
+    const Vec3 second = nearestEquivalentEuler(Vec3{first.x + kPi, kPi - first.y, first.z + kPi}, reference);
     auto distance = [&reference](const Vec3& value) {
         return std::abs(value.x - reference.x) + std::abs(value.y - reference.y) + std::abs(value.z - reference.z);
     };

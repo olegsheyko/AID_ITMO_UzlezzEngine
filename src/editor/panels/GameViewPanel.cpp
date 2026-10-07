@@ -140,6 +140,22 @@ void GameViewPanel::draw(EditorContext& context) {
     drawList->AddRectFilled(labelMin, ImVec2(labelMin.x + labelSize.x + 14.0f, labelMin.y + labelSize.y + 6.0f),
         ImGui::GetColorU32(IM_COL32(0, 0, 0, 150)), 4.0f);
     drawList->AddText(ImVec2(labelMin.x + 7.0f, labelMin.y + 3.0f), ImGui::GetColorU32(IM_COL32(230, 230, 230, 255)), resolutionText);
+    EditorUI::popFont();
+
+    // HUD Lua-игры: статус, который пишет скрипт через world:set_status.
+    const std::string& gameStatus = context.scripts.status();
+    if (context.isPlaying() && !gameStatus.empty()) {
+        EditorUI::pushSemibold();
+        const bool defeat = gameStatus.rfind("DEFEAT", 0) == 0;
+        const std::string text = EditorUI::ellipsize(gameStatus.c_str(), imageSize.x - 60.0f);
+        const ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
+        const ImVec2 hudMin(std::floor(imageMin.x + (imageSize.x - textSize.x) * 0.5f - 14.0f), imageMin.y + 10.0f);
+        const ImVec2 hudMax(hudMin.x + textSize.x + 28.0f, hudMin.y + textSize.y + 12.0f);
+        drawList->AddRectFilled(hudMin, hudMax, ImGui::GetColorU32(defeat ? IM_COL32(120, 24, 24, 215) : IM_COL32(0, 0, 0, 165)), 14.0f);
+        drawList->AddText(ImVec2(hudMin.x + 14.0f, hudMin.y + 6.0f), ImGui::GetColorU32(IM_COL32(240, 240, 244, 255)), text.c_str());
+        EditorUI::popFont();
+    }
+    EditorUI::pushSmallFont();
 
     if (showStats) {
         char lines[3][64];

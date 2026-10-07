@@ -676,6 +676,8 @@ void SceneViewPanel::handleDrop(EditorContext& context, const ImVec2& min, const
             hint = ICON_LC_BAN "  Stop Play mode to edit the scene";
         } else if (draggedType == AssetType::Scene) {
             hint = ICON_LC_CLAPPERBOARD "  Open this scene";
+        } else if (draggedType == AssetType::Prefab) {
+            hint = ICON_LC_PACKAGE "  Place prefab here";
         } else if (applies) {
             hint = context.dropHighlight != kInvalidEntity ? ICON_LC_BRUSH "  Apply to the highlighted object"
                                                            : ICON_LC_BRUSH "  Drop on an object to apply";
@@ -693,6 +695,8 @@ void SceneViewPanel::handleDrop(EditorContext& context, const ImVec2& min, const
                 if (context.commitDragPreview() == kInvalidEntity && hasRay) {
                     context.createModel(path, context.dropPoint(origin, direction));
                 }
+            } else if (!context.isPlaying() && type == AssetType::Prefab && hasRay) {
+                context.spawnPrefab(path, context.dropPoint(origin, direction));
             } else if (!context.isPlaying() && applies && hasRay) {
                 const Entity hit = context.pick(origin, direction);
                 if (context.applyAssetToEntity(path, hit)) {

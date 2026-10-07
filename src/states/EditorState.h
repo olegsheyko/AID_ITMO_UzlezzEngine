@@ -6,6 +6,7 @@
 #include "editor/panels/ConsolePanel.h"
 #include "editor/panels/ContentBrowserPanel.h"
 #include "editor/panels/GameViewPanel.h"
+#include "editor/panels/GameplayPanel.h"
 #include "editor/panels/HierarchyPanel.h"
 #include "editor/panels/InspectorPanel.h"
 #include "editor/panels/RendererInfoPanel.h"
@@ -52,6 +53,7 @@ private:
     SceneViewPanel sceneView_;
     GameViewPanel gameView_;
     RendererInfoPanel rendererInfo_;
+    GameplayPanel gameplay_;
     ContentBrowserPanel contentBrowser_;
     ConsolePanel console_;
     EditorStartupOptions startup_;

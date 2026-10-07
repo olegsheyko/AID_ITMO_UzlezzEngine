@@ -23,6 +23,8 @@
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <type_traits>
+#include <variant>
 
 using namespace EditorTheme;
 
@@ -45,6 +47,22 @@ std::string shaderLabel(const std::string& key) {
         return fileName(key);
     }
     return fileName(key.substr(0, separator)) + "  |  " + fileName(key.substr(separator + 1));
+}
+
+// «pulse_radius» → «Pulse Radius», как Unity подписывает поля скриптов.
+std::string nicifyFieldName(const std::string& name) {
+    std::string result;
+    bool upper = true;
+    for (char c : name) {
+        if (c == '_') {
+            result += ' ';
+            upper = true;
+            continue;
+        }
+        result += upper ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c;
+        upper = false;
+    }
+    return result;
 }
 
 void drawChecker(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, float cell = 10.0f) {
@@ -228,6 +246,7 @@ void InspectorPanel::drawEntity(EditorContext& context, Entity entity) {
     drawCollider(context, entity, locked);
     drawSpin(context, entity, locked);
     drawCamera(context, entity, locked);
+    drawScript(context, entity, locked);
 
     ImGui::BeginDisabled(locked);
     drawAddComponent(context, entity);
@@ -703,6 +722,107 @@ void InspectorPanel::drawCamera(EditorContext& context, Entity entity, bool lock
     }
 }
 
+void InspectorPanel::drawScript(EditorContext& context, Entity entity, bool locked) {
+    if (!context.world.hasComponent<ScriptComponent>(entity)) {
+        return;
+    }
+    ScriptComponent& script = context.world.getComponent<ScriptComponent>(entity);
+    const std::string title = script.className.empty() ? std::string("Script") : script.className + " (Script)";
+    const bool canSave = !locked && !script.prefab.empty();
+    EditorUI::ComponentAction action;
+    if (EditorUI::componentHeader("script", ICON_LC_FILE_CODE, title.c_str(), !locked, action,
+            canSave ? ICON_LC_SAVE "  Save Fields to Prefab" : nullptr)) {
+        if (EditorUI::beginProperties("##script")) {
+            // Файлы скрипта и префаба — ссылки: клик показывает их в Content Browser.
+            auto assetLink = [&context](const char* label, const char* icon, const std::string& path) {
+                ImGui::PushID(label);
+                EditorUI::propertyLabel(label);
+                const std::string text = std::string(icon) + "  " + fileName(path);
+                ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+                if (ImGui::Button(text.c_str(), ImVec2(-FLT_MIN, 0.0f))) {
+                    context.revealAssetRequest = path;
+                }
+                ImGui::PopStyleVar();
+                ImGui::SetItemTooltip("%s\nClick to show in the Content Browser", path.c_str());
+                ImGui::PopID();
+            };
+            assetLink("Script", ICON_LC_FILE_CODE, script.path);
+            if (!script.prefab.empty()) {
+                assetLink("Prefab", ICON_LC_PACKAGE, script.prefab);
+            }
+            ImGui::BeginDisabled(locked);
+            for (auto& [name, value] : script.fields) {
+                const std::string label = nicifyFieldName(name);
+                ImGui::PushID(name.c_str());
+                std::visit([&label](auto& field) {
+                    using T = std::decay_t<decltype(field)>;
+                    if constexpr (std::is_same_v<T, bool>) {
+                        EditorUI::propertyCheckbox(label.c_str(), field);
+                    } else if constexpr (std::is_same_v<T, int>) {
+                        EditorUI::propertyLabel(label.c_str(), "Integer field");
+                        ImGui::DragInt("##value", &field, 0.1f);
+                    } else if constexpr (std::is_same_v<T, double>) {
+                        EditorUI::propertyLabel(label.c_str(), "Number field");
+                        ImGui::DragScalar("##value", ImGuiDataType_Double, &field, 0.02f, nullptr, nullptr, "%.3f");
+                    } else {
+                        char buffer[512] = {};
+                        std::copy_n(field.data(), std::min(field.size(), sizeof(buffer) - 1), buffer);
+                        EditorUI::propertyLabel(label.c_str(), "String field");
+                        if (ImGui::InputText("##value", buffer, sizeof(buffer))) {
+                            field = buffer;
+                        }
+                    }
+                }, value);
+                ImGui::PopID();
+            }
+            ImGui::EndDisabled();
+            EditorUI::endProperties();
+        }
+        if (script.fields.empty()) {
+            EditorUI::textFaint("No fields: declare them in the Lua class.");
+        }
+        if (!locked) {
+            ImGui::Dummy(ImVec2(0.0f, 2.0f));
+            const float spacing = ImGui::GetStyle().ItemSpacing.x;
+            const float half = (ImGui::GetContentRegionAvail().x - spacing) * 0.5f;
+            ImGui::BeginDisabled(!canSave);
+            if (ImGui::Button(ICON_LC_SAVE "  Save to Prefab", ImVec2(half, 0.0f))) {
+                action = EditorUI::ComponentAction::Extra;
+            }
+            ImGui::EndDisabled();
+            ImGui::SetItemTooltip("Write these values into %s.\nNew spawns and scene loads use the prefab, not this copy.",
+                script.prefab.empty() ? "the source prefab" : script.prefab.c_str());
+            ImGui::SameLine();
+            if (ImGui::Button(ICON_LC_REFRESH_CW "  Reload Scripts", ImVec2(-FLT_MIN, 0.0f))) {
+                const bool ok = context.reloadScripts();
+                scriptResultEntity_ = entity;
+                scriptResult_ = ok ? "Scripts reloaded." : context.scripts.error();
+                scriptResultError_ = !ok;
+            }
+            if (scriptResultEntity_ == entity && !scriptResult_.empty()) {
+                EditorUI::pushSmallFont();
+                ImGui::PushStyleColor(ImGuiCol_Text, toVec4(scriptResultError_ ? kError : kSuccess));
+                ImGui::TextWrapped("%s  %s", scriptResultError_ ? ICON_LC_CIRCLE_ALERT : ICON_LC_CHECK, scriptResult_.c_str());
+                ImGui::PopStyleColor();
+                EditorUI::popFont();
+            }
+        }
+        EditorUI::componentSpacing();
+    }
+    if (action == EditorUI::ComponentAction::Extra && canSave) {
+        const bool ok = context.savePrefabFields(entity);
+        scriptResultEntity_ = entity;
+        scriptResult_ = ok ? "Saved to " + fileName(script.prefab) + "." : context.scriptMessage;
+        scriptResultError_ = !ok;
+    } else if (action == EditorUI::ComponentAction::Reset) {
+        // Сброс к значениям по умолчанию из Lua-класса.
+        script.fields.clear();
+        context.scripts.attachDefaults(entity);
+    } else if (action == EditorUI::ComponentAction::Remove) {
+        context.world.removeComponent<ScriptComponent>(entity);
+    }
+}
+
 void InspectorPanel::drawAddComponent(EditorContext& context, Entity entity) {
     ImGui::Dummy(ImVec2(0.0f, 4.0f));
     const float width = std::min(240.0f, ImGui::GetContentRegionAvail().x);
@@ -813,6 +933,15 @@ void InspectorPanel::drawAsset(EditorContext& context, const std::string& path) 
         break;
     case AssetType::Material:
         drawMaterialAsset(context, *entry);
+        drawAssetActions(context, *entry);
+        drawTextAsset(*entry);
+        return;
+    case AssetType::Prefab:
+        ImGui::BeginDisabled(context.isPlaying());
+        if (EditorUI::primaryButton(ICON_LC_PACKAGE "  Add to Scene", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetFrameHeight() + 4.0f))) {
+            context.select(context.spawnPrefab(entry->path, context.dropPoint(context.camera.getPosition(), context.camera.getForward())));
+        }
+        ImGui::EndDisabled();
         drawAssetActions(context, *entry);
         drawTextAsset(*entry);
         return;
@@ -1120,7 +1249,8 @@ void InspectorPanel::drawAssetActions(EditorContext& context, const AssetEntry& 
 
 void InspectorPanel::drawTextAsset(const AssetEntry& entry) {
     const SyntaxLanguage language = entry.type == AssetType::Shader ? SyntaxLanguage::Glsl
-        : (entry.type == AssetType::Json || entry.type == AssetType::Scene) ? SyntaxLanguage::Json : SyntaxLanguage::Plain;
+        : (entry.type == AssetType::Json || entry.type == AssetType::Scene || entry.type == AssetType::Prefab) ? SyntaxLanguage::Json
+        : entry.extension == ".lua" ? SyntaxLanguage::Lua : SyntaxLanguage::Plain;
     if (textPath_ != entry.path || textModified_ != entry.modified) {
         textPath_ = entry.path;
         textModified_ = entry.modified;

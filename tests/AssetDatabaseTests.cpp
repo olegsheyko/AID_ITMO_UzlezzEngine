@@ -25,6 +25,8 @@ void classifiesByExtension() {
     require(AssetDatabase::classify("a/hat.mtl") == AssetType::Material, "mtl is a material");
     require(AssetDatabase::classify("a/mesh_vertex.glsl") == AssetType::Shader, "glsl is a shader");
     require(AssetDatabase::classify("assets/scenes/demo.json") == AssetType::Scene, "json in scenes is a scene");
+    require(AssetDatabase::classify("assets/prefabs/enemy.json") == AssetType::Prefab, "json in prefabs is a prefab");
+    require(AssetDatabase::classify("assets/scripts/enemy.lua") == AssetType::Script, "lua is a script");
     require(AssetDatabase::classify("assets/data/config.json") == AssetType::Json, "other json is plain JSON");
     require(AssetDatabase::classify("a/Inter.ttf") == AssetType::Font, "ttf is a font");
     require(AssetDatabase::classify("a/LICENSE") == AssetType::Other, "no extension is a generic file");

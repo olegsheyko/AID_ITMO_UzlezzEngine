@@ -15,3 +15,28 @@ RelWithDebInfo when `ENGINE_ENABLE_TRACY=ON`.
 
 The profiler UI/capture tools are separate executables. Use version 0.14.1
 to match this client's protocol. They are not required to build the engine.
+
+## Engine integration
+
+The main application marks complete frames and instruments input, simulation,
+rendering, presentation, resource decoding/upload, animation dispatch/wait, and
+shutdown. It also publishes the `Jobs in flight`, `Loads pending`, and
+`Animated characters` plots. enkiTS callbacks name worker threads and expose
+their sleep/wait intervals.
+
+Five Windows-only D3D12 examples live in `demos/tracy`: `zones`, `locks`,
+`memory`, `messages`, and `gpu`. Build them with
+`ENGINE_BUILD_TRACY_DEMOS=ON`; `Build-Demos.ps1` and `Capture-Demos.ps1` provide
+the project-specific workflow. These demos are independent of the OpenGL engine.
+
+Useful CMake switches:
+
+- `ENGINE_ENABLE_TRACY` — enable the client in Release/RelWithDebInfo;
+- `ENGINE_TRACY_SAMPLING_HZ` — sampling frequency, default 4000 Hz;
+- `ENGINE_TRACY_MANUAL_SAMPLING` — let demo controls start sampling;
+- `ENGINE_TRACY_NO_SAMPLING` — disable stack sampling;
+- `ENGINE_BUILD_TRACY_DEMOS` — build the five demos on Windows.
+
+Saved engine captures and exported zone/frame data are stored in
+`docs/lab1/acceptance/traces-final`. They were recorded with the pinned 0.14.1
+client and should be opened with the matching profiler version.

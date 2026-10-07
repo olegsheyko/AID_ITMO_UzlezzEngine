@@ -110,6 +110,31 @@ void inspectModel(const std::string& path, const std::filesystem::path& output, 
         std::cout << "CLIP " << clip.name << " seconds=" << clip.duration << " tracks=" << tracks << " keys=" << keys << '\n';
     }
     require(!mesh.skeleton.clips.empty(),"User model has no clips");
+    // Full locomotion cycle in the same source/model convention as the enemy prefab.
+    AnimationPose inPlace; Animation::preparePose(mesh,inPlace);
+    size_t hips=0;
+    while(hips<mesh.skeleton.nodes.size() && mesh.skeleton.nodes[hips].name!="mixamorig:Hips")++hips;
+    require(hips<mesh.skeleton.nodes.size(),"Walking locomotion node missing");
+    Animation::evaluate(mesh,0,0,inPlace,"mixamorig:Hips");
+    const auto startHips=inPlace.globals[hips];
+    float lowest=1e30f, highestFoot=-1e30f;
+    for(int phase=0;phase<64;++phase) {
+        Animation::evaluate(mesh,0,mesh.skeleton.clips[0].duration*phase/64.0,inPlace,"mixamorig:Hips");
+        close(inPlace.globals[hips].values[12],startHips.values[12],"In-place walk drifts sideways");
+        close(inPlace.globals[hips].values[14],startHips.values[14],"In-place walk drifts forward and snaps on loop");
+        float foot=1e30f;
+        for(size_t s=0;s<mesh.subMeshes.size();++s)for(const auto& v:mesh.subMeshes[s].vertices) {
+            float y=0;
+            for(size_t b=0;b<4;++b) {
+                const auto& m=inPlace.palettes[s][v.boneIds[b]].values;
+                y+=v.boneWeights[b]*(m[1]*v.position.x+m[5]*v.position.y+m[9]*v.position.z+m[13]);
+            }
+            foot=std::min(foot,y*.01106f);
+        }
+        lowest=std::min(lowest,foot);highestFoot=std::max(highestFoot,foot);
+    }
+    std::cout<<"WALK ground bounds "<<lowest<<" .. "<<highestFoot<<'\n';
+    require(lowest>-.05f && highestFoot<.1f,"Walking feet leave the ground plane");
     AnimationPose first, later;
     Animation::preparePose(mesh,first); Animation::preparePose(mesh,later);
     Animation::evaluate(mesh,0,0,first); Animation::evaluate(mesh,0,mesh.skeleton.clips[0].duration*.25,later);
@@ -142,7 +167,9 @@ void inspectModel(const std::string& path, const std::filesystem::path& output, 
     for (int i=0;i<512;++i) {
         Entity e=world.createEntity(); entities.push_back(e);
         world.addComponent<MeshRenderer>(e).cachedMesh=resource;
-        world.addComponent<Animator>(e).time=mesh.skeleton.clips[0].duration*i/512;
+        auto& animator=world.addComponent<Animator>(e);
+        animator.time=mesh.skeleton.clips[0].duration*i/512;
+        if(i%2==0)animator.inPlaceNode="mixamorig:Hips";
     }
     AnimationSystem system; system.parallel=false; system.update(world,0);
     std::vector<AnimationPose> poses;

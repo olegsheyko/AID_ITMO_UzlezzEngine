@@ -11,4 +11,5 @@ constexpr const char* kGame = ICON_LC_GAMEPAD_2 "  Game###Game";
 constexpr const char* kRendererInfo = ICON_LC_ACTIVITY "  Renderer Info###RendererInfo";
 constexpr const char* kContentBrowser = ICON_LC_FOLDER "  Content Browser###ContentBrowser";
 constexpr const char* kConsole = ICON_LC_SQUARE_TERMINAL "  Console###Console";
+constexpr const char* kGameplay = ICON_LC_SWORDS "  Gameplay###Gameplay";
 } // namespace EditorWindow

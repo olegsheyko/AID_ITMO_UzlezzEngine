@@ -26,7 +26,7 @@ using namespace EditorTheme;
 
 namespace {
 // Растёт, когда меняется раскладка по умолчанию: старый imgui.ini тогда собирается заново.
-constexpr int kLayoutVersion = 3;
+constexpr int kLayoutVersion = 4;
 
 // Настройки редактора в imgui.ini, секция [UzlezzEditor][Preferences].
 // Хранятся статически: ImGui пишет ini и после того, как состояние редактора уже уничтожено.
@@ -56,6 +56,7 @@ const char* windowForKey(const std::string& key) {
     if (key == "content") return EditorWindow::kContentBrowser;
     if (key == "console") return EditorWindow::kConsole;
     if (key == "renderer") return EditorWindow::kRendererInfo;
+    if (key == "gameplay") return EditorWindow::kGameplay;
     return nullptr;
 }
 
@@ -177,6 +178,7 @@ void EditorState::loadPreferences() {
     sceneView_.open = prefBool("ShowScene", true);
     gameView_.open = prefBool("ShowGame", true);
     rendererInfo_.open = prefBool("ShowRendererInfo", true);
+    gameplay_.open = prefBool("ShowGameplay", true);
     contentBrowser_.open = prefBool("ShowContentBrowser", true);
     console_.open = prefBool("ShowConsole", true);
 }
@@ -217,6 +219,7 @@ void EditorState::storePreferences() {
     setBool("ShowScene", sceneView_.open);
     setBool("ShowGame", gameView_.open);
     setBool("ShowRendererInfo", rendererInfo_.open);
+    setBool("ShowGameplay", gameplay_.open);
     setBool("ShowContentBrowser", contentBrowser_.open);
     setBool("ShowConsole", console_.open);
     if (values != preferences()) {
@@ -283,6 +286,8 @@ void EditorState::render() {
     rendererInfo_.draw(context_);
     contentBrowser_.draw(context_, lastDt_);
     console_.draw();
+    // После Content Browser: новая вкладка в том же доке не перехватывает выбор при первом показе.
+    gameplay_.draw(context_);
     inspector_.draw(context_);
     renderModals();
     if (showImGuiDemo_) {
@@ -399,6 +404,11 @@ void EditorState::renderMainMenu() {
             }
             ImGui::EndMenu();
         }
+        if (ImGui::MenuItem(ICON_LC_SWORDS "  Open Arena (Lua)", nullptr, context_.isArenaScene())) {
+            context_.loadArenaScene();
+            gameplay_.open = true;
+            context_.focusWindowRequest = EditorWindow::kGameplay;
+        }
         if (ImGui::MenuItem(ICON_LC_ROTATE_CCW "  Reload Scene")) {
             context_.reloadScene();
         }
@@ -472,6 +482,7 @@ void EditorState::renderMainMenu() {
         ImGui::MenuItem(ICON_LC_BOX "  Scene", nullptr, &sceneView_.open);
         ImGui::MenuItem(ICON_LC_GAMEPAD_2 "  Game", nullptr, &gameView_.open);
         ImGui::MenuItem(ICON_LC_ACTIVITY "  Renderer Info", nullptr, &rendererInfo_.open);
+        ImGui::MenuItem(ICON_LC_SWORDS "  Gameplay", nullptr, &gameplay_.open);
         ImGui::MenuItem(ICON_LC_FOLDER "  Content Browser", nullptr, &contentBrowser_.open);
         ImGui::MenuItem(ICON_LC_SQUARE_TERMINAL "  Console", nullptr, &console_.open);
         ImGui::Separator();
@@ -582,6 +593,7 @@ void EditorState::renderMainToolbar() {
             ImGui::MenuItem("Scene", nullptr, &sceneView_.open);
             ImGui::MenuItem("Game", nullptr, &gameView_.open);
             ImGui::MenuItem("Renderer Info", nullptr, &rendererInfo_.open);
+            ImGui::MenuItem("Gameplay", nullptr, &gameplay_.open);
             ImGui::MenuItem("Content Browser", nullptr, &contentBrowser_.open);
             ImGui::MenuItem("Console", nullptr, &console_.open);
             ImGui::EndPopup();
@@ -701,6 +713,7 @@ void EditorState::buildDefaultLayout(unsigned int dockspaceId) {
     ImGui::DockBuilderDockWindow(EditorWindow::kRendererInfo, center);
     ImGui::DockBuilderDockWindow(EditorWindow::kContentBrowser, bottom);
     ImGui::DockBuilderDockWindow(EditorWindow::kConsole, bottom);
+    ImGui::DockBuilderDockWindow(EditorWindow::kGameplay, bottom);
     ImGui::DockBuilderFinish(dockspaceId);
     if (ImGuiDockNode* node = ImGui::DockBuilderGetNode(center)) {
         node->SelectedTabId = ImHashStr(EditorWindow::kScene);
@@ -709,7 +722,7 @@ void EditorState::buildDefaultLayout(unsigned int dockspaceId) {
         node->SelectedTabId = ImHashStr(EditorWindow::kContentBrowser);
     }
     hierarchy_.open = inspector_.open = sceneView_.open = gameView_.open = true;
-    rendererInfo_.open = contentBrowser_.open = console_.open = true;
+    rendererInfo_.open = contentBrowser_.open = console_.open = gameplay_.open = true;
 }
 
 void EditorState::renderModals() {

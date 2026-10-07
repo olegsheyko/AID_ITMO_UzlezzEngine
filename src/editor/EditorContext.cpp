@@ -9,6 +9,7 @@
 #include "input/InputManager.h"
 #include "input/KeyCode.h"
 #include "math/CameraMath.h"
+#include "prefabs/PrefabManager.h"
 #include "render/IRenderAdapter.h"
 #include "resources/HotReload.h"
 #include "resources/ResourceManager.h"
@@ -33,6 +34,8 @@ constexpr float kScaleStep = 0.1f;
 constexpr float kRotationStep = kPi / 4.0f;
 constexpr float kMinScale = 0.1f;
 constexpr const char* kDefaultScenePath = "assets/scenes/demo_scene.json";
+// Сцена ЛР 2 собирается из префабов, а не из манифеста.
+constexpr const char* kArenaScenePath = "assets/prefabs/arena.json";
 constexpr const char* kCubeMeshPath = "primitive:cube";
 constexpr const char* kCubeTexturePath = "assets/textures/WoodCrate02.dds";
 constexpr const char* kVertexShaderPath = "assets/shaders/mesh_vertex.glsl";
@@ -125,6 +128,9 @@ EditorContext::EditorContext(IRenderAdapter& renderer)
       renderSystem(renderer),
       debugRenderSystem(renderer),
       stress(renderer) {
+    // Враги из волн появляются через тот же PrefabManager, что и в редакторе.
+    scripts.spawnPrefab = [this](const std::string& path) { return PrefabManager::spawn(world, path); };
+    scripts.inputPressed = [](const std::string& action) { return InputManager::getInstance().isActionPressed(action); };
 }
 
 void EditorContext::enter() {
@@ -145,6 +151,7 @@ void EditorContext::enter() {
 }
 
 void EditorContext::exit() {
+    scripts.stop();
     previewer.release();
     ServiceLocator::getEventDispatcher().clear();
     world.clear();
@@ -207,17 +214,27 @@ void EditorContext::update(float dt) {
     }
 }
 
-bool EditorContext::loadScene(const std::string& manifestPath) {
+void EditorContext::resetSceneState() {
     cancelDragPreview();
     dropHighlight = kInvalidEntity;
     if (mode == EditorMode::Play) {
         stop();
     }
-    scenePath_ = manifestPath;
     pendingFits_.clear();
     boundsCache_.clear();
     renamingEntity = kInvalidEntity;
     selectedAsset.clear();
+    scriptMessage.clear();
+    scriptMessageIsError = false;
+}
+
+bool EditorContext::loadScene(const std::string& manifestPath) {
+    if (manifestPath == kArenaScenePath) {
+        loadArenaScene();
+        return true;
+    }
+    resetSceneState();
+    scenePath_ = manifestPath;
     createScene();
     createGameCamera();
     createEditorCameraEntity();
@@ -254,7 +271,102 @@ void EditorContext::reloadScene() {
 }
 
 std::string EditorContext::sceneName() const {
+    if (isArenaScene()) {
+        return "Arena";
+    }
     return scenePath_.empty() ? std::string("Untitled") : std::filesystem::path(scenePath_).stem().string();
+}
+
+bool EditorContext::isArenaScene() const {
+    return scenePath_ == kArenaScenePath;
+}
+
+void EditorContext::setScriptMessage(const std::string& message, bool isError) {
+    scriptMessage = message;
+    scriptMessageIsError = isError;
+}
+
+void EditorContext::loadArenaScene() {
+    resetSceneState();
+    scenePath_ = kArenaScenePath;
+    scripts.stop();
+    animationDemoEntities.clear();
+    animationLoad.reset();
+    world.clear();
+    selected = controllableEntity = gameCameraEntity = editorCameraEntity = prefabPreview = kInvalidEntity;
+    try {
+        PrefabManager::spawn(world, "assets/prefabs/arena.json");
+        selected = PrefabManager::spawn(world, "assets/prefabs/core.json");
+        PrefabManager::spawn(world, "assets/prefabs/waves.json");
+        prefabPreview = PrefabManager::spawn(world, "assets/prefabs/enemy.json");
+        world.getComponent<Tag>(prefabPreview).name = "Enemy prefab (Edit preview)";
+        world.getComponent<Transform>(prefabPreview).position = Vec3{-5.0f, 0.0f, 0.0f};
+        if (scripts.reload()) {
+            setScriptMessage("Arena loaded. Select an entity to edit its script fields; save the enemy prefab before Play.", false);
+        } else {
+            setScriptMessage(scripts.error(), true);
+        }
+    } catch (const std::exception& error) {
+        LOG_ERROR(std::string("Arena: ") + error.what());
+        setScriptMessage(error.what(), true);
+    }
+    createGameCamera();
+    Transform& gameCamera = world.getComponent<Transform>(gameCameraEntity);
+    gameCamera.position = Vec3{0.0f, -24.0f, 16.0f};
+    gameCamera.rotation = Vec3{-0.58f, 0.0f, 0.0f};
+    camera.focus(Vec3{0.0f, 0.0f, 0.0f}, 12.0f);
+    createEditorCameraEntity();
+    setCameraMode();
+    placeGridOnGround();
+    LOG_INFO("Editor: loaded the Lua arena scene");
+}
+
+bool EditorContext::reloadScripts() {
+    const bool ok = scripts.reload();
+    setScriptMessage(ok ? "Scripts reloaded." : scripts.error(), !ok);
+    if (ok) {
+        LOG_INFO("Lua: scripts reloaded");
+    }
+    return ok;
+}
+
+bool EditorContext::savePrefabFields(Entity entity) {
+    if (!world.isAlive(entity) || !world.hasComponent<ScriptComponent>(entity)) {
+        return false;
+    }
+    std::string error;
+    const ScriptComponent& script = world.getComponent<ScriptComponent>(entity);
+    const bool ok = PrefabManager::saveFields(script, error);
+    if (ok) {
+        setScriptMessage("Saved fields to " + script.prefab + ": used by the next spawn and scene load.", false);
+        LOG_INFO("Prefab: saved script fields to " + script.prefab);
+        assets.refresh();
+    } else {
+        setScriptMessage(error, true);
+        LOG_ERROR("Prefab: " + error);
+    }
+    return ok;
+}
+
+Entity EditorContext::spawnPrefab(const std::string& path, const Vec3& position) {
+    if (mode == EditorMode::Play) {
+        return kInvalidEntity;
+    }
+    try {
+        const Entity entity = PrefabManager::spawn(world, path);
+        Transform& transform = world.getComponent<Transform>(entity);
+        transform.position = add(position, transform.position);
+        if (world.hasComponent<ScriptComponent>(entity)) {
+            scripts.attachDefaults(entity);
+        }
+        select(entity);
+        LOG_INFO("Editor: placed prefab " + path);
+        return entity;
+    } catch (const std::exception& error) {
+        LOG_ERROR("Prefab " + path + ": " + error.what());
+        setScriptMessage(error.what(), true);
+        return kInvalidEntity;
+    }
 }
 
 void EditorContext::bindActions() {
@@ -268,6 +380,8 @@ void EditorContext::bindActions() {
     inputManager.bindAction("MoveBackward", KeyCode::Down);
     inputManager.bindAction("MoveBackward", KeyCode::S);
     inputManager.bindAction("Jump", KeyCode::Space);
+    inputManager.bindAction("StartWave", KeyCode::Space);
+    inputManager.bindAction("DefensePulse", KeyCode::F);
     inputManager.bindAction("CameraForward", KeyCode::W);
     inputManager.bindAction("CameraBackward", KeyCode::S);
     inputManager.bindAction("CameraLeft", KeyCode::A);
@@ -277,8 +391,10 @@ void EditorContext::bindActions() {
 }
 
 void EditorContext::createScene() {
+    scripts.stop();
     animationDemoEntities.clear();
     world.clear();
+    prefabPreview = kInvalidEntity;
     selected = kInvalidEntity;
     controllableEntity = kInvalidEntity;
     gameCameraEntity = kInvalidEntity;
@@ -653,6 +769,9 @@ Entity EditorContext::duplicate(Entity source) {
 
     std::function<Entity(Entity, Entity, bool)> copy = [&](Entity from, Entity newParent, bool isRoot) -> Entity {
         const Entity entity = world.createEntity();
+        if (world.hasComponent<ScriptComponent>(from)) {
+            world.addComponent<ScriptComponent>(entity, world.getComponent<ScriptComponent>(from));
+        }
         if (world.hasComponent<Tag>(from)) {
             world.addComponent<Tag>(entity, Tag{world.getComponent<Tag>(from).name + (isRoot ? " Copy" : "")});
         } else {
@@ -725,6 +844,9 @@ void EditorContext::destroy(Entity entity) {
     }
     if (gameCameraEntity == entity) {
         gameCameraEntity = kInvalidEntity;
+    }
+    if (prefabPreview == entity) {
+        prefabPreview = kInvalidEntity;
     }
     animationDemoEntities.erase(
         std::remove(animationDemoEntities.begin(), animationDemoEntities.end(), entity), animationDemoEntities.end());
@@ -1010,6 +1132,21 @@ void EditorContext::play() {
     cancelDragPreview();
     dropHighlight = kInvalidEntity;
     playSnapshot_ = captureSnapshot();
+    // Превью врага только для настройки полей: в игре враги появляются из JSON префаба.
+    if (world.isAlive(prefabPreview)) {
+        world.destroyEntity(prefabPreview);
+    }
+    if (!scripts.start()) {
+        restoreSnapshot(playSnapshot_);
+        createEditorCameraEntity();
+        setCameraMode();
+        setScriptMessage("Play cancelled: " + scripts.error(), true);
+        LOG_WARN("Editor: Play cancelled, Lua scripts failed to start");
+        return;
+    }
+    if (scriptMessageIsError) {
+        setScriptMessage("", false);
+    }
     mode = EditorMode::Play;
     setCameraMode();
     updateGameCamera(0.0f, false);
@@ -1023,6 +1160,7 @@ void EditorContext::stop() {
     if (mode != EditorMode::Play) {
         return;
     }
+    scripts.stop();
     restoreSnapshot(playSnapshot_);
     mode = EditorMode::Edit;
     paused = false;
@@ -1178,6 +1316,7 @@ void EditorContext::renderGameView(int width, int height) {
 
 void EditorContext::updateGameplay(float dt, bool allowInput) {
     ZoneScopedN("Simulation");
+    scripts.update(dt, allowInput);
     if (allowInput) {
         processGameplayInput();
     }
@@ -1283,6 +1422,7 @@ void EditorContext::processGameplayInput() {
 EditorContext::SceneSnapshot EditorContext::captureSnapshot() const {
     SceneSnapshot snapshot;
     snapshot.selected = selected;
+    snapshot.prefabPreview = prefabPreview;
     snapshot.controllableEntity = controllableEntity;
     snapshot.gameCameraEntity = gameCameraEntity;
 
@@ -1293,6 +1433,10 @@ EditorContext::SceneSnapshot EditorContext::captureSnapshot() const {
 
         EntitySnapshot entitySnapshot;
         entitySnapshot.entity = entity;
+        if (world.hasComponent<ScriptComponent>(entity)) {
+            entitySnapshot.hasScript = true;
+            entitySnapshot.script = world.getComponent<ScriptComponent>(entity);
+        }
         if (world.hasComponent<Tag>(entity)) {
             entitySnapshot.hasTag = true;
             entitySnapshot.tag = world.getComponent<Tag>(entity);
@@ -1346,6 +1490,7 @@ void EditorContext::restoreSnapshot(const SceneSnapshot& snapshot) {
 
     for (const EntitySnapshot& entitySnapshot : snapshot.entities) {
         const Entity entity = entitySnapshot.entity;
+        if (entitySnapshot.hasScript) world.addComponent<ScriptComponent>(entity, entitySnapshot.script);
         if (entitySnapshot.hasTag) world.addComponent<Tag>(entity, entitySnapshot.tag);
         if (entitySnapshot.hasTransform) world.addComponent<Transform>(entity, entitySnapshot.transform);
         if (entitySnapshot.hasMeshRenderer) world.addComponent<MeshRenderer>(entity, entitySnapshot.meshRenderer);
@@ -1358,6 +1503,7 @@ void EditorContext::restoreSnapshot(const SceneSnapshot& snapshot) {
     }
 
     selected = world.isAlive(snapshot.selected) ? snapshot.selected : kInvalidEntity;
+    prefabPreview = world.isAlive(snapshot.prefabPreview) ? snapshot.prefabPreview : kInvalidEntity;
     controllableEntity = snapshot.controllableEntity;
     gameCameraEntity = snapshot.gameCameraEntity;
 }
