@@ -1,0 +1,4 @@
+{
+    // lua-language-server: автодополнение и проверка типов по tools/lua-stubs (.luarc.json).
+    "recommendations": ["sumneko.lua"]
+}

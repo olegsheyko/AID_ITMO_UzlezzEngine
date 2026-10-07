@@ -11,7 +11,8 @@
 #include <windows.h>
 #endif
 namespace {
-using Json=nlohmann::json;
+// ordered_json: Save to Prefab не переставляет ключи файла.
+using Json=nlohmann::ordered_json;
 Vec3 vector(const Json& j,Vec3 fallback){
     if(j.is_null())return fallback;
     if(!j.is_array()||j.size()!=3)throw std::runtime_error("Expected vector of three numbers");
@@ -95,8 +96,9 @@ bool PrefabManager::saveFields(const ScriptComponent& component,std::string& err
         Json doc;in>>doc;in.close();
         auto& script=doc.at("components").at("script");
         if(script.at("path")!=component.path||script.at("class")!=component.className)throw std::runtime_error("Prefab script changed on disk; reload before saving");
-        auto fields=Json::object();for(const auto& item:component.fields)std::visit([&](const auto& x){fields[item.first]=x;},item.second);
-        script["fields"]=fields;
+        auto& fields=script["fields"];if(!fields.is_object())fields=Json::object();
+        for(auto it=fields.begin();it!=fields.end();)it=component.fields.count(it.key())?std::next(it):fields.erase(it);
+        for(const auto& item:component.fields)std::visit([&](const auto& x){fields[item.first]=x;},item.second);
         const std::filesystem::path target(component.prefab),temp(component.prefab+".tmp");
         {std::ofstream out(temp,std::ios::binary|std::ios::trunc);out<<doc.dump(2)<<'\n';out.flush();if(!out)throw std::runtime_error("Cannot save prefab temporary file");}
 #ifdef _WIN32

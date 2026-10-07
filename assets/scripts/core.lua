@@ -1,3 +1,6 @@
+---Ядро: HP и защитный импульс по F. Поля баланса — в fields и префабе core.json.
+---@class Core : uzlezz.Behaviour
+---@field cooldown number секунды до следующего импульса
 Core = uzlezz.behaviour {
     fields = {health = 10, pulse_radius = 6.0, pulse_cooldown = 2.0}
 }
@@ -22,4 +25,5 @@ function Core:on_update(dt)
         end
         self.cooldown = math.max(0.0, self.entity:get_field("pulse_cooldown"))
     end
+    --while true do end
 end

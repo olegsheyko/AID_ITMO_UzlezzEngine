@@ -1,8 +1,8 @@
 # Uzlezz Engine — актуальная архитектура
 
-Документ обновлён 06.10.2026: рабочее дерево на базе `8bc4056`.
-Помимо ПЗ/ЛР 1 (Job System, ресурсы, Tracy, анимация) реализован базовый
-скриптинг ЛР 2 на Lua. Инструкция: [ЛР 2](lab2/README.md).
+Документ обновлён 07.10.2026: ветка `feature/lab2-extras` на базе `9e476bf`.
+Помимо ПЗ/ЛР 1 (Job System, ресурсы, Tracy, анимация) реализован скриптинг ЛР 2
+на Lua с hot reload в Play и лимитами скриптов. Инструкция: [ЛР 2](lab2/README.md).
 
 - **Стандарт:** C++17, CMake 3.16+
 - **Графика и UI:** OpenGL 3.3 core, GLFW, GLAD, Dear ImGui, ImGuizmo
@@ -265,6 +265,16 @@ Tracy client собирается из `external/tracy/public/TracyClient.cpp`. 
 
 ## 10. Сборка, запуск и тесты
 
+macOS (Homebrew: `brew install cmake glfw assimp`):
+
+```bash
+tools/setup_lua.sh
+cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release
+cmake --build build/mac --parallel
+ctest --test-dir build/mac --output-on-failure
+./build/mac/GameEngine        # из корня репозитория: пути к assets относительные
+```
+
 Типичная Windows-сборка:
 
 ```powershell
@@ -288,7 +298,10 @@ cmake -S . -B build -DENGINE_ENABLE_TRACY=OFF
 4. `JobSystemTests`;
 5. `CoordinateSystemTests`;
 6. `TextureResourceTests`, включая OpenGL и GPU skinning;
-7. `ScriptSystemTests`: Lua lifecycle, волны, импульс, ссылки, ошибки, reload и JSON.
+7. `ScriptSystemTests`: Lua lifecycle, волны, импульс, ссылки, ошибки, reload и JSON;
+8. `ScriptRuntimeTests`: файл:строка у ошибок биндингов, print, типы полей, лимиты
+   времени и памяти, stubs для IDE, hot reload в Play (L1/L2), вотчер на job system;
+9. `AssetDatabaseTests`, `EditorMathTests`: модель и математика редактора.
 
 У `GameEngine` нет отдельного `--help`; актуальную строку синтаксиса печатает
 запуск с неизвестным аргументом. Основные режимы: `--bench`, `--stress-seconds`,
@@ -331,14 +344,38 @@ MeshRenderer, Animator, Collider, Rigidbody, ScriptComponent. При ошибк�
 через временный файл и замену; остальные ключи сохраняются.
 
 `EditorContext` владеет `ScriptSystem` и загружает демосцену; окно **Gameplay**
-(`src/editor/panels/GameplayPanel`) открывает Arena, перезагружает скрипты только
-в Edit и показывает статус и ошибки Lua, карточка Script в Inspector редактирует
-поля. Stop уничтожает экземпляры скриптов, затем восстанавливает snapshot,
+(`src/editor/panels/GameplayPanel`) открывает Arena, перезагружает скрипты
+(в Edit — целиком, в Play — hot reload), показывает статус, ошибки Lua, кучу Lua
+и время скриптов за кадр; карточка Script в Inspector редактирует поля. Stop уничтожает экземпляры скриптов, затем восстанавливает snapshot,
 включая значения полей. Preview врага виден в Edit для настройки префаба и исключён из Play.
 
 Скрипты `assets/scripts/{core,enemy,waves}.lua` содержат всю механику защиты
 ядра. C++ не рассчитывает волны, урон, cooldown и условия поражения.
-Ошибки Lua изолируют проблемный экземпляр и показывают traceback в UI/логе.
-Reload загружает файл в свежее Lua environment и проверяет прототипы/типы полей до замены;
-Открыты только base/math/table/string; require/package, io/os/debug не открываются.
-Скрипты доверенные: бесконечный цикл или неограниченные аллокации не изолированы sandbox-ом.
+Ошибки Lua изолируют проблемный экземпляр: в UI первая строка с файл:строка,
+в логе — со стеком. Исключения из C++-биндингов (неизвестное поле, протухший handle)
+тоже получают место вызова: собственный exception handler sol2 добавляет `luaL_where`.
+Reload загружает файл в свежее Lua environment и проверяет прототипы/типы полей до замены.
+Поля компонента приводятся к объявлению класса: целое расширяется до number,
+удалённое из Lua поле выбрасывается с предупреждением — reload от этого не падает.
+Открыты только base/math/table/string без `dofile`/`loadfile`; `print` идёт в лог.
+
+**Sandbox.** Куча Lua идёт через собственный аллокатор с потолком (256 МБ по умолчанию),
+а count-хук раз в 1000 инструкций прерывает вызов, превысивший бюджет (100 мс).
+Бесконечный цикл даёт ошибку с файл:строка цикла и отключает только этот экземпляр.
+
+**Hot reload.** `ScriptWatcher` раз в 200 мс ставит фоновую задачу job system: обход
+`assets/scripts` и файлов сцены, метка `last_write_time` + размер, debounce на два опроса,
+чтение и проверка синтаксиса в одноразовом `lua_State`. Главный поток забирает результат
+и вызывает `ScriptSystem::hotReload(path, source, mode)`: классы файла собираются и
+проверяются целиком, при ошибке работает прежний код. В Play каждый экземпляр получает
+новый объект и `on_create`; режим L2 переносит `self.*` с тем же типом, кроме полей, чьё
+начальное значение после `on_create` изменилось в коде; класс может взять перенос на себя
+через `on_reload(old)`. Режим L1 оставляет состояние из `on_create`. Отключённые ошибкой
+экземпляры оживают с исправленным кодом.
+
+**Профилирование.** Зоны Tracy `Lua: update`, `Lua: reload`, `Lua: hot reload`, по зоне
+на каждый entry point с именем `Класс:метод`, зоны вотчера на воркере; графики
+`Lua memory KB` и `Lua instances`.
+
+**IDE.** `tools/lua-stubs/uzlezz.lua` — аннотации lua-language-server (`.luarc.json`);
+`ScriptRuntimeTests` сверяет их с метатаблицами usertype через `ScriptSystem::apiNames()`.

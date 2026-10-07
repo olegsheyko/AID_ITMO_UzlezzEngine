@@ -1,3 +1,10 @@
+---Волны: Space запускает волну, враги спавнятся из префаба по кругу вокруг ядра.
+---@class Waves : uzlezz.Behaviour
+---@field wave integer номер текущей волны
+---@field remaining integer врагов волны ещё не заспавнено
+---@field timer number секунды до следующего спавна
+---@field serial integer порядковый номер спавна в волне
+---@field wave_count integer размер текущей волны
 Waves = uzlezz.behaviour {
     fields = {first_wave_count = 4, count_increment = 2,
               spawn_interval = 0.6, spawn_radius = 10.0,

@@ -1,6 +1,7 @@
 #include "scripting/ScriptSystem.h"
 #include "prefabs/PrefabManager.h"
 #include "ecs/Components.h"
+#include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -8,16 +9,25 @@
 
 void require(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
 void write(const std::filesystem::path& path,const std::string& text){std::ofstream out(path);out<<text;require(bool(out),"fixture write failed");}
+// Копия игрового префаба с закреплёнными числами: баланс в assets/prefabs крутят на демо, ожидания теста от него не зависят.
+std::string pinned(const std::filesystem::path& dir,const std::string& name,const nlohmann::json& fields){
+    std::ifstream in("assets/prefabs/"+name);require(bool(in),"prefab not found");
+    nlohmann::json doc;in>>doc;doc["components"]["script"]["fields"]=fields;
+    const auto path=dir/name;write(path,doc.dump(2));return path.string();
+}
 int main(int argc,char** argv){
     try {
         const auto dir=std::filesystem::absolute(argc>1?argv[1]:"script-fixtures");
         std::filesystem::create_directories(dir);
+        const std::string enemyPrefab=pinned(dir,"enemy.json",{{"speed",1.5},{"damage",1},{"attack_radius",1.2},{"animation_speed",1.0},{"target_tag","Core"}});
+        const std::string corePrefab=pinned(dir,"core.json",{{"health",10},{"pulse_radius",6.0},{"pulse_cooldown",2.0}});
+        const std::string wavesPrefab=pinned(dir,"waves.json",{{"first_wave_count",4},{"count_increment",2},{"spawn_interval",0.6},{"spawn_radius",10.0},{"enemy_prefab",enemyPrefab}});
         World world;ScriptSystem scripts(world);
         scripts.spawnPrefab=[&](const std::string& path){return PrefabManager::spawn(world,path,false);};
         bool wave=false,pulse=false;
         scripts.inputPressed=[&](const std::string& name){return name=="StartWave"?wave:name=="DefensePulse"?pulse:false;};
-        Entity core=PrefabManager::spawn(world,"assets/prefabs/core.json",false);
-        PrefabManager::spawn(world,"assets/prefabs/waves.json",false);
+        Entity core=PrefabManager::spawn(world,corePrefab,false);
+        PrefabManager::spawn(world,wavesPrefab,false);
         require(scripts.start(),scripts.error().c_str());
         wave=true;scripts.update(.1f,false);
         require(world.getEntityCount()==2,"input must be gated by viewport focus");
@@ -29,16 +39,20 @@ int main(int argc,char** argv){
         require(world.getEntityCount()==2,"arrived enemies must be removed");
         // 30 minutes of simulated game time, continuously starting waves.
         // Replenish HP only in the test harness so gameplay remains active.
+        std::size_t warmHeap=0;
         for(int i=0;i<36000;++i){
             world.getComponent<ScriptComponent>(core).fields["health"]=1000;
             wave=true;scripts.update(.05f,true);
             require(scripts.error().empty(),scripts.error().c_str());
             require(scripts.instanceCount()<100,"unexpected instance growth");
+            if(i==1200)warmHeap=scripts.stats().peakMemoryBytes; // первая минута: волны уже идут
         }
+        // Куча Lua за 30 минут не растёт: пик после первой минуты и пик за всю сессию близки.
+        require(scripts.stats().peakMemoryBytes<warmHeap+(std::size_t(4)<<20),"Lua heap grows over a long session");
         wave=false;scripts.stop();world.clear();
-        core=PrefabManager::spawn(world,"assets/prefabs/core.json",false);
+        core=PrefabManager::spawn(world,corePrefab,false);
         require(scripts.start(),scripts.error().c_str());
-        auto enemy=PrefabManager::spawn(world,"assets/prefabs/enemy.json",false);
+        auto enemy=PrefabManager::spawn(world,enemyPrefab,false);
         world.getComponent<Transform>(enemy).position={3,0,0};
         pulse=true;scripts.update(.1f,true);pulse=false;
         require(!world.isAlive(enemy),"pulse destroys enemy in range");

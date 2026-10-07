@@ -27,6 +27,9 @@ compile_commands.json
 # Logs
 *.log
 
+# Editor layout and run outputs when the engine runs from the repository root
+/editor_layout.ini
+
 # Local team handover guide (not part of repository documentation)
 /docs/lab2/IMPLEMENTATION_AND_BUILD_GUIDE.md
 

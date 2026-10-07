@@ -48,7 +48,7 @@
 ```
 ./GameEngine --editor-screenshot out.png [--editor-frames 120] [--window-size 1600x1000]
              [--editor-select Ground] [--editor-asset assets/textures/stone.dds]
-             [--editor-browse assets/models] [--editor-tab game] [--editor-play]
+             [--editor-browse assets/models] [--editor-tab game] [--editor-arena] [--editor-play]
              [--editor-colliders] [--editor-list-view] [--editor-reset-layout]
              [--editor-ini layout.ini]   # по умолчанию раскладка в этом режиме не сохраняется
 ```

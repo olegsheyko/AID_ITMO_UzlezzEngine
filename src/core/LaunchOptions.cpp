@@ -75,6 +75,8 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
             }
         } else if (arg == "--editor-play") {
             outOptions.editor.play = true;
+        } else if (arg == "--editor-arena") {
+            outOptions.editor.arena = true;
         } else if (arg == "--editor-colliders") {
             outOptions.editor.showColliders = true;
         } else if (arg == "--editor-list-view") {
@@ -177,5 +179,5 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
 }
 
 const char* launchUsage() {
-    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms] [--animation-bench sequential|parallel [--animation-characters N] [--animation-frames N] [--animation-out file.csv] [--animation-wait-tracy] [--animation-exit-loading]] [--editor-screenshot file.png [--editor-frames N] [--window-size WxH] [--editor-select name] [--editor-asset path] [--editor-browse folder] [--editor-tab window]... [--editor-play] [--editor-colliders] [--editor-list-view]] [--editor-reset-layout]";
+    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms] [--animation-bench sequential|parallel [--animation-characters N] [--animation-frames N] [--animation-out file.csv] [--animation-wait-tracy] [--animation-exit-loading]] [--editor-screenshot file.png [--editor-frames N] [--window-size WxH] [--editor-select name] [--editor-asset path] [--editor-browse folder] [--editor-tab window]... [--editor-play] [--editor-arena] [--editor-colliders] [--editor-list-view]] [--editor-reset-layout]";
 }

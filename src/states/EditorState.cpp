@@ -312,6 +312,9 @@ void EditorState::render() {
 }
 
 void EditorState::applyStartupOptions() {
+    if (startup_.arena) {
+        context_.loadArenaScene();
+    }
     if (!startup_.selectEntity.empty()) {
         for (Entity entity : context_.world.getEntities()) {
             if (context_.isEditable(entity) && context_.displayName(entity) == startup_.selectEntity) {

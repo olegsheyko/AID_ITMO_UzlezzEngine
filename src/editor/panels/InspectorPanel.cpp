@@ -814,8 +814,8 @@ void InspectorPanel::drawScript(EditorContext& context, Entity entity, bool lock
         scriptResultEntity_ = entity;
         scriptResult_ = ok ? "Saved to " + fileName(script.prefab) + "." : context.scriptMessage;
         scriptResultError_ = !ok;
-    } else if (action == EditorUI::ComponentAction::Reset) {
-        // Сброс к значениям по умолчанию из Lua-класса.
+    } else if (action == EditorUI::ComponentAction::Reset && !locked) {
+        // Сброс к значениям по умолчанию из Lua-класса. В Play поля живые — не трогаем.
         script.fields.clear();
         context.scripts.attachDefaults(entity);
     } else if (action == EditorUI::ComponentAction::Remove) {

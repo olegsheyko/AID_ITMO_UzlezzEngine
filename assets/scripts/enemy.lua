@@ -1,3 +1,5 @@
+---Враг: идёт к цели по тегу, бьёт её при подходе и исчезает.
+---@class Enemy : uzlezz.Behaviour
 Enemy = uzlezz.behaviour {
     fields = {speed = 1.5, damage = 1, attack_radius = 1.2,
               animation_speed = 1.0, target_tag = "Core"}

@@ -1,0 +1,20 @@
+{
+    "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+    "runtime.version": "Lua 5.4",
+    "runtime.builtin": {
+        "io": "disable",
+        "os": "disable",
+        "debug": "disable",
+        "package": "disable",
+        "coroutine": "disable",
+        "utf8": "disable"
+    },
+    "workspace.library": [
+        "tools/lua-stubs"
+    ],
+    "workspace.ignoreDir": [
+        "build",
+        "external",
+        "tools/lua-stubs"
+    ]
+}

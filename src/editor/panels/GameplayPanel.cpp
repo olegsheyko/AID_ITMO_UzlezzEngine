@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>
@@ -146,23 +147,61 @@ void GameplayPanel::drawRuntime(EditorContext& context) {
         } else {
             ImGui::TextColored(toVec4(kTextDim), ICON_LC_PAUSE "  Idle until Play");
         }
+        // Живые цифры для блока «Стабильность»: куча Lua не растёт от волны к волне и между Play.
+        const ScriptStats stats = context.scripts.stats();
+        const ScriptLimits limits = context.scripts.limits();
+        constexpr double kMb = 1024.0 * 1024.0;
+        char text[128];
+        std::snprintf(text, sizeof(text), "%.2f MB  \xC2\xB7  peak %.2f  \xC2\xB7  limit %.0f MB",
+            stats.memoryBytes / kMb, stats.peakMemoryBytes / kMb, limits.memoryBytes / kMb);
+        EditorUI::propertyValue("Lua heap", text);
+        if (playing) {
+            std::snprintf(text, sizeof(text), "%.3f ms per frame  \xC2\xB7  budget %d ms per call", stats.updateMs, limits.timeBudgetMs);
+        } else {
+            std::snprintf(text, sizeof(text), "Budget %d ms per call", limits.timeBudgetMs);
+        }
+        EditorUI::propertyValue("Script time", text);
+        if (stats.failedInstances > 0) {
+            EditorUI::propertyLabel("Disabled");
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(toVec4(kError), ICON_LC_CIRCLE_ALERT "  %zu instance(s) stopped by a Lua error", stats.failedInstances);
+        }
         EditorUI::propertyValue("Scene", context.sceneName().c_str());
         EditorUI::endProperties();
     }
     ImGui::Dummy(ImVec2(0.0f, px(2.0f)));
-    ImGui::BeginDisabled(playing);
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
     const float half = (ImGui::GetContentRegionAvail().x - spacing) * 0.5f;
+    ImGui::BeginDisabled(playing);
     if (EditorUI::primaryButton(ICON_LC_SWORDS "  Open Arena", ImVec2(half, ImGui::GetFrameHeight() + px(4.0f)))) {
         context.loadArenaScene();
     }
     ImGui::SetItemTooltip("Replace the current scene with the Lua arena: core, wave spawner and an enemy prefab preview.");
+    ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button(ICON_LC_REFRESH_CW "  Reload Scripts", ImVec2(-FLT_MIN, ImGui::GetFrameHeight() + px(4.0f)))) {
         context.reloadScripts();
     }
-    ImGui::SetItemTooltip("Re-run the .lua files and validate classes. On error the previous classes stay active.");
-    ImGui::EndDisabled();
+    ImGui::SetItemTooltip(playing ? "Hot reload the scene's .lua files now, without Stop. On error the previous code keeps running."
+                                  : "Re-run the .lua files and validate classes. On error the previous classes stay active.");
+
+    // Hot reload: вотчер — задача job system, применение — на главном потоке, в Edit и в Play.
+    ImGui::Dummy(ImVec2(0.0f, px(2.0f)));
+    EditorUI::checkbox("Reload on save##auto_reload", &context.autoReloadScripts);
+    ImGui::SetItemTooltip("Watch assets/scripts: a saved .lua file is checked on a job-system worker\n"
+                          "and applied on the main thread, in Edit and in Play.");
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    EditorUI::textDim("In Play:");
+    ImGui::SameLine();
+    static const char* const kModes[] = {"Keep state (L2)", "Reset state (L1)"};
+    int mode = context.playReloadMode == ReloadMode::KeepState ? 0 : 1;
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (EditorUI::combo("##play_reload_mode", &mode, kModes, 2)) {
+        context.playReloadMode = mode == 0 ? ReloadMode::KeepState : ReloadMode::Reset;
+    }
+    ImGui::SetItemTooltip("Keep state: self.* moves to the new instance, except values whose initial value changed in code;\n"
+                          "a class can take over with on_reload(old). Reset: every instance restarts from on_create.");
     EditorUI::componentSpacing();
 }
 
