@@ -99,9 +99,10 @@ public:
     std::vector<std::string> getAvailableTexturePaths() const;
     std::vector<std::string> getShaderIds() const;
     size_t estimateMemoryUsageBytes() const;
+    // Ключ шейдера в кэше и в MeshRenderer::shaderId: "vertex|fragment".
+    static std::string makeShaderKey(const std::string& vertexPath, const std::string& fragmentPath);
 
 private:
-    static std::string makeShaderKey(const std::string& vertexPath, const std::string& fragmentPath);
 
     ResourceManager() = default;
     ~ResourceManager() = default;

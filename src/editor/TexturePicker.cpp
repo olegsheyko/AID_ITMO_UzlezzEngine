@@ -1,151 +1,162 @@
 #include "editor/TexturePicker.h"
+
+#include "editor/EditorTheme.h"
+#include "editor/EditorWidgets.h"
+#include "editor/IconsLucide.h"
+#include "editor/ThumbnailCache.h"
 #include "resources/ResourceManager.h"
 
+#include <imgui.h>
+
 #include <algorithm>
-#include <cfloat>
+#include <cctype>
 #include <filesystem>
 
+using namespace EditorTheme;
+
 namespace {
-constexpr float kThumbnailSize = 48.0f;
-constexpr float kRowHeight = 60.0f;
+constexpr float kTile = 76.0f;
+constexpr const char* kPopupId = "Select Texture##texture_picker";
 
-const TextureData* loadedTexture(const std::shared_ptr<Resource<TextureData>>& resource) {
-    return resource && resource->isLoaded() && resource->getData()->textureId != 0 ? resource->getData() : nullptr;
+std::string lower(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return text;
 }
 
-void drawThumbnail(const ImVec2& position, float size, const TextureData* texture) {
-    ImDrawList* draw = ImGui::GetWindowDrawList();
-    constexpr int kCells = 6;
-    const float cell = size / kCells;
-    for (int y = 0; y < kCells; ++y) {
-        for (int x = 0; x < kCells; ++x) {
-            const ImU32 color = (x + y) % 2 ? IM_COL32(65, 65, 65, 255) : IM_COL32(40, 40, 40, 255);
-            draw->AddRectFilled(ImVec2(position.x + x * cell, position.y + y * cell),
-                ImVec2(position.x + (x + 1) * cell, position.y + (y + 1) * cell), color);
+void drawChecker(ImDrawList* drawList, const ImVec2& min, const ImVec2& max) {
+    const float cell = 8.0f;
+    drawList->AddRectFilled(min, max, IM_COL32(52, 52, 56, 255), 4.0f);
+    drawList->PushClipRect(min, max, true);
+    for (float y = min.y; y < max.y; y += cell) {
+        for (float x = min.x; x < max.x; x += cell) {
+            if ((static_cast<int>((x - min.x) / cell) + static_cast<int>((y - min.y) / cell)) % 2 == 0) {
+                drawList->AddRectFilled(ImVec2(x, y), ImVec2(std::min(x + cell, max.x), std::min(y + cell, max.y)), IM_COL32(64, 64, 68, 255));
+            }
         }
     }
-    if (texture && texture->width > 0 && texture->height > 0) {
-        const float scale = size / static_cast<float>(std::max(texture->width, texture->height));
-        const ImVec2 dimensions(texture->width * scale, texture->height * scale);
-        const ImVec2 start(position.x + (size - dimensions.x) * 0.5f, position.y + (size - dimensions.y) * 0.5f);
-        draw->AddImage(static_cast<ImTextureID>(texture->textureId), start,
-            ImVec2(start.x + dimensions.x, start.y + dimensions.y), ImVec2(0, 1), ImVec2(1, 0));
-    } else {
-        const ImVec2 textSize = ImGui::CalcTextSize("--");
-        draw->AddText(ImVec2(position.x + (size - textSize.x) * 0.5f, position.y + (size - textSize.y) * 0.5f),
-            ImGui::GetColorU32(ImGuiCol_TextDisabled), "--");
-    }
-    draw->AddRect(position, ImVec2(position.x + size, position.y + size), ImGui::GetColorU32(ImGuiCol_Border));
+    drawList->PopClipRect();
 }
 }
 
-void TexturePicker::render(MeshRenderer& meshRenderer) {
-    ResourceManager& resources = ResourceManager::getInstance();
-    const TextureData* current = loadedTexture(meshRenderer.cachedBaseColorTexture);
-    if (!current && meshRenderer.cachedMesh && meshRenderer.cachedMesh->isLoaded()) {
-        for (const auto& subMesh : meshRenderer.cachedMesh->getData()->subMeshes) {
-            current = loadedTexture(subMesh.material.cachedDiffuseTexture);
-            if (current) break;
-        }
+void TexturePicker::open(const std::string& current) {
+    openRequested_ = true;
+    current_ = current;
+}
+
+bool TexturePicker::draw(std::string& outPath) {
+    if (openRequested_) {
+        openRequested_ = false;
+        paths_ = ResourceManager::getInstance().getAvailableTexturePaths();
+        search_.fill('\0');
+        scrollToCurrent_ = true;
+        ThumbnailCache::instance().forgetFailures();
+        ImGui::OpenPopup(kPopupId);
     }
 
-    ImGui::PushID("BaseTexturePicker");
-    ImGui::TextUnformatted("Base Texture");
-    drawThumbnail(ImGui::GetCursorScreenPos(), kThumbnailSize, current);
-    ImGui::Dummy(ImVec2(kThumbnailSize, kThumbnailSize));
-    ImGui::SameLine();
-    ImGui::BeginGroup();
-    const std::string preview = meshRenderer.baseColorTextureId.empty()
-        ? "Material / default" : std::filesystem::path(meshRenderer.baseColorTextureId).filename().string();
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    const float popupWidth = std::min(460.0f, ImGui::GetMainViewport()->WorkSize.x - 20.0f);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(popupWidth, 0.0f), ImVec2(popupWidth, 480.0f));
-    const bool open = ImGui::BeginCombo("##texture", preview.c_str());
-    if (open) {
-        const bool justOpened = ImGui::IsWindowAppearing();
-        if (justOpened) {
-            paths_ = resources.getAvailableTexturePaths();
-            filter_.Clear();
-            for (auto it = previews_.begin(); it != previews_.end();) {
-                if (!loadedTexture(it->second)) it = previews_.erase(it);
-                else ++it;
-            }
-        }
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::InputTextWithHint("##search", "Search by name or folder...", filter_.InputBuf, IM_ARRAYSIZE(filter_.InputBuf))) {
-            filter_.Build();
-        }
-        if (ImGui::Selectable("Material / default", meshRenderer.baseColorTextureId.empty())) {
-            meshRenderer.baseColorTextureId.clear();
-            meshRenderer.cachedBaseColorTexture.reset();
-        }
-        ImGui::Separator();
-
-        std::vector<const std::string*> visiblePaths;
-        for (const auto& path : paths_) {
-            if (filter_.PassFilter(path.c_str())) visiblePaths.push_back(&path);
-        }
-        ImGui::TextDisabled("%d textures", static_cast<int>(visiblePaths.size()));
-        if (visiblePaths.empty()) ImGui::TextDisabled("No textures found.");
-        ImGui::BeginChild("##texture_list", ImVec2(0.0f, 330.0f));
-        ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(visiblePaths.size()), kRowHeight + ImGui::GetStyle().ItemSpacing.y);
-        if (justOpened) {
-            for (size_t i = 0; i < visiblePaths.size(); ++i) {
-                if (*visiblePaths[i] == meshRenderer.baseColorTextureId) clipper.IncludeItemByIndex(static_cast<int>(i));
-            }
-        }
-        while (clipper.Step()) {
-            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
-                const auto& path = *visiblePaths[i];
-                auto [it, inserted] = previews_.try_emplace(path);
-                // Превью — самое неважное, что грузит редактор: низкий приоритет, текстуры сцены обгоняют их.
-                if (inserted) it->second = resources.loadTextureAsync(path, JobPriority::Low);
-                const TextureData* texture = loadedTexture(it->second);
-                const bool loading = it->second && it->second->isPending();
-                const bool selected = meshRenderer.baseColorTextureId == path;
-                ImGui::PushID(path.c_str());
-                const ImVec2 rowStart = ImGui::GetCursorScreenPos();
-                const float rowWidth = ImGui::GetContentRegionAvail().x;
-                const ImGuiSelectableFlags flags = texture ? 0 : ImGuiSelectableFlags_Disabled;
-                if (ImGui::Selectable("##row", selected, flags, ImVec2(0.0f, kRowHeight))) {
-                    meshRenderer.baseColorTextureId = path;
-                    meshRenderer.cachedBaseColorTexture = it->second;
-                    ImGui::CloseCurrentPopup();
-                }
-                if (selected && justOpened) ImGui::SetItemDefaultFocus();
-                const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_AllowWhenDisabled);
-                drawThumbnail(ImVec2(rowStart.x + 4.0f, rowStart.y + 6.0f), kThumbnailSize, texture);
-                const std::filesystem::path file(path);
-                ImDrawList* draw = ImGui::GetWindowDrawList();
-                const float textX = rowStart.x + kThumbnailSize + 16.0f;
-                draw->PushClipRect(ImVec2(textX, rowStart.y), ImVec2(rowStart.x + rowWidth, rowStart.y + kRowHeight), true);
-                draw->AddText(ImVec2(textX, rowStart.y + 9.0f), ImGui::GetColorU32(ImGuiCol_Text), file.filename().string().c_str());
-                draw->AddText(ImVec2(textX, rowStart.y + 33.0f), ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                    texture ? file.parent_path().generic_string().c_str() : loading ? "Loading..." : "Unable to load image");
-                draw->PopClipRect();
-                if (hovered) {
-                    ImGui::BeginTooltip();
-                    ImGui::TextUnformatted(path.c_str());
-                    if (texture) {
-                        drawThumbnail(ImGui::GetCursorScreenPos(), 160.0f, texture);
-                        ImGui::Dummy(ImVec2(160.0f, 160.0f));
-                        ImGui::Text("%d x %d", texture->width, texture->height);
-                    } else if (loading) {
-                        ImGui::TextUnformatted("Loading in the background...");
-                    } else {
-                        ImGui::TextUnformatted("File is missing or cannot be decoded.");
-                    }
-                    ImGui::EndTooltip();
-                }
-                ImGui::PopID();
-            }
-        }
-        ImGui::EndChild();
-        ImGui::EndCombo();
+    const ImVec2 workSize = ImGui::GetMainViewport()->WorkSize;
+    ImGui::SetNextWindowSize(ImVec2(std::min(560.0f, workSize.x - 40.0f), std::min(520.0f, workSize.y - 40.0f)), ImGuiCond_Appearing);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    bool keepOpen = true;
+    if (!ImGui::BeginPopupModal(kPopupId, &keepOpen, ImGuiWindowFlags_NoSavedSettings)) {
+        return false;
     }
-    if (current) ImGui::TextDisabled("%d x %d", current->width, current->height);
-    else ImGui::TextDisabled("Material color");
-    ImGui::EndGroup();
-    ImGui::PopID();
+
+    bool picked = false;
+    if (ImGui::IsWindowAppearing()) {
+        ImGui::SetKeyboardFocusHere();
+    }
+    EditorUI::searchBox("texture_search", search_.data(), search_.size(), "Search textures");
+    const std::string needle = lower(search_.data());
+
+    std::vector<const std::string*> visible;
+    for (const std::string& path : paths_) {
+        if (needle.empty() || lower(path).find(needle) != std::string::npos) {
+            visible.push_back(&path);
+        }
+    }
+    EditorUI::pushSmallFont();
+    ImGui::PushStyleColor(ImGuiCol_Text, toVec4(kTextFaint));
+    ImGui::Text("%d textures", static_cast<int>(visible.size()));
+    ImGui::PopStyleColor();
+    EditorUI::popFont();
+
+    ImGui::BeginChild("##texture_grid", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
+    const float spacing = 8.0f;
+    const float cellWidth = kTile + spacing;
+    const int columns = std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + spacing) / cellWidth));
+    const float labelHeight = ImGui::GetTextLineHeight() + 4.0f;
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ThumbnailCache& thumbnails = ThumbnailCache::instance();
+
+    const int total = static_cast<int>(visible.size()) + 1;
+    for (int index = 0; index < total; ++index) {
+        if (index % columns != 0) {
+            ImGui::SameLine(0.0f, spacing);
+        }
+        const bool isNone = index == 0;
+        const std::string path = isNone ? std::string() : *visible[index - 1];
+        ImGui::PushID(index);
+        const ImVec2 min = ImGui::GetCursorScreenPos();
+        const bool clicked = ImGui::InvisibleButton("##tile", ImVec2(kTile, kTile + labelHeight));
+        const bool hovered = ImGui::IsItemHovered();
+        const bool selected = path == current_;
+        if (selected && scrollToCurrent_) {
+            ImGui::SetScrollHereY(0.3f);
+            scrollToCurrent_ = false;
+        }
+        if (selected || hovered) {
+            drawList->AddRectFilled(ImVec2(min.x - 3.0f, min.y - 3.0f), ImVec2(min.x + kTile + 3.0f, min.y + kTile + labelHeight + 1.0f),
+                ImGui::GetColorU32(selected ? kAccentSoft : IM_COL32(255, 255, 255, 12)), 6.0f);
+        }
+        const ImVec2 imageMin(min.x + 4.0f, min.y + 4.0f);
+        const ImVec2 imageMax(min.x + kTile - 4.0f, min.y + kTile - 4.0f);
+        const TextureData* texture = nullptr;
+        if (isNone) {
+            drawList->AddRectFilled(imageMin, imageMax, ImGui::GetColorU32(kFrame), 4.0f);
+            EditorUI::drawTextCentered(drawList, ImVec2((imageMin.x + imageMax.x) * 0.5f, (imageMin.y + imageMax.y) * 0.5f), ICON_LC_BAN, kTextFaint);
+        } else {
+            drawChecker(drawList, imageMin, imageMax);
+            texture = thumbnails.texture(path);
+            if (texture) {
+                const float size = imageMax.x - imageMin.x;
+                const float scale = size / static_cast<float>(std::max(texture->width, texture->height));
+                const ImVec2 dims(texture->width * scale, texture->height * scale);
+                const ImVec2 start(imageMin.x + (size - dims.x) * 0.5f, imageMin.y + (size - dims.y) * 0.5f);
+                drawList->AddImageRounded(static_cast<ImTextureID>(texture->textureId), start, ImVec2(start.x + dims.x, start.y + dims.y),
+                    ImVec2(0, 1), ImVec2(1, 0), IM_COL32_WHITE, 3.0f);
+            } else {
+                EditorUI::drawTextCentered(drawList, ImVec2((imageMin.x + imageMax.x) * 0.5f, (imageMin.y + imageMax.y) * 0.5f),
+                    thumbnails.isLoading(path) ? ICON_LC_LOADER_CIRCLE : ICON_LC_IMAGE_OFF, kTextFaint);
+            }
+        }
+        const std::string label = isNone ? std::string("None") : std::filesystem::path(path).stem().string();
+        EditorUI::pushSmallFont();
+        const std::string fitted = EditorUI::ellipsize(label.c_str(), kTile);
+        const float labelWidth = ImGui::CalcTextSize(fitted.c_str()).x;
+        drawList->AddText(ImVec2(min.x + (kTile - labelWidth) * 0.5f, min.y + kTile), ImGui::GetColorU32(selected ? kText : kTextDim), fitted.c_str());
+        EditorUI::popFont();
+
+        if (hovered && !isNone && ImGui::BeginTooltip()) {
+            ImGui::TextUnformatted(path.c_str());
+            if (texture) {
+                const ImVec2 start = ImGui::GetCursorScreenPos();
+                drawChecker(ImGui::GetWindowDrawList(), start, ImVec2(start.x + 180.0f, start.y + 180.0f));
+                ImGui::Image(static_cast<ImTextureID>(texture->textureId), ImVec2(180.0f, 180.0f), ImVec2(0, 1), ImVec2(1, 0));
+                ImGui::TextDisabled("%d x %d", texture->width, texture->height);
+            }
+            ImGui::EndTooltip();
+        }
+        if (clicked) {
+            outPath = path;
+            picked = true;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+    return picked;
 }

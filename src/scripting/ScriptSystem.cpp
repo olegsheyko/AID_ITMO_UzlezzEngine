@@ -74,7 +74,7 @@ public:
 private:
     template<class... Args> void call(const char* name, Args... args) {
         sol::object method = prototype_.raw_get<sol::object>(name);
-        if (!method.valid() || method == sol::nil) return;
+        if (!method.valid() || method == sol::lua_nil) return;
         sol::protected_function function = method.as<sol::protected_function>();
         sol::protected_function_result result = function(object_, args...);
         if (!result.valid()) { sol::error error = result; throw error; }
@@ -190,7 +190,7 @@ struct ScriptSystem::Impl {
         }
         for (const char* name : {"on_create", "on_update", "on_destroy"}) {
             sol::object method = cls.raw_get<sol::object>(name);
-            if (method != sol::nil && method.get_type() != sol::type::function)
+            if (method != sol::lua_nil && method.get_type() != sol::type::function)
                 throw std::runtime_error(c.path + ": callback must be a function: " + name);
         }
         return cls;
@@ -205,7 +205,7 @@ struct ScriptSystem::Impl {
             else if (it->second.index() != value.index()) throw std::runtime_error(c.path + ": incompatible field type: " + name);
         }
         for (const auto& item : c.fields)
-            if (defaults.raw_get<sol::object>(item.first) == sol::nil) throw std::runtime_error(c.path + ": unknown field: " + item.first);
+            if (defaults.raw_get<sol::object>(item.first) == sol::lua_nil) throw std::runtime_error(c.path + ": unknown field: " + item.first);
     }
     void create(Entity e) {
         auto& c = world.getComponent<ScriptComponent>(e);

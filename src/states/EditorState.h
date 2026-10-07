@@ -1,168 +1,72 @@
 #pragma once
 
-#include "editor/EditorCamera.h"
-#include "editor/TexturePicker.h"
-#include "ecs/Components.h"
-#include "ecs/AnimationSystem.h"
-#include "ecs/DebugRenderSystem.h"
-#include "ecs/Entity.h"
-#include "ecs/PhysicsSystem.h"
-#include "ecs/RenderSystem.h"
-#include "ecs/SpinSystem.h"
-#include "ecs/World.h"
+#include "core/LaunchOptions.h"
+#include "editor/EditorContext.h"
+#include "editor/EditorScript.h"
+#include "editor/panels/ConsolePanel.h"
+#include "editor/panels/ContentBrowserPanel.h"
+#include "editor/panels/GameViewPanel.h"
+#include "editor/panels/GameplayPanel.h"
+#include "editor/panels/HierarchyPanel.h"
+#include "editor/panels/InspectorPanel.h"
+#include "editor/panels/RendererInfoPanel.h"
+#include "editor/panels/SceneViewPanel.h"
 #include "states/IGameState.h"
-#include "bench/LoadScenario.h"
-#include "bench/StressRun.h"
-#include "scripting/ScriptSystem.h"
-#include "scripting/ScriptComponent.h"
-
-#include <array>
-#include <string>
-#include <vector>
 
 class IRenderAdapter;
-struct ImVec2;
 
+// Окно редактора: меню, тулбар Play, статус-бар, док и панели поверх EditorContext.
 class EditorState : public IGameState {
 public:
-    explicit EditorState(IRenderAdapter& renderer);
+    explicit EditorState(IRenderAdapter& renderer, EditorStartupOptions startup = {});
+
+    // Регистрирует секцию настроек редактора в imgui.ini. Вызывать до первого NewFrame.
+    static void registerSettingsHandler();
 
     void onEnter() override;
     void onExit() override;
     void update(float dt) override;
     void render() override;
 
+    // Для Application: скриншоты, которые сценарий просит снять после этого кадра, и конец сценария.
+    std::vector<std::string> takeScreenshotRequests();
+    bool scriptFinished() const { return scriptQuit_; }
+
 private:
-    enum class EditorMode {
-        Edit,
-        Play
-    };
-
-    enum class GizmoOperation {
-        Translate,
-        Rotate,
-        Scale
-    };
-
-    struct EntitySnapshot {
-        bool hasScript = false;
-        ScriptComponent script{};
-        Entity entity = kInvalidEntity;
-        bool hasTag = false;
-        Tag tag{};
-        bool hasTransform = false;
-        Transform transform{};
-        bool hasMeshRenderer = false;
-        MeshRenderer meshRenderer{};
-        bool hasAnimator = false;
-        Animator animator{};
-        bool hasHierarchy = false;
-        Hierarchy hierarchy{};
-        bool hasSpin = false;
-        Spin spin{};
-        bool hasCamera = false;
-        Camera camera{};
-        bool hasRigidbody = false;
-        Rigidbody rigidbody{};
-        bool hasCollider = false;
-        Collider collider{};
-    };
-
-    struct SceneSnapshot {
-        std::vector<EntitySnapshot> entities;
-        Entity selectedEntity = kInvalidEntity;
-        Entity controllableEntity = kInvalidEntity;
-        Entity gameCameraEntity = kInvalidEntity;
-    };
-
-    void bindActions();
-    void loadArenaScene();
-    void renderScriptingPanel();
-    void renderScriptInspector();
-    void createScene();
-    bool createSceneFromManifest();
-    void createFallbackScene();
-    Entity createCubeEntity(const std::string& requestedName, const Vec3& position);
-    Entity duplicateEntity(Entity source);
-    void beginRename(Entity entity);
-    void commitRename();
-    Vec3 defaultSpawnPosition() const;
-    void createGameCamera();
-    void createEditorCameraEntity();
-    void syncEditorCameraEntity();
-    void setCameraMode();
-    void updateGameplay(float dt, bool allowInput);
-    void updateGameCamera(float dt, bool allowInput);
-    void processGameplayInput(float dt);
-    void renderDockSpace();
-    void buildDefaultDockLayout(unsigned int dockspaceId);
     void renderMainMenu();
-    void renderToolbar();
-    void renderHierarchyPanel();
-    void renderHierarchyEntity(Entity entity);
-    void renderInspectorPanel();
-    void renderStatisticsPanel();
-    void renderAnimationPanel();
-    void rebuildAnimationDemo();
-    void renderViewportPanel();
-    void renderViewportScene(int width, int height);
-    void renderGizmo(const ImVec2& viewportMin, const ImVec2& viewportSize);
-    void selectEntityAtViewportPosition(const ImVec2& viewportMin, const ImVec2& viewportSize);
-    void startPlayMode();
-    void stopPlayMode();
-    SceneSnapshot captureSnapshot() const;
-    void restoreSnapshot(const SceneSnapshot& snapshot);
-    std::string entityLabel(Entity entity) const;
-    bool isEditorEntity(Entity entity) const;
-    Mat4 activeViewMatrix() const;
-    Mat4 activeProjectionMatrix() const;
+    void renderMainToolbar();
+    void renderStatusBar();
+    void renderDockSpace();
+    void buildDefaultLayout(unsigned int dockspaceId);
+    void renderModals();
+    void handleShortcuts();
+    void applyStartupOptions();
+    void loadPreferences();
+    void storePreferences();
+    void togglePlay();
+    void togglePause();
+    void step();
 
-    IRenderAdapter& renderer_;
-    World world_;
-    ScriptSystem scripts_{world_};
-    Entity prefabPreview_ = kInvalidEntity;
-    std::string scriptUiMessage_;
-    EditorCamera editorCamera_;
-    TexturePicker texturePicker_;
-    PhysicsSystem physicsSystem_;
-    SpinSystem spinSystem_;
-    AnimationSystem animationSystem_;
-    RenderSystem renderSystem_;
-    DebugRenderSystem debugRenderSystem_;
-    Entity selectedEntity_ = kInvalidEntity;
-    Entity controllableEntity_ = kInvalidEntity;
-    Entity gameCameraEntity_ = kInvalidEntity;
-    Entity editorCameraEntity_ = kInvalidEntity;
-    Entity renamingEntity_ = kInvalidEntity;
-    std::array<char, 128> renameBuffer_{};
-    EditorMode mode_ = EditorMode::Edit;
-    GizmoOperation gizmoOperation_ = GizmoOperation::Translate;
-    bool gizmoLocalMode_ = true;
-    bool showHierarchy_ = true;
-    bool showInspector_ = true;
-    bool showStatistics_ = true;
-    bool showViewport_ = true;
-    bool viewportHovered_ = false;
-    bool viewportFocused_ = false;
-    bool viewportInputActive_ = false;
-    bool dockLayoutBuilt_ = false;
-    bool lmbWasPressed_ = false;
-    bool rmbWasPressed_ = false;
-    bool mmbWasPressed_ = false;
-    int viewportWidth_ = 1;
-    int viewportHeight_ = 1;
+    EditorContext context_;
+    HierarchyPanel hierarchy_;
+    InspectorPanel inspector_;
+    SceneViewPanel sceneView_;
+    GameViewPanel gameView_;
+    RendererInfoPanel rendererInfo_;
+    GameplayPanel gameplay_;
+    ContentBrowserPanel contentBrowser_;
+    ConsolePanel console_;
+    EditorStartupOptions startup_;
+    EditorScript script_;
+    bool scriptQuit_ = false;
+    std::vector<std::string> screenshotRequests_;
+
+    float uiScale_ = 1.0f;
+    float pendingUiScale_ = 0.0f;
     float lastDt_ = 0.0f;
-    float fpsAverage_ = 0.0f;
-    float fpsAccumulator_ = 0.0f;
-    int fpsFrames_ = 0;
-    SceneSnapshot playSnapshot_;
-    LoadScenario heavyLoad_;
-    bool heavyLoadAsync_ = true;
-    StressRun stress_;
-    std::array<char, 1024> animationPath_{"assets/models/animation/Walking.fbx"};
-    std::string animationError_;
-    std::shared_ptr<Resource<MeshData>> animationLoad_;
-    std::vector<Entity> animationDemoEntities_;
-    int animationDemoCount_ = 16;
-    bool animationYUp_ = true;
+    bool resetLayout_ = false;
+    bool showControls_ = false;
+    bool showAbout_ = false;
+    bool showImGuiDemo_ = false;
+    int frame_ = 0;
 };

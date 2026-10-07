@@ -27,6 +27,9 @@ private:
     int exitCode_ = 0;
     std::unique_ptr<Benchmark> benchmark_;
     std::unique_ptr<StressRun> stress_;
+    LaunchOptions options_;
+    int editorFrames_ = 0;
+    bool captureScreenshot(const std::string& path);
 
     using Clock = std::chrono::high_resolution_clock;
     std::chrono::time_point<Clock> lastFrameTime_;

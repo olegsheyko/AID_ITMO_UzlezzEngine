@@ -95,7 +95,7 @@ bool PrefabManager::saveFields(const ScriptComponent& component,std::string& err
         Json doc;in>>doc;in.close();
         auto& script=doc.at("components").at("script");
         if(script.at("path")!=component.path||script.at("class")!=component.className)throw std::runtime_error("Prefab script changed on disk; reload before saving");
-        auto fields=Json::object();for(const auto& [k,v]:component.fields)std::visit([&](const auto& x){fields[k]=x;},v);
+        auto fields=Json::object();for(const auto& item:component.fields)std::visit([&](const auto& x){fields[item.first]=x;},item.second);
         script["fields"]=fields;
         const std::filesystem::path target(component.prefab),temp(component.prefab+".tmp");
         {std::ofstream out(temp,std::ios::binary|std::ios::trunc);out<<doc.dump(2)<<'\n';out.flush();if(!out)throw std::runtime_error("Cannot save prefab temporary file");}

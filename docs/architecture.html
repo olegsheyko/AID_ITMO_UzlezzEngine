@@ -286,7 +286,7 @@ footer { padding-top: 22px; border-top: 1px solid var(--line); color: var(--mute
         <div class="metric"><strong>5,670</strong><span>мс, parallel full-frame p50</span></div>
       </div>
       <p class="warn"><b>Ограничения:</b> нет blending, IK, retargeting, morph targets и извлечения root motion. OpenGL-вызовы не выполняются на воркерах.</p>
-      <p class="source">Код: src/animation/ · src/ecs/AnimationSystem.cpp · src/states/EditorAnimation.cpp · assets/shaders/mesh_vertex.glsl.</p>
+      <p class="source">Код: src/animation/ · src/ecs/AnimationSystem.cpp · src/editor/panels/RendererInfoPanel.cpp · assets/shaders/mesh_vertex.glsl.</p>
     </section>
 
     <section id="tracy">
@@ -328,9 +328,9 @@ ctest --test-dir build -C Release --output-on-failure</code></pre>
       <h2>ЛР 2: Lua и префабы</h2>
       <p>Встроенный Lua 5.4.8 + sol2 3.3.1. Lua статически встроен в exe. ScriptSystem создаёт sol::state вместе с редактором и закрывает после освобождения всех ссылок sol2. Виртуальные lifecycle-методы ScriptBehaviour перенаправляются в защищённые Lua-вызовы через адаптер LuaBehaviour.</p>
       <p>ScriptComponent хранит путь, класс и примитивные поля. Entity handle проверяет lifetime и поколение ID; World proxy инвалидируется при Stop. API предоставляет Transform, ввод, поиск по тегам, spawn JSON-префабов, отложенное destroy и управление скоростью анимации.</p>
-      <p>Окно <b>Lab 2 - Lua</b>: Load Lab 2 scene, Reload scripts только в Edit. Inspector сохраняет поля в JSON. Play/Stop сохраняет и восстанавливает сцену. Preview Enemy предназначен для настройки префаба и не участвует в Play.</p>
+      <p>Окно <b>Gameplay</b>: Open Arena, Reload Scripts только в Edit, статус и ошибки Lua; HUD поверх Game. Inspector сохраняет поля в JSON. Play/Stop сохраняет и восстанавливает сцену. Preview Enemy предназначен для настройки префаба и не участвует в Play.</p>
       <p>Вся механика — core.lua, enemy.lua, waves.lua: Space запускает волну, F — защитный импульс. Анимированные враги идут к ядру и наносят урон. Ошибки показываются с traceback. Lua-скрипты доверенные; лимиты времени/памяти не реализованы, библиотеки package/io/os/debug не открываются.</p>
-      <p class="source">Код: src/scripting/ · src/prefabs/ · src/states/EditorScripting.cpp · assets/scripts/ · assets/prefabs/. <a href="lab2/README.md">Инструкция ЛР 2</a>.</p>
+      <p class="source">Код: src/scripting/ · src/prefabs/ · src/editor/panels/GameplayPanel.cpp · assets/scripts/ · assets/prefabs/. <a href="lab2/README.md">Инструкция ЛР 2</a>.</p>
     </section>
 
     <section id="limits">

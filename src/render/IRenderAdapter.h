@@ -23,9 +23,34 @@ class IRenderAdapter {
 
 	// Clear the framebuffer and prepare for drawing.
 	virtual void beginFrame(float r, float g, float b) = 0;
-	virtual void beginViewportFrame(int width, int height, float r, float g, float b) = 0;
+	// Внеэкранные цели вьюпортов редактора (Scene View, Game View...). Цель 0 — по умолчанию.
+	// a — альфа фона: 0 даёт прозрачный фон для миниатюр.
+	virtual void beginViewportFrame(int target, int width, int height, float r, float g, float b, float a = 1.0f) = 0;
+	void beginViewportFrame(int width, int height, float r, float g, float b) {
+		beginViewportFrame(0, width, height, r, g, b);
+	}
 	virtual void endViewportFrame() = 0;
-	virtual unsigned int getViewportTextureId() const = 0;
+	virtual unsigned int getViewportTextureId(int target) const = 0;
+	unsigned int getViewportTextureId() const { return getViewportTextureId(0); }
+
+	// Бесконечная сетка редактора на плоскости z = height, рисуется в текущую цель с тестом глубины.
+	virtual void drawGrid(const Mat4& viewMatrix, const Mat4& projectionMatrix, const Vec3& cameraPosition, float height) = 0;
+
+	// Процедурное небо на весь кадр вьюпорта: градиент зенит — горизонт — земля и солнце по направлению света.
+	// Рисуется первым, без записи глубины. Без поддержки — ничего не делает.
+	virtual void drawSky(const Mat4& viewMatrix, const Mat4& projectionMatrix, const Vec3& cameraPosition, const Vec3& sunDirection) {
+		(void)viewMatrix; (void)projectionMatrix; (void)cameraPosition; (void)sunDirection;
+	}
+
+	// Копия текущего содержимого цели вьюпорта в новую текстуру — для миниатюр. 0 — не поддерживается.
+	// Текстуру потом освобождают через destroyTexture.
+	virtual unsigned int copyViewportTexture(int target) { (void)target; return 0; }
+
+	// Контур выделения: между begin/end выделенные меши рисуются программой selectionMaskProgram(),
+	// end обводит получившуюся маску. Работает внутри кадра вьюпорта; без поддержки — ничего не делает.
+	virtual void beginSelectionMask() {}
+	virtual void endSelectionMask(const Vec4& color, float thicknessPixels) { (void)color; (void)thicknessPixels; }
+	virtual unsigned int selectionMaskProgram() const { return 0; }
 
 	// Draw a primitive using the supplied model transform and color.
 	virtual void drawPrimitive(

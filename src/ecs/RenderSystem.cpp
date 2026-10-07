@@ -46,72 +46,104 @@ void RenderSystem::render(World& world) {
     lastDrawnMeshCount_ = 0;
     ZoneNamedN(submission, "Skin palette upload and scene draws", true);
     world.forEach<Transform, MeshRenderer>([this, &world](Entity entity, Transform&, MeshRenderer& meshRenderer) {
-        if (!meshRenderer.cachedMesh || !meshRenderer.cachedShader) {
-            return;
+        if (drawEntity(world, entity, meshRenderer, 0)) {
+            ++lastDrawnMeshCount_;
         }
+    });
+}
 
-        if (!meshRenderer.cachedShader->isLoaded()) {
-            return;
+void RenderSystem::renderMask(World& world, const std::vector<Entity>& entities, unsigned int maskProgram) {
+    if (maskProgram == 0) {
+        return;
+    }
+    for (Entity entity : entities) {
+        if (world.isAlive(entity) && world.hasComponent<Transform>(entity) && world.hasComponent<MeshRenderer>(entity)) {
+            drawEntity(world, entity, world.getComponent<MeshRenderer>(entity), maskProgram);
         }
+    }
+}
 
-        const bool placeholder = !meshRenderer.cachedMesh->isLoaded();
-        // This tiny procedural resource performs no file I/O and is cached once.
-        auto mesh = placeholder ? ResourceManager::getInstance().loadMesh("primitive:cube") : meshRenderer.cachedMesh;
-        if (!mesh || !mesh->isLoaded()) return;
-        const MeshData* meshData = mesh->getData();
-        const ShaderData* shaderData = meshRenderer.cachedShader->getData();
-        if (meshData == nullptr || shaderData == nullptr || shaderData->programId == 0) {
-            return;
-        }
+bool RenderSystem::drawEntity(World& world, Entity entity, const MeshRenderer& meshRenderer, unsigned int maskProgram) {
+    if (!meshRenderer.visible || !meshRenderer.cachedMesh || !meshRenderer.cachedShader) {
+        return false;
+    }
 
-        ++lastDrawnMeshCount_;
+    if (!meshRenderer.cachedShader->isLoaded()) {
+        return false;
+    }
 
-        std::unordered_set<Entity> visited;
-        const Mat4 modelMatrix = buildWorldMatrix(world, entity, visited);
+    const bool placeholder = !meshRenderer.cachedMesh->isLoaded();
+    // This tiny procedural resource performs no file I/O and is cached once.
+    auto mesh = placeholder ? ResourceManager::getInstance().loadMesh("primitive:cube") : meshRenderer.cachedMesh;
+    if (!mesh || !mesh->isLoaded()) return false;
+    const MeshData* meshData = mesh->getData();
+    const ShaderData* shaderData = meshRenderer.cachedShader->getData();
+    if (meshData == nullptr || shaderData == nullptr || shaderData->programId == 0) {
+        return false;
+    }
 
-        renderer_.useShaderProgram(shaderData->programId);
-        setupMatrices(world, shaderData->programId, modelMatrix);
-        setupLighting(shaderData->programId);
+    // Маска рисует ту же геометрию своей программой: без материалов и света.
+    const bool mask = maskProgram != 0;
+    const unsigned int program = mask ? maskProgram : shaderData->programId;
 
-        const AnimationPose* pose = nullptr;
-        if (world.hasComponent<Animator>(entity)) {
-            const auto& animator = world.getComponent<Animator>(entity);
-            const auto& candidate = animator.pose;
-            if (animator.evaluatedMesh == meshData && candidate.globals.size() == meshData->skeleton.nodes.size()
-                && candidate.palettes.size() == meshData->subMeshes.size()) pose = &candidate;
-        }
-        renderer_.setInt(shaderData->programId, "useSkinning", 0);
-        renderer_.setMatrix4(shaderData->programId, "meshNodeTransform", Mat4::identity());
+    std::unordered_set<Entity> visited;
+    Mat4 modelMatrix = buildWorldMatrix(world, entity, visited);
+    if (meshRenderer.yUpSource) {
+        modelMatrix = Math::multiply(modelMatrix, Math::rotationX(1.5707963f));
+    }
 
-        if (placeholder) {
+    renderer_.useShaderProgram(program);
+    setupMatrices(world, program, modelMatrix);
+    if (!mask) {
+        setupLighting(program);
+    }
+
+    const AnimationPose* pose = nullptr;
+    if (world.hasComponent<Animator>(entity)) {
+        const auto& animator = world.getComponent<Animator>(entity);
+        const auto& candidate = animator.pose;
+        if (animator.evaluatedMesh == meshData && candidate.globals.size() == meshData->skeleton.nodes.size()
+            && candidate.palettes.size() == meshData->subMeshes.size()) pose = &candidate;
+    }
+    renderer_.setInt(program, "useSkinning", 0);
+    renderer_.setMatrix4(program, "meshNodeTransform", Mat4::identity());
+
+    if (placeholder) {
+        if (!mask) {
             renderer_.bindTexture2D(ResourceManager::getInstance().placeholderTextureId(), 0);
-            renderer_.setInt(shaderData->programId, "baseColorTexture", 0);
-            renderer_.setInt(shaderData->programId, "useBaseColorTexture", 1);
-            renderer_.setVec3(shaderData->programId, "materialColor",
+            renderer_.setInt(program, "baseColorTexture", 0);
+            renderer_.setInt(program, "useBaseColorTexture", 1);
+            renderer_.setVec3(program, "materialColor",
                 meshRenderer.cachedMesh->isFailed() ? Vec3{1,.2f,.2f} : Vec3{1,1,1});
-            for (const auto& sub : meshData->subMeshes) renderer_.drawIndexed(sub.vao, sub.indexCount);
-        } else if (!meshData->subMeshes.empty()) {
-            for (size_t i = 0; i < meshData->subMeshes.size(); ++i) {
-                const SubMesh& subMesh = meshData->subMeshes[i];
-                if (!meshData->skeleton.nodes.empty()) {
-                    const auto& globals = pose ? pose->globals : meshData->skeleton.bindGlobals;
-                    renderer_.setMatrix4(shaderData->programId, "meshNodeTransform",
-                        Math::multiply(meshData->skeleton.rootInverse, globals[subMesh.skeletonNode]));
-                }
-                const bool skinned = pose && !subMesh.bones.empty() && pose->palettes[i].size() == subMesh.bones.size();
-                renderer_.setInt(shaderData->programId, "useSkinning", skinned ? 1 : 0);
-                if (skinned) renderer_.setSkinMatrices(shaderData->programId, pose->palettes[i].data(), pose->palettes[i].size());
+        }
+        for (const auto& sub : meshData->subMeshes) renderer_.drawIndexed(sub.vao, sub.indexCount);
+    } else if (!meshData->subMeshes.empty()) {
+        for (size_t i = 0; i < meshData->subMeshes.size(); ++i) {
+            const SubMesh& subMesh = meshData->subMeshes[i];
+            if (!meshData->skeleton.nodes.empty()) {
+                const auto& globals = pose ? pose->globals : meshData->skeleton.bindGlobals;
+                renderer_.setMatrix4(program, "meshNodeTransform",
+                    Math::multiply(meshData->skeleton.rootInverse, globals[subMesh.skeletonNode]));
+            }
+            const bool skinned = pose && !subMesh.bones.empty() && pose->palettes[i].size() == subMesh.bones.size();
+            renderer_.setInt(program, "useSkinning", skinned ? 1 : 0);
+            if (skinned) renderer_.setSkinMatrices(program, pose->palettes[i].data(), pose->palettes[i].size());
+            if (mask) {
+                renderer_.drawIndexed(subMesh.vao, subMesh.indexCount);
+            } else {
                 renderSubMesh(subMesh, *shaderData, meshRenderer);
             }
-        } else if (meshData->vao != 0 && meshData->indexCount > 0) {
-            bindMaterial(Material{}, *shaderData, meshRenderer);
-
-            renderer_.drawIndexed(meshData->vao, meshData->indexCount);
         }
+    } else if (meshData->vao != 0 && meshData->indexCount > 0) {
+        if (!mask) {
+            bindMaterial(Material{}, *shaderData, meshRenderer);
+        }
+        renderer_.drawIndexed(meshData->vao, meshData->indexCount);
+    }
 
-        renderer_.useShaderProgram(0);
-        renderer_.bindTexture2D(0, 0);
-    });
+    renderer_.useShaderProgram(0);
+    renderer_.bindTexture2D(0, 0);
+    return true;
 }
 
 void RenderSystem::setupLighting(unsigned int shaderProgram) {
@@ -135,7 +167,9 @@ void RenderSystem::bindMaterial(const Material& material, const ShaderData& shad
         textureId = ResourceManager::getInstance().placeholderTextureId();
     }
     const bool hasTexture = textureId != 0;
-    renderer_.bindTexture2D(textureId, 0);
+    // Сэмплер в шейдере есть всегда: без текстуры привязываем заглушку, иначе драйвер macOS
+    // ругается на «unloadable» текстуру 0, хотя useBaseColorTexture = 0 её и не читает.
+    renderer_.bindTexture2D(hasTexture ? textureId : ResourceManager::getInstance().placeholderTextureId(), 0);
     renderer_.setInt(shaderData.programId, "baseColorTexture", 0);
     renderer_.setInt(shaderData.programId, "useBaseColorTexture", hasTexture ? 1 : 0);
     renderer_.setVec3(shaderData.programId, "materialColor", material.diffuseColor);

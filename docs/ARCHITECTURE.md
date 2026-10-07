@@ -330,10 +330,11 @@ MeshRenderer, Animator, Collider, Rigidbody, ScriptComponent. При ошибк�
 создание откатывается. Inspector сохраняет примитивные поля в исходный JSON
 через временный файл и замену; остальные ключи сохраняются.
 
-`EditorScripting.cpp` добавляет окно **Lab 2 - Lua**, загрузку демосцены,
-Reload только в Edit и Inspector полей. Stop уничтожает экземпляры скриптов,
-затем восстанавливает snapshot, включая значения полей. Preview врага виден
-в Edit для настройки префаба и исключён из Play.
+`EditorContext` владеет `ScriptSystem` и загружает демосцену; окно **Gameplay**
+(`src/editor/panels/GameplayPanel`) открывает Arena, перезагружает скрипты только
+в Edit и показывает статус и ошибки Lua, карточка Script в Inspector редактирует
+поля. Stop уничтожает экземпляры скриптов, затем восстанавливает snapshot,
+включая значения полей. Preview врага виден в Edit для настройки префаба и исключён из Play.
 
 Скрипты `assets/scripts/{core,enemy,waves}.lua` содержат всю механику защиты
 ядра. C++ не рассчитывает волны, урон, cooldown и условия поражения.

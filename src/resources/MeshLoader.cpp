@@ -9,6 +9,7 @@
 #include <assimp/scene.h>
 #include <assimp/config.h>
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 
 namespace {
@@ -74,6 +75,38 @@ MeshData createProceduralCubeMesh() {
     meshData.indices = subMesh.indices;
     return meshData;
 }
+
+// UV-сфера радиуса 0.5: полюса на оси Z (мир движка Z-up), развёртка по долготе.
+MeshData createProceduralSphereMesh() {
+    constexpr int kSegments = 48;
+    constexpr int kRings = 24;
+    constexpr float kPi = 3.14159265f;
+    MeshData meshData;
+    SubMesh subMesh;
+    for (int ring = 0; ring <= kRings; ++ring) {
+        const float v = static_cast<float>(ring) / kRings;
+        const float theta = v * kPi;
+        const float z = -std::cos(theta);
+        const float radius = std::sin(theta);
+        for (int segment = 0; segment <= kSegments; ++segment) {
+            const float u = static_cast<float>(segment) / kSegments;
+            const float phi = u * 2.0f * kPi;
+            const Vec3 normal{radius * std::cos(phi), radius * std::sin(phi), z};
+            subMesh.vertices.push_back(Vertex{{normal.x * 0.5f, normal.y * 0.5f, normal.z * 0.5f}, normal, {u, v}});
+        }
+    }
+    for (int ring = 0; ring < kRings; ++ring) {
+        for (int segment = 0; segment < kSegments; ++segment) {
+            const uint32_t a = static_cast<uint32_t>(ring * (kSegments + 1) + segment);
+            const uint32_t b = a + kSegments + 1;
+            subMesh.indices.insert(subMesh.indices.end(), {a, a + 1, b, a + 1, b + 1, b});
+        }
+    }
+    meshData.subMeshes.push_back(subMesh);
+    meshData.vertices = subMesh.vertices;
+    meshData.indices = subMesh.indices;
+    return meshData;
+}
 }
 
 bool MeshLoader::load(const std::string& path, MeshData& meshData, IRenderAdapter* renderer) {
@@ -86,6 +119,10 @@ bool MeshLoader::decode(const std::string& path, MeshData& meshData) {
 
     if (path == "primitive:cube") {
         meshData = createProceduralCubeMesh();
+        return true;
+    }
+    if (path == "primitive:sphere") {
+        meshData = createProceduralSphereMesh();
         return true;
     }
 

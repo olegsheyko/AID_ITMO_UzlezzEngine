@@ -1,773 +1,696 @@
 #include "states/EditorState.h"
 
 #include "core/Logger.h"
-#include "core/ServiceLocator.h"
-#include "ecs/CollisionUtils.h"
-#include "events/CollisionEvent.h"
-#include "input/InputManager.h"
-#include "math/CameraMath.h"
-#include "input/KeyCode.h"
-#include "render/IRenderAdapter.h"
-#include "resources/HotReload.h"
+#include "editor/EditorIcons.h"
+#include "editor/EditorTheme.h"
+#include "editor/EditorWidgets.h"
+#include "editor/EditorWindows.h"
+#include "editor/IconsLucide.h"
+#include "editor/ThumbnailCache.h"
 #include "resources/ResourceManager.h"
-#include "resources/SceneManifest.h"
 
 #include <imgui.h>
-#include <ImGuizmo.h>
 #include <imgui_internal.h>
+#include <ImGuizmo.h>
 #include <tracy/Tracy.hpp>
 
 #include <algorithm>
-#include <array>
-#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
-#include <cstdint>
-#include <functional>
-#include <limits>
-#include <memory>
+#include <map>
+#include <sstream>
 #include <string>
-#include <unordered_set>
+
+using namespace EditorTheme;
 
 namespace {
-constexpr float kPi = 3.1415926f;
-constexpr float kMoveSpeed = 1.0f;
-constexpr float kJumpSpeed = 3.5f;
-constexpr float kScaleStep = 0.1f;
-constexpr float kRotationStep = kPi / 4.0f;
-constexpr float kMinScale = 0.1f;
-constexpr const char* kSceneManifestPath = "assets/scenes/demo_scene.json";
-constexpr const char* kFallbackMeshPath = "primitive:cube";
-constexpr const char* kFallbackTexturePath = "assets/textures/WoodCrate02.dds";
-constexpr const char* kFallbackVertexShaderPath = "assets/shaders/mesh_vertex.glsl";
-constexpr const char* kFallbackFragmentShaderPath = "assets/shaders/mesh_fragment_simple_texture.glsl";
+// Растёт, когда меняется раскладка по умолчанию: старый imgui.ini тогда собирается заново.
+constexpr int kLayoutVersion = 4;
 
-bool isApproximately(float left, float right) {
-    return std::abs(left - right) < 0.0001f;
+// Настройки редактора в imgui.ini, секция [UzlezzEditor][Preferences].
+// Хранятся статически: ImGui пишет ini и после того, как состояние редактора уже уничтожено.
+std::map<std::string, std::string>& preferences() {
+    static std::map<std::string, std::string> values;
+    return values;
 }
 
-bool isDefaultBoxCollider(const Collider& collider) {
-    return collider.type == ColliderType::Box &&
-        isApproximately(collider.halfExtents.x, 0.5f) &&
-        isApproximately(collider.halfExtents.y, 0.5f) &&
-        isApproximately(collider.halfExtents.z, 0.5f) &&
-        isApproximately(collider.offset.x, 0.0f) &&
-        isApproximately(collider.offset.y, 0.0f) &&
-        isApproximately(collider.offset.z, 0.0f);
-}
-
-bool extractMeshBounds(const MeshData& meshData, Vec3& outCenter, Vec3& outHalfExtents) {
-    float minX = std::numeric_limits<float>::max();
-    float minY = std::numeric_limits<float>::max();
-    float minZ = std::numeric_limits<float>::max();
-    float maxX = -std::numeric_limits<float>::max();
-    float maxY = -std::numeric_limits<float>::max();
-    float maxZ = -std::numeric_limits<float>::max();
-    bool hasVertices = false;
-
-    auto consumeVertices = [&](const std::vector<Vertex>& vertices) {
-        for (const Vertex& vertex : vertices) {
-            hasVertices = true;
-            minX = std::min(minX, vertex.position.x);
-            minY = std::min(minY, vertex.position.y);
-            minZ = std::min(minZ, vertex.position.z);
-            maxX = std::max(maxX, vertex.position.x);
-            maxY = std::max(maxY, vertex.position.y);
-            maxZ = std::max(maxZ, vertex.position.z);
-        }
-    };
-
-    if (!meshData.subMeshes.empty()) {
-        for (const SubMesh& subMesh : meshData.subMeshes) {
-            consumeVertices(subMesh.vertices);
-        }
-    } else {
-        consumeVertices(meshData.vertices);
+float prefFloat(const char* key, float fallback) {
+    auto it = preferences().find(key);
+    if (it == preferences().end()) {
+        return fallback;
     }
-
-    if (!hasVertices) {
-        return false;
-    }
-
-    outCenter = Vec3{(minX + maxX) * 0.5f, (minY + maxY) * 0.5f, (minZ + maxZ) * 0.5f};
-    outHalfExtents = Vec3{(maxX - minX) * 0.5f, (maxY - minY) * 0.5f, (maxZ - minZ) * 0.5f};
-    return true;
+    return std::strtof(it->second.c_str(), nullptr);
 }
 
-void fitColliderToMeshBounds(const MeshRenderer& renderer, Collider& collider) {
-    if (!isDefaultBoxCollider(collider) || !renderer.cachedMesh || !renderer.cachedMesh->isLoaded()) {
+bool prefBool(const char* key, bool fallback) {
+    auto it = preferences().find(key);
+    return it == preferences().end() ? fallback : it->second == "1";
+}
+
+const char* windowForKey(const std::string& key) {
+    if (key == "scene") return EditorWindow::kScene;
+    if (key == "game") return EditorWindow::kGame;
+    if (key == "hierarchy") return EditorWindow::kHierarchy;
+    if (key == "inspector") return EditorWindow::kInspector;
+    if (key == "content") return EditorWindow::kContentBrowser;
+    if (key == "console") return EditorWindow::kConsole;
+    if (key == "renderer") return EditorWindow::kRendererInfo;
+    if (key == "gameplay") return EditorWindow::kGameplay;
+    return nullptr;
+}
+
+// Кнопка сегмента в группе Play / Pause / Step.
+bool playButton(const char* id, const char* icon, const char* tooltip, bool active, ImU32 activeColor, bool enabled, ImDrawFlags corners) {
+    const ImVec2 size(38.0f, ImGui::GetFrameHeight() + 2.0f);
+    ImGui::BeginDisabled(!enabled);
+    const bool clicked = ImGui::InvisibleButton(id, size);
+    ImGui::EndDisabled();
+    const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && enabled;
+    const bool held = ImGui::IsItemActive();
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const ImVec2 max = ImGui::GetItemRectMax();
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImU32 background = kFrame;
+    if (active) {
+        background = held ? mix(activeColor, IM_COL32_BLACK, 0.15f) : (hovered ? mix(activeColor, IM_COL32_WHITE, 0.12f) : activeColor);
+    } else if (held) {
+        background = kFrameActive;
+    } else if (hovered) {
+        background = kFrameHovered;
+    }
+    drawList->AddRectFilled(min, max, ImGui::GetColorU32(background), 6.0f, corners);
+    const ImU32 iconColor = !enabled ? kTextFaint : (active ? IM_COL32_WHITE : (hovered ? kText : IM_COL32(200, 200, 204, 255)));
+    EditorUI::drawTextCentered(drawList, ImVec2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f), icon, iconColor);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s", tooltip);
+    }
+    return clicked && enabled;
+}
+}
+
+void EditorState::registerSettingsHandler() {
+    if (ImGui::FindSettingsHandler("UzlezzEditor")) {
         return;
     }
-
-    const MeshData* meshData = renderer.cachedMesh->getData();
-    if (meshData == nullptr) {
-        return;
-    }
-
-    Vec3 boundsCenter{};
-    Vec3 boundsHalfExtents{};
-    if (!extractMeshBounds(*meshData, boundsCenter, boundsHalfExtents)) {
-        return;
-    }
-
-    collider.offset = boundsCenter;
-    collider.halfExtents = boundsHalfExtents;
-}
-
-float toDegrees(float radians) {
-    return radians * 180.0f / kPi;
-}
-
-float toRadians(float degrees) {
-    return degrees * kPi / 180.0f;
-}
-
-float nearestEquivalentAngle(float candidate, float reference) {
-    constexpr float twoPi = kPi * 2.0f;
-    while (candidate - reference > kPi) {
-        candidate -= twoPi;
-    }
-    while (candidate - reference < -kPi) {
-        candidate += twoPi;
-    }
-    return candidate;
-}
-
-Vec3 nearestEquivalentEuler(const Vec3& candidate, const Vec3& reference) {
-    return Vec3{
-        nearestEquivalentAngle(candidate.x, reference.x),
-        nearestEquivalentAngle(candidate.y, reference.y),
-        nearestEquivalentAngle(candidate.z, reference.z)
+    ImGuiSettingsHandler handler;
+    handler.TypeName = "UzlezzEditor";
+    handler.TypeHash = ImHashStr("UzlezzEditor");
+    handler.ReadOpenFn = [](ImGuiContext*, ImGuiSettingsHandler*, const char* name) -> void* {
+        return std::strcmp(name, "Preferences") == 0 ? &preferences() : nullptr;
     };
-}
-
-std::string formatBytes(std::size_t bytes) {
-    const double kb = static_cast<double>(bytes) / 1024.0;
-    if (kb < 1024.0) {
-        return std::to_string(static_cast<int>(kb)) + " KB";
-    }
-
-    const double mb = kb / 1024.0;
-    char buffer[32] = {};
-    std::snprintf(buffer, sizeof(buffer), "%.2f MB", mb);
-    return buffer;
-}
-
-void copyStringToBuffer(const std::string& source, char* buffer, std::size_t bufferSize) {
-    if (bufferSize == 0) {
-        return;
-    }
-
-    std::strncpy(buffer, source.c_str(), bufferSize - 1);
-    buffer[bufferSize - 1] = '\0';
-}
-
-bool splitShaderKey(const std::string& key, std::string& vertexPath, std::string& fragmentPath) {
-    const std::size_t separator = key.find('|');
-    if (separator == std::string::npos) {
-        return false;
-    }
-
-    vertexPath = key.substr(0, separator);
-    fragmentPath = key.substr(separator + 1);
-    return true;
-}
-
-bool rayIntersectsAABB(const Vec3& origin, const Vec3& direction, const AABB& aabb, float& outDistance) {
-    float tMin = 0.0f;
-    float tMax = std::numeric_limits<float>::max();
-
-    auto testAxis = [&](float originValue, float directionValue, float minValue, float maxValue) {
-        if (std::abs(directionValue) < 0.00001f) {
-            return originValue >= minValue && originValue <= maxValue;
-        }
-
-        float first = (minValue - originValue) / directionValue;
-        float second = (maxValue - originValue) / directionValue;
-        if (first > second) {
-            std::swap(first, second);
-        }
-
-        tMin = std::max(tMin, first);
-        tMax = std::min(tMax, second);
-        return tMin <= tMax;
-    };
-
-    if (!testAxis(origin.x, direction.x, aabb.center.x - aabb.halfSize.x, aabb.center.x + aabb.halfSize.x)) {
-        return false;
-    }
-    if (!testAxis(origin.y, direction.y, aabb.center.y - aabb.halfSize.y, aabb.center.y + aabb.halfSize.y)) {
-        return false;
-    }
-    if (!testAxis(origin.z, direction.z, aabb.center.z - aabb.halfSize.z, aabb.center.z + aabb.halfSize.z)) {
-        return false;
-    }
-
-    outDistance = tMin;
-    return tMax >= 0.0f;
-}
-
-AABB buildPickBounds(const Transform& transform) {
-    return AABB{
-        transform.position,
-        Vec3{
-            std::max(std::abs(transform.scale.x) * 0.5f, 0.15f),
-            std::max(std::abs(transform.scale.y) * 0.5f, 0.15f),
-            std::max(std::abs(transform.scale.z) * 0.5f, 0.15f)
+    handler.ReadLineFn = [](ImGuiContext*, ImGuiSettingsHandler*, void*, const char* line) {
+        const char* separator = std::strchr(line, '=');
+        if (separator != nullptr && separator != line) {
+            preferences()[std::string(line, separator)] = std::string(separator + 1);
         }
     };
+    handler.WriteAllFn = [](ImGuiContext*, ImGuiSettingsHandler* self, ImGuiTextBuffer* buffer) {
+        if (preferences().empty()) {
+            return;
+        }
+        buffer->appendf("[%s][Preferences]\n", self->TypeName);
+        for (const auto& [key, value] : preferences()) {
+            buffer->appendf("%s=%s\n", key.c_str(), value.c_str());
+        }
+        buffer->append("\n");
+    };
+    ImGui::AddSettingsHandler(&handler);
 }
 
-Vec3 addVec3(const Vec3& left, const Vec3& right) {
-    return Vec3{left.x + right.x, left.y + right.y, left.z + right.z};
-}
-
-Vec3 scaleVec3(const Vec3& value, float scalar) {
-    return Vec3{value.x * scalar, value.y * scalar, value.z * scalar};
-}
-}
-
-EditorState::EditorState(IRenderAdapter& renderer)
-    : renderer_(renderer),
-      stress_(renderer),
-      physicsSystem_(),
-      renderSystem_(renderer),
-      debugRenderSystem_(renderer) {
+EditorState::EditorState(IRenderAdapter& renderer, EditorStartupOptions startup)
+    : context_(renderer),
+      startup_(std::move(startup)) {
 }
 
 void EditorState::onEnter() {
     LOG_INFO("EditorState: entered");
-    bindActions();
-    createScene();
-    createGameCamera();
-    createEditorCameraEntity();
-    setCameraMode();
-    debugRenderSystem_.setEnabled(false);
-
-    ServiceLocator::getEventDispatcher().clear();
-    ServiceLocator::getEventDispatcher().addListener<CollisionEvent>([this](const CollisionEvent& event) {
-        LOG_INFO(
-            "CollisionEvent: " +
-            entityLabel(event.first) +
-            " <-> " +
-            entityLabel(event.second) +
-            ", penetration=" +
-            std::to_string(event.penetration));
-    });
+    if (!startup_.scriptPath.empty()) {
+        std::string error;
+        if (!script_.load(startup_.scriptPath, error)) {
+            LOG_ERROR("EditorState: " + error);
+        }
+    }
+    context_.enter();
+    // Сцена могла догрузиться раньше первого NewFrame — тогда ImGui ещё не читал ini
+    // и настройки редактора пусты. Дочитываем сами; NewFrame потом повторно не читает.
+    if (!ImGui::GetCurrentContext()->SettingsLoaded && ImGui::GetIO().IniFilename != nullptr) {
+        ImGui::LoadIniSettingsFromDisk(ImGui::GetIO().IniFilename);
+    }
+    loadPreferences();
+    if (prefFloat("LayoutVersion", 0.0f) != static_cast<float>(kLayoutVersion) || startup_.resetLayout) {
+        resetLayout_ = true;
+    }
+    EditorTheme::apply(uiScale_);
 }
 
 void EditorState::onExit() {
-    scripts_.stop();
     LOG_INFO("EditorState: exited");
-    ServiceLocator::getEventDispatcher().clear();
-    world_.clear();
-    selectedEntity_ = kInvalidEntity;
-    controllableEntity_ = kInvalidEntity;
-    gameCameraEntity_ = kInvalidEntity;
-    editorCameraEntity_ = kInvalidEntity;
+    storePreferences();
+    context_.exit();
+}
+
+void EditorState::loadPreferences() {
+    uiScale_ = std::clamp(prefFloat("UiScale", 1.0f), 0.75f, 2.0f);
+    contentBrowser_.tileSize = std::clamp(prefFloat("TileSize", contentBrowser_.tileSize), 72.0f, 168.0f);
+    contentBrowser_.listView = prefBool("ListView", false) || startup_.listView;
+    console_.collapse = prefBool("ConsoleCollapse", false);
+    console_.autoScroll = prefBool("ConsoleAutoScroll", true);
+    console_.showInfo = prefBool("ConsoleInfo", true);
+    console_.showWarnings = prefBool("ConsoleWarnings", true);
+    console_.showErrors = prefBool("ConsoleErrors", true);
+    SceneViewSettings& scene = context_.sceneView;
+    scene.showGrid = prefBool("Grid", true);
+    scene.snap = prefBool("Snap", false);
+    scene.translateSnap = prefFloat("SnapMove", scene.translateSnap);
+    scene.rotateSnapDegrees = prefFloat("SnapRotate", scene.rotateSnapDegrees);
+    scene.scaleSnap = prefFloat("SnapScale", scene.scaleSnap);
+    scene.localSpace = prefBool("LocalSpace", true);
+    scene.showSelectionOutline = prefBool("SelectionOutline", true);
+    scene.showCameraIcons = prefBool("CameraIcons", true);
+    scene.showStats = prefBool("SceneStats", false);
+    context_.debugRenderSystem.setEnabled(prefBool("Colliders", false) || startup_.showColliders);
+    context_.camera.moveSpeed = std::clamp(prefFloat("CameraSpeed", context_.camera.moveSpeed), 0.5f, 40.0f);
+    gameView_.resolution = static_cast<int>(prefFloat("GameResolution", 0.0f));
+    gameView_.showStats = prefBool("GameStats", false);
+    hierarchy_.open = prefBool("ShowHierarchy", true);
+    inspector_.open = prefBool("ShowInspector", true);
+    sceneView_.open = prefBool("ShowScene", true);
+    gameView_.open = prefBool("ShowGame", true);
+    rendererInfo_.open = prefBool("ShowRendererInfo", true);
+    gameplay_.open = prefBool("ShowGameplay", true);
+    contentBrowser_.open = prefBool("ShowContentBrowser", true);
+    console_.open = prefBool("ShowConsole", true);
+}
+
+void EditorState::storePreferences() {
+    std::map<std::string, std::string> values;
+    auto setFloat = [&values](const char* key, float value) {
+        char buffer[32];
+        std::snprintf(buffer, sizeof(buffer), "%g", value);
+        values[key] = buffer;
+    };
+    auto setBool = [&values](const char* key, bool value) { values[key] = value ? "1" : "0"; };
+    const SceneViewSettings& scene = context_.sceneView;
+    setFloat("LayoutVersion", static_cast<float>(kLayoutVersion));
+    setFloat("UiScale", uiScale_);
+    setFloat("TileSize", contentBrowser_.tileSize);
+    setBool("ListView", contentBrowser_.listView);
+    setBool("ConsoleCollapse", console_.collapse);
+    setBool("ConsoleAutoScroll", console_.autoScroll);
+    setBool("ConsoleInfo", console_.showInfo);
+    setBool("ConsoleWarnings", console_.showWarnings);
+    setBool("ConsoleErrors", console_.showErrors);
+    setBool("Grid", scene.showGrid);
+    setBool("Snap", scene.snap);
+    setFloat("SnapMove", scene.translateSnap);
+    setFloat("SnapRotate", scene.rotateSnapDegrees);
+    setFloat("SnapScale", scene.scaleSnap);
+    setBool("LocalSpace", scene.localSpace);
+    setBool("SelectionOutline", scene.showSelectionOutline);
+    setBool("CameraIcons", scene.showCameraIcons);
+    setBool("SceneStats", scene.showStats);
+    setBool("Colliders", context_.debugRenderSystem.isEnabled());
+    setFloat("CameraSpeed", context_.camera.moveSpeed);
+    setFloat("GameResolution", static_cast<float>(gameView_.resolution));
+    setBool("GameStats", gameView_.showStats);
+    setBool("ShowHierarchy", hierarchy_.open);
+    setBool("ShowInspector", inspector_.open);
+    setBool("ShowScene", sceneView_.open);
+    setBool("ShowGame", gameView_.open);
+    setBool("ShowRendererInfo", rendererInfo_.open);
+    setBool("ShowGameplay", gameplay_.open);
+    setBool("ShowContentBrowser", contentBrowser_.open);
+    setBool("ShowConsole", console_.open);
+    if (values != preferences()) {
+        preferences() = std::move(values);
+        ImGui::MarkIniSettingsDirty();
+    }
 }
 
 void EditorState::update(float dt) {
-    world_.forEach<MeshRenderer, Collider>([](Entity, MeshRenderer& mesh, Collider& collider) {
-        if (!mesh.colliderBoundsInitialized && mesh.cachedMesh && mesh.cachedMesh->isLoaded()) {
-            fitColliderToMeshBounds(mesh, collider);
-            mesh.colliderBoundsInitialized = true;
-        }
-    });
     ZoneScoped;
     lastDt_ = dt;
-    fpsAccumulator_ += dt;
-    ++fpsFrames_;
-    if (fpsAccumulator_ >= 1.0f) {
-        fpsAverage_ = static_cast<float>(fpsFrames_) / fpsAccumulator_;
-        fpsAccumulator_ = 0.0f;
-        fpsFrames_ = 0;
+    // Стиль можно менять только между кадрами ImGui — update() как раз идёт до NewFrame().
+    if (pendingUiScale_ > 0.0f) {
+        uiScale_ = pendingUiScale_;
+        pendingUiScale_ = 0.0f;
+        EditorTheme::apply(uiScale_);
     }
+    if (!script_.empty()) {
+        script_.apply(frame_);
+    }
+    context_.update(dt);
+}
 
-    if (HotReload::getInstance().update()) {
-        const auto& changedFiles = HotReload::getInstance().getChangedFiles();
-        for (const auto& path : changedFiles) {
-            ResourceManager::getInstance().reloadShadersForFile(path);
+std::vector<std::string> EditorState::takeScreenshotRequests() {
+    std::vector<std::string> requests;
+    requests.swap(screenshotRequests_);
+    return requests;
+}
+
+void EditorState::togglePlay() {
+    if (context_.isPlaying()) {
+        context_.stop();
+        if (sceneView_.open) {
+            ImGui::SetWindowFocus(EditorWindow::kScene);
+        }
+    } else {
+        context_.play();
+        if (gameView_.open) {
+            ImGui::SetWindowFocus(EditorWindow::kGame);
         }
     }
+}
 
-    if (animationLoad_ && !animationLoad_->isPending() && mode_ == EditorMode::Edit) rebuildAnimationDemo();
-    heavyLoad_.update();
-    stress_.onFrame(dt * 1000.0);
+void EditorState::togglePause() {
+    context_.setPaused(!context_.paused);
+}
 
-    const ImGuiIO& io = ImGui::GetIO();
-    const bool allowGameInput = viewportInputActive_ && !io.WantTextInput;
-
-    if (mode_ == EditorMode::Play) {
-        updateGameplay(dt, allowGameInput);
-    }
-    // Editor preview and Play use the same animation pipeline, completed before rendering.
-    animationSystem_.update(world_, dt);
+void EditorState::step() {
+    context_.stepFrame();
 }
 
 void EditorState::render() {
     ZoneScopedN("Editor UI");
-    renderDockSpace();
+    console_.poll();
+    handleShortcuts();
     renderMainMenu();
-    renderToolbar();
-    renderScriptingPanel();
+    renderMainToolbar();
+    renderStatusBar();
+    renderDockSpace();
 
+    hierarchy_.draw(context_);
+    sceneView_.draw(context_);
+    gameView_.draw(context_);
+    rendererInfo_.draw(context_);
+    contentBrowser_.draw(context_, lastDt_);
+    console_.draw();
+    // После Content Browser: новая вкладка в том же доке не перехватывает выбор при первом показе.
+    gameplay_.draw(context_);
+    inspector_.draw(context_);
+    renderModals();
+    if (showImGuiDemo_) {
+        ImGui::ShowDemoWindow(&showImGuiDemo_);
+    }
+
+    if (!context_.focusWindowRequest.empty()) {
+        ImGui::SetWindowFocus(context_.focusWindowRequest.c_str());
+        context_.focusWindowRequest.clear();
+    }
+    if (frame_ == 2) {
+        applyStartupOptions();
+    }
+    storePreferences();
+    if (!script_.empty()) {
+        for (const std::string& path : script_.screenshots(frame_)) {
+            screenshotRequests_.push_back(path);
+        }
+        scriptQuit_ = scriptQuit_ || script_.quitAt(frame_);
+    }
+    ++frame_;
+}
+
+void EditorState::applyStartupOptions() {
+    if (!startup_.selectEntity.empty()) {
+        for (Entity entity : context_.world.getEntities()) {
+            if (context_.isEditable(entity) && context_.displayName(entity) == startup_.selectEntity) {
+                context_.select(entity);
+                context_.focusSelection();
+                break;
+            }
+        }
+    }
+    if (!startup_.browseFolder.empty()) {
+        contentBrowser_.openFolder(context_, startup_.browseFolder);
+    }
+    if (!startup_.selectAsset.empty()) {
+        context_.revealAssetRequest = startup_.selectAsset;
+    }
+    for (const std::string& key : startup_.focusWindows) {
+        if (const char* window = windowForKey(key)) {
+            ImGui::SetWindowFocus(window);
+        }
+    }
+    if (startup_.play && !context_.isPlaying()) {
+        togglePlay();
+    }
+}
+
+void EditorState::handleShortcuts() {
     const ImGuiIO& io = ImGui::GetIO();
-    if (mode_ == EditorMode::Edit && !io.WantTextInput && world_.isAlive(selectedEntity_) && !isEditorEntity(selectedEntity_)) {
-        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) {
-            duplicateEntity(selectedEntity_);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) {
-            beginRename(selectedEntity_);
-        }
+    const ImGuiInputFlags global = ImGuiInputFlags_RouteGlobal;
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_P, global)) {
+        togglePlay();
+    }
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_P, global)) {
+        togglePause();
+    }
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Alt | ImGuiKey_P, global)) {
+        step();
+    }
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_R, global)) {
+        context_.assets.refresh();
+        ThumbnailCache::instance().forgetFailures();
     }
 
-    if (showHierarchy_) {
-        renderHierarchyPanel();
+    const bool typing = io.WantTextInput || ImGui::IsAnyItemActive();
+    if (typing || context_.gameViewInputActive) {
+        return;
     }
-    if (showInspector_) {
-        renderInspectorPanel();
+    const bool editable = !context_.isPlaying() && context_.isEditable(context_.selected);
+    if (editable && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, global)) {
+        context_.duplicate(context_.selected);
     }
-    if (showStatistics_) {
-        renderStatisticsPanel();
+    if (editable && ImGui::IsKeyPressed(ImGuiKey_F2, false)) {
+        context_.beginRename(context_.selected);
     }
-    if (showViewport_) {
-        renderViewportPanel();
+    if (editable && (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Backspace, global))) {
+        context_.destroy(context_.selected);
     }
-}
-
-void EditorState::bindActions() {
-    InputManager& inputManager = InputManager::getInstance();
-    inputManager.bindAction("MoveLeft", KeyCode::Left);
-    inputManager.bindAction("MoveLeft", KeyCode::A);
-    inputManager.bindAction("MoveRight", KeyCode::Right);
-    inputManager.bindAction("MoveRight", KeyCode::D);
-    inputManager.bindAction("MoveForward", KeyCode::Up);
-    inputManager.bindAction("MoveForward", KeyCode::W);
-    inputManager.bindAction("MoveBackward", KeyCode::Down);
-    inputManager.bindAction("MoveBackward", KeyCode::S);
-    inputManager.bindAction("Jump", KeyCode::Space);
-    inputManager.bindAction("StartWave", KeyCode::Space);
-    inputManager.bindAction("DefensePulse", KeyCode::F);
-    inputManager.bindAction("CameraForward", KeyCode::W);
-    inputManager.bindAction("CameraBackward", KeyCode::S);
-    inputManager.bindAction("CameraLeft", KeyCode::A);
-    inputManager.bindAction("CameraRight", KeyCode::D);
-    inputManager.bindAction("CameraUp", KeyCode::E);
-    inputManager.bindAction("CameraDown", KeyCode::Q);
-}
-
-void EditorState::createScene() {
-    animationDemoEntities_.clear();
-    world_.clear();
-    selectedEntity_ = kInvalidEntity;
-    controllableEntity_ = kInvalidEntity;
-    gameCameraEntity_ = kInvalidEntity;
-    editorCameraEntity_ = kInvalidEntity;
-
-    if (!createSceneFromManifest()) {
-        createFallbackScene();
-    }
-
-    for (Entity entity : world_.getEntities()) {
-        if (!isEditorEntity(entity)) {
-            selectedEntity_ = entity;
-            break;
-        }
+    if (context_.isEditable(context_.selected) && !io.KeyCtrl && !io.KeySuper && !io.KeyAlt &&
+        !ImGui::IsMouseDown(ImGuiMouseButton_Right) && ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+        context_.focusSelection();
     }
 }
 
-bool EditorState::createSceneFromManifest() {
-    auto& resourceManager = ResourceManager::getInstance();
-    auto scene = resourceManager.loadSceneAsync(kSceneManifestPath);
-    if (!scene || !scene->isLoaded()) return false;
-    const SceneManifest& manifest = *scene->getData();
+void EditorState::renderMainMenu() {
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 7.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 6.0f));
+    ImGui::PushStyleColor(ImGuiCol_MenuBarBg, toVec4(kBackground));
+    const bool open = ImGui::BeginMainMenuBar();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+    if (!open) {
+        return;
+    }
+    const bool playing = context_.isPlaying();
+    const bool editable = !playing && context_.isEditable(context_.selected);
 
-    for (const SceneEntityDescription& description : manifest.getEntities()) {
-        const std::string* meshPath = manifest.findMeshPath(description.meshId);
-        const ShaderAssetPaths* shaderPaths = manifest.findShader(description.shaderId);
-        if (meshPath == nullptr || shaderPaths == nullptr) {
-            LOG_ERROR("Scene entity has unresolved resources: " + description.tag);
-            continue;
-        }
-
-        MeshRenderer renderer;
-        renderer.meshId = description.meshId;
-        renderer.baseColorTextureId = description.baseColorTextureId;
-        renderer.shaderId = description.shaderId;
-        renderer.cachedMesh = resourceManager.loadMeshAsync(*meshPath);
-        renderer.cachedShader = resourceManager.loadShader(shaderPaths->vertexPath, shaderPaths->fragmentPath);
-
-        if (!description.baseColorTextureId.empty()) {
-            if (const std::string* texturePath = manifest.findTexturePath(description.baseColorTextureId)) {
-                renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(*texturePath, JobPriority::High);
+    if (ImGui::BeginMenu("File")) {
+        if (ImGui::BeginMenu(ICON_LC_CLAPPERBOARD "  Open Scene")) {
+            int scenes = 0;
+            for (const AssetEntry& entry : context_.assets.search(".json", 200)) {
+                if (entry.type != AssetType::Scene) {
+                    continue;
+                }
+                ++scenes;
+                if (ImGui::MenuItem(entry.name.c_str(), nullptr, entry.path == context_.scenePath())) {
+                    context_.loadScene(entry.path);
+                }
             }
-        }
-
-        if (!renderer.cachedMesh || !renderer.cachedShader) {
-            LOG_ERROR("Failed to load scene resources for entity: " + description.tag);
-            continue;
-        }
-
-        Entity entity = world_.createEntity();
-        world_.addComponent<Tag>(entity, Tag{description.tag});
-        world_.addComponent<Transform>(entity, Transform{description.position, description.rotation, description.scale});
-        world_.addComponent<MeshRenderer>(entity, renderer);
-        if (description.hasRigidbody) {
-            world_.addComponent<Rigidbody>(entity, description.rigidbody);
-        }
-        if (description.hasCollider) {
-            Collider collider = description.collider;
-            fitColliderToMeshBounds(renderer, collider);
-            world_.addComponent<Collider>(entity, collider);
-        }
-        if (description.spinSpeed != 0.0f) {
-            world_.addComponent<Spin>(entity, Spin{description.spinSpeed});
-        }
-
-        if (description.controllable) {
-            controllableEntity_ = entity;
-            if (!world_.hasComponent<Rigidbody>(entity)) {
-                world_.addComponent<Rigidbody>(entity, Rigidbody{Vec3{}, Vec3{}, 1.0f, true});
+            if (scenes == 0) {
+                ImGui::MenuItem("No scenes in assets/scenes", nullptr, false, false);
             }
-            if (!world_.hasComponent<Collider>(entity)) {
-                Collider collider{ColliderType::Box, Vec3{0.5f, 0.5f, 0.5f}, Vec3{}, 0.5f};
-                fitColliderToMeshBounds(renderer, collider);
-                world_.addComponent<Collider>(entity, collider);
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem(ICON_LC_SWORDS "  Open Arena (Lua)", nullptr, context_.isArenaScene())) {
+            context_.loadArenaScene();
+            gameplay_.open = true;
+            context_.focusWindowRequest = EditorWindow::kGameplay;
+        }
+        if (ImGui::MenuItem(ICON_LC_ROTATE_CCW "  Reload Scene")) {
+            context_.reloadScene();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(ICON_LC_REFRESH_CW "  Refresh Assets", EditorUI::shortcut("Ctrl+R").c_str())) {
+            context_.assets.refresh();
+            ThumbnailCache::instance().forgetFailures();
+        }
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Edit")) {
+        if (ImGui::MenuItem(ICON_LC_COPY "  Duplicate", EditorUI::shortcut("Ctrl+D").c_str(), false, editable)) {
+            context_.duplicate(context_.selected);
+        }
+        if (ImGui::MenuItem(ICON_LC_PENCIL "  Rename", "F2", false, editable)) {
+            context_.beginRename(context_.selected);
+        }
+        if (ImGui::MenuItem(ICON_LC_TRASH_2 "  Delete", "Del", false, editable)) {
+            context_.destroy(context_.selected);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(ICON_LC_FOCUS "  Frame Selected", "F", false, context_.isEditable(context_.selected))) {
+            context_.focusSelection();
+        }
+        if (ImGui::MenuItem(ICON_LC_X "  Deselect", nullptr, false, context_.selected != kInvalidEntity || !context_.selectedAsset.empty())) {
+            context_.clearSelection();
+        }
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Entity")) {
+        ImGui::BeginDisabled(playing);
+        if (ImGui::MenuItem(ICON_LC_SQUARE_DASHED "  Create Empty")) {
+            context_.beginRename(context_.createEmpty("Empty", context_.defaultSpawnPosition()));
+        }
+        if (ImGui::MenuItem(ICON_LC_BOX "  Cube")) {
+            context_.createCube("Cube", context_.defaultSpawnPosition());
+        }
+        if (ImGui::MenuItem(ICON_LC_CIRCLE "  Sphere")) {
+            context_.createSphere("Sphere", context_.defaultSpawnPosition());
+        }
+        if (ImGui::BeginMenu(ICON_LC_PACKAGE "  Model")) {
+            int models = 0;
+            for (const AssetEntry& entry : context_.assets.search(".", 2000)) {
+                if (entry.type != AssetType::Model) {
+                    continue;
+                }
+                ++models;
+                if (ImGui::MenuItem(entry.name.c_str())) {
+                    context_.createModel(entry.path, context_.dropPoint(context_.camera.getPosition(), context_.camera.getForward()));
+                }
             }
+            if (models == 0) {
+                ImGui::MenuItem("No models in assets", nullptr, false, false);
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(ICON_LC_PERSON_STANDING "  Animated Crowd...")) {
+            rendererInfo_.open = true;
+            context_.focusWindowRequest = EditorWindow::kRendererInfo;
+        }
+        ImGui::EndDisabled();
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("View")) {
+        ImGui::MenuItem(ICON_LC_LIST_TREE "  Hierarchy", nullptr, &hierarchy_.open);
+        ImGui::MenuItem(ICON_LC_SLIDERS_HORIZONTAL "  Inspector", nullptr, &inspector_.open);
+        ImGui::MenuItem(ICON_LC_BOX "  Scene", nullptr, &sceneView_.open);
+        ImGui::MenuItem(ICON_LC_GAMEPAD_2 "  Game", nullptr, &gameView_.open);
+        ImGui::MenuItem(ICON_LC_ACTIVITY "  Renderer Info", nullptr, &rendererInfo_.open);
+        ImGui::MenuItem(ICON_LC_SWORDS "  Gameplay", nullptr, &gameplay_.open);
+        ImGui::MenuItem(ICON_LC_FOLDER "  Content Browser", nullptr, &contentBrowser_.open);
+        ImGui::MenuItem(ICON_LC_SQUARE_TERMINAL "  Console", nullptr, &console_.open);
+        ImGui::Separator();
+        if (ImGui::BeginMenu(ICON_LC_TYPE "  UI Scale")) {
+            const float scales[] = {0.9f, 1.0f, 1.1f, 1.25f, 1.5f};
+            for (float scale : scales) {
+                char label[16];
+                std::snprintf(label, sizeof(label), "%.0f%%", scale * 100.0f);
+                if (ImGui::MenuItem(label, nullptr, std::abs(uiScale_ - scale) < 0.01f)) {
+                    pendingUiScale_ = scale;
+                }
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem(ICON_LC_LAYOUT_DASHBOARD "  Reset Layout")) {
+            resetLayout_ = true;
+        }
+        ImGui::Separator();
+        ImGui::MenuItem(ICON_LC_GRID_3X3 "  Grid", nullptr, &context_.sceneView.showGrid);
+        bool colliders = context_.debugRenderSystem.isEnabled();
+        if (ImGui::MenuItem(ICON_LC_SQUARE_DASHED "  Colliders", nullptr, &colliders)) {
+            context_.debugRenderSystem.setEnabled(colliders);
+        }
+        ImGui::MenuItem(ICON_LC_SCAN "  Selection Outline", nullptr, &context_.sceneView.showSelectionOutline);
+        ImGui::Separator();
+        ImGui::MenuItem(ICON_LC_APP_WINDOW "  ImGui Demo", nullptr, &showImGuiDemo_);
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Play")) {
+        if (ImGui::MenuItem(playing ? ICON_LC_SQUARE "  Stop" : ICON_LC_PLAY "  Play", EditorUI::shortcut("Ctrl+P").c_str())) {
+            togglePlay();
+        }
+        if (ImGui::MenuItem(ICON_LC_PAUSE "  Pause", EditorUI::shortcut("Ctrl+Shift+P").c_str(), context_.paused)) {
+            togglePause();
+        }
+        if (ImGui::MenuItem(ICON_LC_STEP_FORWARD "  Step", EditorUI::shortcut("Ctrl+Alt+P").c_str(), false, playing)) {
+            step();
+        }
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Help")) {
+        if (ImGui::MenuItem(ICON_LC_KEYBOARD "  Controls")) {
+            showControls_ = true;
+        }
+        if (ImGui::MenuItem(ICON_LC_INFO "  About")) {
+            showAbout_ = true;
+        }
+        ImGui::EndMenu();
+    }
+
+    // Справа — название проекта и сцены, как в заголовке Unity.
+    const std::string title = std::string("UzlezzEngine  \xC2\xB7  ") + context_.sceneName();
+    const float width = ImGui::CalcTextSize(title.c_str()).x;
+    ImGui::SameLine(ImGui::GetWindowWidth() - width - 16.0f);
+    ImGui::PushStyleColor(ImGuiCol_Text, toVec4(kTextFaint));
+    ImGui::TextUnformatted(title.c_str());
+    ImGui::PopStyleColor();
+    ImGui::EndMainMenuBar();
+}
+
+void EditorState::renderMainToolbar() {
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float height = ImGui::GetFrameHeight() + 14.0f;
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, toVec4(kBackground));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 6.0f));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking;
+    if (ImGui::BeginViewportSideBar("##MainToolbar", viewport, ImGuiDir_Up, height, flags)) {
+        const bool playing = context_.isPlaying();
+        // Слева — сцена.
+        ImGui::SetCursorPos(ImVec2(12.0f, 6.0f));
+        ImGui::AlignTextToFramePadding();
+        EditorUI::iconLabel(ICON_LC_CLAPPERBOARD, context_.sceneName().c_str(), kAssetScene, kTextDim);
+
+        // По центру — Play / Pause / Step.
+        const float groupWidth = 38.0f * 3.0f + 2.0f;
+        ImGui::SetCursorPos(ImVec2((ImGui::GetWindowWidth() - groupWidth) * 0.5f, 5.0f));
+        if (playButton("##play", playing ? ICON_LC_SQUARE : ICON_LC_PLAY, playing ? "Stop (Ctrl+P)" : "Play (Ctrl+P)",
+                playing, kPlay, true, ImDrawFlags_RoundCornersLeft)) {
+            togglePlay();
+        }
+        ImGui::SameLine(0.0f, 1.0f);
+        if (playButton("##pause", ICON_LC_PAUSE, "Pause (Ctrl+Shift+P)", context_.paused, IM_COL32(214, 150, 40, 255), true,
+                ImDrawFlags_RoundCornersNone)) {
+            togglePause();
+        }
+        ImGui::SameLine(0.0f, 1.0f);
+        if (playButton("##step", ICON_LC_STEP_FORWARD, "Step one frame (Ctrl+Alt+P)", false, kPlay, playing, ImDrawFlags_RoundCornersRight)) {
+            step();
         }
 
-        HotReload::getInstance().watchFile(shaderPaths->vertexPath);
-        HotReload::getInstance().watchFile(shaderPaths->fragmentPath);
-    }
-
-    return !world_.getEntities().empty();
-}
-
-void EditorState::createFallbackScene() {
-    LOG_ERROR("EditorState: falling back to resource-based test scene");
-
-    auto& resourceManager = ResourceManager::getInstance();
-    MeshRenderer renderer;
-    renderer.meshId = "fallback_cube";
-    renderer.baseColorTextureId = "fallback_crate";
-    renderer.shaderId = "fallback_textured";
-    renderer.cachedMesh = resourceManager.loadMeshAsync(kFallbackMeshPath);
-    renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(kFallbackTexturePath, JobPriority::High);
-    renderer.cachedShader = resourceManager.loadShader(kFallbackVertexShaderPath, kFallbackFragmentShaderPath);
-
-    if (!renderer.cachedMesh || !renderer.cachedShader || !renderer.cachedBaseColorTexture) {
-        LOG_ERROR("EditorState: failed to build fallback scene resources");
-        return;
-    }
-
-    HotReload::getInstance().watchFile(kFallbackVertexShaderPath);
-    HotReload::getInstance().watchFile(kFallbackFragmentShaderPath);
-
-    controllableEntity_ = world_.createEntity();
-    world_.addComponent<Tag>(controllableEntity_, Tag{"FallbackCube"});
-    world_.addComponent<Transform>(controllableEntity_, Transform{{0.0f, 0.0f, 0.0f}, {}, {0.8f, 0.8f, 0.8f}});
-    world_.addComponent<MeshRenderer>(controllableEntity_, renderer);
-    world_.addComponent<Rigidbody>(controllableEntity_, Rigidbody{Vec3{}, Vec3{}, 1.0f, true});
-    Collider collider{ColliderType::Box, Vec3{0.5f, 0.5f, 0.5f}, Vec3{}, 0.5f};
-    fitColliderToMeshBounds(renderer, collider);
-    world_.addComponent<Collider>(controllableEntity_, collider);
-}
-
-Entity EditorState::createCubeEntity(const std::string& requestedName, const Vec3& position) {
-    ResourceManager& resourceManager = ResourceManager::getInstance();
-
-    MeshRenderer renderer;
-    renderer.meshId = kFallbackMeshPath;
-    renderer.baseColorTextureId = kFallbackTexturePath;
-    renderer.shaderId = std::string(kFallbackVertexShaderPath) + "|" + kFallbackFragmentShaderPath;
-    renderer.cachedMesh = resourceManager.loadMeshAsync(kFallbackMeshPath);
-    renderer.cachedBaseColorTexture = resourceManager.loadTextureAsync(kFallbackTexturePath, JobPriority::High);
-    renderer.cachedShader = resourceManager.loadShader(kFallbackVertexShaderPath, kFallbackFragmentShaderPath);
-
-    if (!renderer.cachedMesh || !renderer.cachedBaseColorTexture || !renderer.cachedShader) {
-        LOG_ERROR("EditorState: failed to create cube entity resources");
-        return kInvalidEntity;
-    }
-
-    Entity entity = world_.createEntity();
-    world_.addComponent<Tag>(entity, Tag{requestedName});
-    world_.addComponent<Transform>(entity, Transform{position, {}, {1.0f, 1.0f, 1.0f}});
-    world_.addComponent<MeshRenderer>(entity, renderer);
-    Collider collider{ColliderType::Box, Vec3{0.5f, 0.5f, 0.5f}, Vec3{}, 0.5f};
-    fitColliderToMeshBounds(renderer, collider);
-    world_.addComponent<Collider>(entity, collider);
-
-    HotReload::getInstance().watchFile(kFallbackVertexShaderPath);
-    HotReload::getInstance().watchFile(kFallbackFragmentShaderPath);
-
-    selectedEntity_ = entity;
-    return entity;
-}
-
-Entity EditorState::duplicateEntity(Entity source) {
-    if (!world_.isAlive(source) || isEditorEntity(source)) {
-        return kInvalidEntity;
-    }
-
-    Entity entity = world_.createEntity();
-    if (world_.hasComponent<ScriptComponent>(source))
-        world_.addComponent<ScriptComponent>(entity, world_.getComponent<ScriptComponent>(source));
-
-    if (world_.hasComponent<Tag>(source)) {
-        world_.addComponent<Tag>(entity, Tag{world_.getComponent<Tag>(source).name + " Copy"});
-    } else {
-        world_.addComponent<Tag>(entity, Tag{"Entity Copy"});
-    }
-
-    if (world_.hasComponent<Transform>(source)) {
-        Transform transform = world_.getComponent<Transform>(source);
-        transform.position.x += 1.0f;
-        transform.position.y -= 1.0f;
-        world_.addComponent<Transform>(entity, transform);
-    }
-    if (world_.hasComponent<MeshRenderer>(source)) {
-        world_.addComponent<MeshRenderer>(entity, world_.getComponent<MeshRenderer>(source));
-    }
-    if (world_.hasComponent<Animator>(source)) {
-        world_.addComponent<Animator>(entity, world_.getComponent<Animator>(source));
-    }
-    if (world_.hasComponent<Rigidbody>(source)) {
-        Rigidbody rigidbody = world_.getComponent<Rigidbody>(source);
-        rigidbody.velocity = Vec3{};
-        rigidbody.acceleration = Vec3{};
-        world_.addComponent<Rigidbody>(entity, rigidbody);
-    }
-    if (world_.hasComponent<Collider>(source)) {
-        world_.addComponent<Collider>(entity, world_.getComponent<Collider>(source));
-    }
-    if (world_.hasComponent<Spin>(source)) {
-        world_.addComponent<Spin>(entity, world_.getComponent<Spin>(source));
-    }
-    if (world_.hasComponent<Camera>(source)) {
-        Camera camera = world_.getComponent<Camera>(source);
-        camera.active = false;
-        world_.addComponent<Camera>(entity, camera);
-    }
-
-    selectedEntity_ = entity;
-    return entity;
-}
-
-void EditorState::beginRename(Entity entity) {
-    if (!world_.isAlive(entity) || isEditorEntity(entity)) {
-        return;
-    }
-
-    renamingEntity_ = entity;
-    renameBuffer_.fill('\0');
-    copyStringToBuffer(entityLabel(entity), renameBuffer_.data(), renameBuffer_.size());
-    if (world_.hasComponent<Tag>(entity)) {
-        copyStringToBuffer(world_.getComponent<Tag>(entity).name, renameBuffer_.data(), renameBuffer_.size());
-    }
-}
-
-void EditorState::commitRename() {
-    if (!world_.isAlive(renamingEntity_) || isEditorEntity(renamingEntity_)) {
-        renamingEntity_ = kInvalidEntity;
-        return;
-    }
-
-    if (!world_.hasComponent<Tag>(renamingEntity_)) {
-        world_.addComponent<Tag>(renamingEntity_, Tag{});
-    }
-    world_.getComponent<Tag>(renamingEntity_).name = renameBuffer_.data();
-    renamingEntity_ = kInvalidEntity;
-}
-
-Vec3 EditorState::defaultSpawnPosition() const {
-    return addVec3(editorCamera_.getPosition(), scaleVec3(editorCamera_.getForward(), 4.0f));
-}
-
-void EditorState::createGameCamera() {
-    gameCameraEntity_ = world_.createEntity();
-    world_.addComponent<Tag>(gameCameraEntity_, Tag{"MainCamera"});
-    world_.addComponent<Transform>(gameCameraEntity_, Transform{
-        Vec3{0.0f, -10.0f, 4.0f},
-        Vec3{-0.3f, 0.0f, 0.0f},
-        Vec3{1.0f, 1.0f, 1.0f}
-    });
-    world_.addComponent<Camera>(gameCameraEntity_, Camera{45.0f, 0.1f, 100.0f, 800.0f / 600.0f, false, Mat4::identity(), Mat4::identity()});
-}
-
-void EditorState::createEditorCameraEntity() {
-    editorCameraEntity_ = world_.createEntity();
-    world_.addComponent<Transform>(editorCameraEntity_, Transform{});
-    world_.addComponent<Camera>(editorCameraEntity_, Camera{45.0f, 0.1f, 200.0f, 800.0f / 600.0f, true, Mat4::identity(), Mat4::identity()});
-    syncEditorCameraEntity();
-}
-
-void EditorState::syncEditorCameraEntity() {
-    if (!world_.isAlive(editorCameraEntity_) || !world_.hasComponent<Camera>(editorCameraEntity_)) {
-        return;
-    }
-
-    Camera& camera = world_.getComponent<Camera>(editorCameraEntity_);
-    camera.active = mode_ == EditorMode::Edit;
-    camera.aspectRatio = viewportHeight_ > 0 ? static_cast<float>(viewportWidth_) / static_cast<float>(viewportHeight_) : 800.0f / 600.0f;
-    camera.viewMatrix = editorCamera_.getViewMatrix();
-    camera.projectionMatrix = editorCamera_.getProjectionMatrix();
-    if (world_.hasComponent<Transform>(editorCameraEntity_)) {
-        world_.getComponent<Transform>(editorCameraEntity_).position = editorCamera_.getPosition();
-    }
-}
-
-void EditorState::setCameraMode() {
-    if (world_.isAlive(editorCameraEntity_) && world_.hasComponent<Camera>(editorCameraEntity_)) {
-        world_.getComponent<Camera>(editorCameraEntity_).active = mode_ == EditorMode::Edit;
-    }
-    if (world_.isAlive(gameCameraEntity_) && world_.hasComponent<Camera>(gameCameraEntity_)) {
-        world_.getComponent<Camera>(gameCameraEntity_).active = mode_ == EditorMode::Play;
-    }
-}
-
-void EditorState::updateGameplay(float dt, bool allowInput) {
-    scripts_.update(dt, allowInput);
-    ZoneScopedN("Simulation");
-    if (allowInput) {
-        processGameplayInput(dt);
-    }
-
-    bool waitingForColliders = false;
-    world_.forEach<MeshRenderer, Collider>([&](Entity, MeshRenderer& mesh, Collider&) {
-        waitingForColliders |= mesh.cachedMesh && mesh.cachedMesh->isPending();
-    });
-    if (!waitingForColliders) physicsSystem_.update(world_, dt);
-    spinSystem_.update(world_, dt);
-    updateGameCamera(dt, allowInput);
-}
-
-void EditorState::updateGameCamera(float dt, bool allowInput) {
-    if (!world_.isAlive(gameCameraEntity_) ||
-        !world_.hasComponent<Transform>(gameCameraEntity_) ||
-        !world_.hasComponent<Camera>(gameCameraEntity_)) {
-        return;
-    }
-
-    Transform& transform = world_.getComponent<Transform>(gameCameraEntity_);
-    Camera& camera = world_.getComponent<Camera>(gameCameraEntity_);
-
-    if (allowInput) {
-        InputManager& inputManager = InputManager::getInstance();
-        float moveForward = 0.0f;
-        float moveRight = 0.0f;
-        float moveUp = 0.0f;
-
-        if (inputManager.isActionDown("CameraForward")) moveForward += 1.0f;
-        if (inputManager.isActionDown("CameraBackward")) moveForward -= 1.0f;
-        if (inputManager.isActionDown("CameraRight")) moveRight += 1.0f;
-        if (inputManager.isActionDown("CameraLeft")) moveRight -= 1.0f;
-        if (inputManager.isActionDown("CameraUp")) moveUp += 1.0f;
-        if (inputManager.isActionDown("CameraDown")) moveUp -= 1.0f;
-
-        const float yaw = transform.rotation.z;
-        const float forwardX = -std::sin(yaw);
-        const float forwardY = std::cos(yaw);
-        const float rightX = std::cos(yaw);
-        const float rightY = std::sin(yaw);
-        constexpr float cameraMoveSpeed = 3.5f;
-        transform.position.x += (forwardX * moveForward + rightX * moveRight) * cameraMoveSpeed * dt;
-        transform.position.z += moveUp * cameraMoveSpeed * dt;
-        transform.position.y += (forwardY * moveForward + rightY * moveRight) * cameraMoveSpeed * dt;
-
-        if (inputManager.isMouseButtonDown(KeyCode::MouseRight)) {
-            const Vec2 mouseDelta = inputManager.getMouseDelta();
-            transform.rotation.z -= mouseDelta.x * 0.003f;
-            transform.rotation.x -= mouseDelta.y * 0.003f;
-            transform.rotation.x = std::clamp(transform.rotation.x, -1.4f, 1.4f);
+        // Справа — раскладка.
+        const float rightWidth = 120.0f;
+        ImGui::SameLine(0.0f, 0.0f);
+        ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - rightWidth - 8.0f, 5.0f));
+        if (EditorUI::toolButton("##layout", ICON_LC_LAYOUT_DASHBOARD, "Layout", false, "Window layout")) {
+            ImGui::OpenPopup("##layout_popup");
+        }
+        if (ImGui::BeginPopup("##layout_popup")) {
+            if (ImGui::MenuItem(ICON_LC_LAYOUT_DASHBOARD "  Reset Layout")) {
+                resetLayout_ = true;
+            }
+            ImGui::Separator();
+            ImGui::MenuItem("Hierarchy", nullptr, &hierarchy_.open);
+            ImGui::MenuItem("Inspector", nullptr, &inspector_.open);
+            ImGui::MenuItem("Scene", nullptr, &sceneView_.open);
+            ImGui::MenuItem("Game", nullptr, &gameView_.open);
+            ImGui::MenuItem("Renderer Info", nullptr, &rendererInfo_.open);
+            ImGui::MenuItem("Gameplay", nullptr, &gameplay_.open);
+            ImGui::MenuItem("Content Browser", nullptr, &contentBrowser_.open);
+            ImGui::MenuItem("Console", nullptr, &console_.open);
+            ImGui::EndPopup();
         }
     }
-
-    camera.active = mode_ == EditorMode::Play;
-    camera.aspectRatio = viewportHeight_ > 0 ? static_cast<float>(viewportWidth_) / static_cast<float>(viewportHeight_) : 800.0f / 600.0f;
-    camera.viewMatrix = CameraMath::view(transform.position, transform.rotation.x, transform.rotation.z);
-    camera.projectionMatrix = Math::perspective(camera.fovDegrees * kPi / 180.0f, camera.aspectRatio, camera.nearClip, camera.farClip);
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
 }
 
-void EditorState::processGameplayInput(float) {
-    if (!world_.isAlive(controllableEntity_) || !world_.hasComponent<Rigidbody>(controllableEntity_)) {
-        return;
+void EditorState::renderStatusBar() {
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float height = ImGui::GetTextLineHeight() + 10.0f;
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, toVec4(context_.isPlaying() ? IM_COL32(26, 46, 82, 255) : kBackground));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 4.0f));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking;
+    if (ImGui::BeginViewportSideBar("##StatusBar", viewport, ImGuiDir_Down, height, flags)) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const ImVec2 windowPos = ImGui::GetWindowPos();
+        const float windowWidth = ImGui::GetWindowWidth();
+        const float textY = windowPos.y + (height - ImGui::GetFontSize()) * 0.5f;
+        EditorUI::pushSmallFont();
+        const float smallY = windowPos.y + (height - ImGui::GetFontSize()) * 0.5f;
+
+        // Справа налево: FPS, сущности, загрузки, режим. У каждого пункта слот фиксированной ширины
+        // по шаблону: меняющиеся цифры не двигают соседей, а значения сглажены за полсекунды.
+        struct Item {
+            std::string text;
+            ImU32 color;
+            const char* widthTemplate;
+        };
+        std::vector<Item> items;
+        char fps[48];
+        std::snprintf(fps, sizeof(fps), "%.0f FPS  %.1f ms", context_.fpsAverage, context_.frameTimeAverageMs);
+        items.push_back({fps, kTextDim, "0000 FPS  000.0 ms"});
+        const std::size_t entities = context_.world.getEntityCount() - (context_.world.isAlive(context_.editorCameraEntity) ? 1u : 0u)
+            - (context_.world.isAlive(context_.dragPreviewEntity) ? 1u : 0u);
+        items.push_back({std::string(ICON_LC_BOXES "  ") + std::to_string(entities) + " entities", kTextDim, ICON_LC_BOXES "  0000 entities"});
+        const std::size_t pending = ResourceManager::getInstance().pendingLoadCount();
+        if (pending > 0) {
+            items.push_back({std::string(ICON_LC_LOADER_CIRCLE "  Loading ") + std::to_string(pending), kAccentHovered,
+                ICON_LC_LOADER_CIRCLE "  Loading 000"});
+        }
+        if (context_.isPlaying()) {
+            items.push_back({context_.paused ? ICON_LC_PAUSE "  Paused" : ICON_LC_PLAY "  Playing",
+                context_.paused ? kWarning : IM_COL32(150, 196, 255, 255), nullptr});
+        } else {
+            items.push_back({ICON_LC_PENCIL "  Edit Mode", kTextFaint, nullptr});
+        }
+        float x = windowPos.x + windowWidth - 12.0f;
+        for (const Item& item : items) {
+            const float textWidth = ImGui::CalcTextSize(item.text.c_str()).x;
+            const float slotWidth = item.widthTemplate ? std::max(textWidth, ImGui::CalcTextSize(item.widthTemplate).x) : textWidth;
+            drawList->AddText(ImVec2(x - textWidth, smallY), ImGui::GetColorU32(item.color), item.text.c_str());
+            x -= slotWidth + 22.0f;
+            drawList->AddLine(ImVec2(x + 11.0f, windowPos.y + 6.0f), ImVec2(x + 11.0f, windowPos.y + height - 6.0f), ImGui::GetColorU32(kBorderStrong));
+        }
+
+        // Слева — последнее сообщение лога; клик открывает консоль.
+        if (const Logger::Entry* latest = console_.latest()) {
+            const ImU32 color = latest->level == Logger::Level::ERROR ? kError : latest->level == Logger::Level::WARN ? kWarning : kTextDim;
+            const char* icon = latest->level == Logger::Level::ERROR ? ICON_LC_OCTAGON_ALERT
+                : latest->level == Logger::Level::WARN ? ICON_LC_TRIANGLE_ALERT : ICON_LC_INFO;
+            const float left = windowPos.x + 12.0f;
+            const float maxWidth = x - left - 12.0f;
+            ImGui::SetCursorScreenPos(ImVec2(left - 4.0f, windowPos.y));
+            if (maxWidth > 40.0f && ImGui::InvisibleButton("##last_log", ImVec2(maxWidth, height))) {
+                console_.open = true;
+                context_.focusWindowRequest = EditorWindow::kConsole;
+            }
+            const bool hovered = ImGui::IsItemHovered();
+            drawList->AddText(ImVec2(left, smallY), ImGui::GetColorU32(color), icon);
+            const std::string message = latest->message.substr(0, latest->message.find('\n'));
+            EditorUI::drawTextEllipsis(drawList, ImVec2(left + 20.0f, smallY), maxWidth - 24.0f, message.c_str(), hovered ? kText : color);
+        }
+        (void)textY;
+        EditorUI::popFont();
     }
-
-    Transform& transform = world_.getComponent<Transform>(controllableEntity_);
-    Rigidbody& rigidbody = world_.getComponent<Rigidbody>(controllableEntity_);
-    InputManager& inputManager = InputManager::getInstance();
-
-    float horizontalVelocity = 0.0f;
-    float depthVelocity = 0.0f;
-
-    if (inputManager.isActionDown("MoveLeft")) horizontalVelocity -= kMoveSpeed;
-    if (inputManager.isActionDown("MoveRight")) horizontalVelocity += kMoveSpeed;
-    if (inputManager.isActionDown("MoveForward")) depthVelocity -= kMoveSpeed;
-    if (inputManager.isActionDown("MoveBackward")) depthVelocity += kMoveSpeed;
-
-    rigidbody.velocity.x = horizontalVelocity;
-    rigidbody.velocity.y = depthVelocity;
-
-    if (inputManager.isActionPressed("Jump") && std::abs(transform.position.z) < 0.051f) {
-        rigidbody.velocity.z = kJumpSpeed;
-    }
-
-    const bool lmbNow = inputManager.isMouseButtonDown(KeyCode::MouseLeft);
-    if (lmbNow && !lmbWasPressed_) {
-        transform.scale.x += kScaleStep;
-        transform.scale.y += kScaleStep;
-        transform.scale.z += kScaleStep;
-    }
-    lmbWasPressed_ = lmbNow;
-
-    const bool rmbNow = inputManager.isMouseButtonDown(KeyCode::MouseRight);
-    if (rmbNow && !rmbWasPressed_) {
-        transform.rotation.z += kRotationStep;
-    }
-    rmbWasPressed_ = rmbNow;
-
-    const bool mmbNow = inputManager.isMouseButtonDown(KeyCode::MouseMiddle);
-    if (mmbNow && !mmbWasPressed_) {
-        transform.scale.x = std::max(kMinScale, transform.scale.x - kScaleStep);
-        transform.scale.y = std::max(kMinScale, transform.scale.y - kScaleStep);
-        transform.scale.z = std::max(kMinScale, transform.scale.z - kScaleStep);
-    }
-    mmbWasPressed_ = mmbNow;
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
 }
 
 void EditorState::renderDockSpace() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-    ImGui::SetNextWindowSize(viewport->WorkSize);
-    ImGui::SetNextWindowViewport(viewport->ID);
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDocking |
-        ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoBringToFrontOnFocus |
-        ImGuiWindowFlags_NoNavFocus |
-        ImGuiWindowFlags_NoBackground;
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::Begin("EditorDockSpaceHost", nullptr, flags);
-    ImGui::PopStyleVar(3);
-
     const ImGuiID dockspaceId = ImGui::GetID("EditorDockSpace");
-    buildDefaultDockLayout(dockspaceId);
-    ImGui::DockSpace(dockspaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
-    ImGui::End();
+    if (resetLayout_ || ImGui::DockBuilderGetNode(dockspaceId) == nullptr) {
+        buildDefaultLayout(dockspaceId);
+        resetLayout_ = false;
+    }
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, toVec4(kBackground));
+    ImGui::DockSpaceOverViewport(dockspaceId, viewport, ImGuiDockNodeFlags_None);
+    ImGui::PopStyleColor();
 }
 
-void EditorState::buildDefaultDockLayout(unsigned int dockspaceId) {
-    if (dockLayoutBuilt_) {
-        return;
-    }
-
+void EditorState::buildDefaultLayout(unsigned int dockspaceId) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::DockBuilderRemoveNode(dockspaceId);
     ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
@@ -775,824 +698,103 @@ void EditorState::buildDefaultDockLayout(unsigned int dockspaceId) {
     ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
 
     ImGuiID root = dockspaceId;
-    ImGuiID toolbarNode = 0;
-    ImGuiID leftNode = 0;
-    ImGuiID rightNode = 0;
-    ImGuiID bottomNode = 0;
-    ImGuiID centerNode = 0;
+    ImGuiID left = 0;
+    ImGuiID right = 0;
+    ImGuiID bottom = 0;
+    ImGuiID center = 0;
+    ImGui::DockBuilderSplitNode(root, ImGuiDir_Left, 0.17f, &left, &root);
+    ImGui::DockBuilderSplitNode(root, ImGuiDir_Right, 0.27f, &right, &root);
+    ImGui::DockBuilderSplitNode(root, ImGuiDir_Down, 0.34f, &bottom, &center);
 
-    ImGui::DockBuilderSplitNode(root, ImGuiDir_Up, 0.075f, &toolbarNode, &root);
-    ImGui::DockBuilderSplitNode(root, ImGuiDir_Left, 0.20f, &leftNode, &root);
-    ImGui::DockBuilderSplitNode(root, ImGuiDir_Right, 0.28f, &rightNode, &root);
-    ImGui::DockBuilderSplitNode(root, ImGuiDir_Down, 0.22f, &bottomNode, &centerNode);
-
-    ImGui::DockBuilderDockWindow("Toolbar", toolbarNode);
-    ImGui::DockBuilderDockWindow("Scene Hierarchy", leftNode);
-    ImGui::DockBuilderDockWindow("Inspector", rightNode);
-    ImGui::DockBuilderDockWindow("Statistics", bottomNode);
-    ImGui::DockBuilderDockWindow("Viewport", centerNode);
+    ImGui::DockBuilderDockWindow(EditorWindow::kHierarchy, left);
+    ImGui::DockBuilderDockWindow(EditorWindow::kInspector, right);
+    ImGui::DockBuilderDockWindow(EditorWindow::kScene, center);
+    ImGui::DockBuilderDockWindow(EditorWindow::kGame, center);
+    ImGui::DockBuilderDockWindow(EditorWindow::kRendererInfo, center);
+    ImGui::DockBuilderDockWindow(EditorWindow::kContentBrowser, bottom);
+    ImGui::DockBuilderDockWindow(EditorWindow::kConsole, bottom);
+    ImGui::DockBuilderDockWindow(EditorWindow::kGameplay, bottom);
     ImGui::DockBuilderFinish(dockspaceId);
-    dockLayoutBuilt_ = true;
+    if (ImGuiDockNode* node = ImGui::DockBuilderGetNode(center)) {
+        node->SelectedTabId = ImHashStr(EditorWindow::kScene);
+    }
+    if (ImGuiDockNode* node = ImGui::DockBuilderGetNode(bottom)) {
+        node->SelectedTabId = ImHashStr(EditorWindow::kContentBrowser);
+    }
+    hierarchy_.open = inspector_.open = sceneView_.open = gameView_.open = true;
+    rendererInfo_.open = contentBrowser_.open = console_.open = gameplay_.open = true;
 }
 
-void EditorState::renderMainMenu() {
-    if (!ImGui::BeginMainMenuBar()) {
-        return;
+void EditorState::renderModals() {
+    if (showControls_) {
+        ImGui::OpenPopup("Controls##modal");
+        showControls_ = false;
     }
-
-    if (ImGui::BeginMenu("File")) {
-        if (ImGui::MenuItem("Reload Scene")) {
-            if (mode_ == EditorMode::Play) {
-                stopPlayMode();
-            }
-            createScene();
-            createGameCamera();
-            createEditorCameraEntity();
-            setCameraMode();
-        }
-        ImGui::EndMenu();
+    if (showAbout_) {
+        ImGui::OpenPopup("About##modal");
+        showAbout_ = false;
     }
-
-    if (ImGui::BeginMenu("Scene")) {
-        ImGui::BeginDisabled(mode_ == EditorMode::Play);
-        if (ImGui::MenuItem("Create Cube")) {
-            createCubeEntity("Cube", defaultSpawnPosition());
-        }
-        if (ImGui::MenuItem("Duplicate Selected", "Ctrl+D", false, world_.isAlive(selectedEntity_) && !isEditorEntity(selectedEntity_))) {
-            duplicateEntity(selectedEntity_);
-        }
-        if (ImGui::MenuItem("Rename Selected", "F2", false, world_.isAlive(selectedEntity_) && !isEditorEntity(selectedEntity_))) {
-            beginRename(selectedEntity_);
-        }
-        ImGui::EndDisabled();
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu("View")) {
-        ImGui::MenuItem("Scene Hierarchy", nullptr, &showHierarchy_);
-        ImGui::MenuItem("Inspector", nullptr, &showInspector_);
-        ImGui::MenuItem("Viewport", nullptr, &showViewport_);
-        ImGui::MenuItem("Statistics", nullptr, &showStatistics_);
-        ImGui::Separator();
-        bool debugEnabled = debugRenderSystem_.isEnabled();
-        if (ImGui::MenuItem("Debug Colliders", nullptr, &debugEnabled)) {
-            debugRenderSystem_.setEnabled(debugEnabled);
-        }
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu("Help")) {
-        ImGui::TextUnformatted("ITMO Uzlezz Engine Editor");
-        ImGui::TextUnformatted("RMB+WASD fly, MMB pan, Alt+LMB orbit, F focus.");
-        ImGui::TextUnformatted("Viewport tools: W Translate, E Scale, R Rotate.");
-        ImGui::TextUnformatted("World axes: +X right, -Y forward, +Z up. E/Q: up/down.");
-        ImGui::EndMenu();
-    }
-
-    ImGui::EndMainMenuBar();
-}
-
-void EditorState::renderToolbar() {
-    ImGui::Begin("Toolbar", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
-    const bool playing = mode_ == EditorMode::Play;
-    ImGui::BeginDisabled(playing);
-    if (ImGui::Button("Create Cube")) {
-        createCubeEntity("Cube", defaultSpawnPosition());
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Duplicate") && world_.isAlive(selectedEntity_) && !isEditorEntity(selectedEntity_)) {
-        duplicateEntity(selectedEntity_);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Rename") && world_.isAlive(selectedEntity_) && !isEditorEntity(selectedEntity_)) {
-        beginRename(selectedEntity_);
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::TextUnformatted("|");
-    ImGui::SameLine();
-
-    if (!playing) {
-        if (ImGui::Button("Play")) {
-            startPlayMode();
-        }
-    } else {
-        if (ImGui::Button("Stop")) {
-            stopPlayMode();
-        }
-    }
-
-    ImGui::SameLine();
-    ImGui::TextUnformatted("|");
-    ImGui::SameLine();
-
-    ImGui::BeginDisabled(playing);
-    if (ImGui::Selectable("Translate (W)", gizmoOperation_ == GizmoOperation::Translate, 0, ImVec2(110.0f, 0.0f))) {
-        gizmoOperation_ = GizmoOperation::Translate;
-    }
-    ImGui::SameLine();
-    if (ImGui::Selectable("Rotate (R)", gizmoOperation_ == GizmoOperation::Rotate, 0, ImVec2(90.0f, 0.0f))) {
-        gizmoOperation_ = GizmoOperation::Rotate;
-    }
-    ImGui::SameLine();
-    if (ImGui::Selectable("Scale (E)", gizmoOperation_ == GizmoOperation::Scale, 0, ImVec2(82.0f, 0.0f))) {
-        gizmoOperation_ = GizmoOperation::Scale;
-    }
-    ImGui::SameLine();
-    ImGui::Checkbox("Local", &gizmoLocalMode_);
-    ImGui::EndDisabled();
-
-    ImGui::SameLine();
-    bool debugEnabled = debugRenderSystem_.isEnabled();
-    if (ImGui::Checkbox("Colliders", &debugEnabled)) {
-        debugRenderSystem_.setEnabled(debugEnabled);
-    }
-
-    ImGui::End();
-}
-
-void EditorState::renderHierarchyPanel() {
-    ImGui::Begin("Scene Hierarchy", &showHierarchy_);
-
-    ImGui::BeginDisabled(mode_ == EditorMode::Play);
-    if (ImGui::Button("Create Cube")) {
-        createCubeEntity("Cube", defaultSpawnPosition());
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Duplicate") && world_.isAlive(selectedEntity_) && !isEditorEntity(selectedEntity_)) {
-        duplicateEntity(selectedEntity_);
-    }
-    ImGui::EndDisabled();
-    ImGui::Separator();
-
-    std::unordered_set<Entity> childEntities;
-    for (Entity entity : world_.getEntities()) {
-        if (isEditorEntity(entity) || !world_.hasComponent<Hierarchy>(entity)) {
-            continue;
-        }
-        for (Entity child : world_.getComponent<Hierarchy>(entity).children) {
-            childEntities.insert(child);
-        }
-    }
-
-    for (Entity entity : world_.getEntities()) {
-        if (isEditorEntity(entity) || childEntities.find(entity) != childEntities.end()) {
-            continue;
-        }
-        renderHierarchyEntity(entity);
-    }
-
-    if (ImGui::BeginPopupContextWindow("HierarchyContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
-        ImGui::BeginDisabled(mode_ == EditorMode::Play);
-        if (ImGui::MenuItem("Create Cube")) {
-            createCubeEntity("Cube", defaultSpawnPosition());
-        }
-        ImGui::EndDisabled();
-        ImGui::EndPopup();
-    }
-
-    ImGui::End();
-}
-
-void EditorState::renderHierarchyEntity(Entity entity) {
-    if (!world_.isAlive(entity) || isEditorEntity(entity)) {
-        return;
-    }
-
-    bool hasChildren = false;
-    if (world_.hasComponent<Hierarchy>(entity)) {
-        for (Entity child : world_.getComponent<Hierarchy>(entity).children) {
-            if (world_.isAlive(child) && !isEditorEntity(child)) {
-                hasChildren = true;
-                break;
-            }
-        }
-    }
-
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
-    if (!hasChildren) {
-        flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    }
-    if (selectedEntity_ == entity) {
-        flags |= ImGuiTreeNodeFlags_Selected;
-    }
-
-    const bool isRenaming = renamingEntity_ == entity;
-    const bool open = ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<intptr_t>(entity)), flags, "%s", isRenaming ? "" : entityLabel(entity).c_str());
-    if (ImGui::IsItemClicked()) {
-        selectedEntity_ = entity;
-    }
-
-    if (isRenaming) {
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(-1.0f);
-        ImGui::SetKeyboardFocusHere();
-        const bool submitted = ImGui::InputText("##RenameEntity", renameBuffer_.data(), renameBuffer_.size(), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
-        if (submitted || (ImGui::IsItemDeactivatedAfterEdit() && !ImGui::IsItemActive())) {
-            commitRename();
-        }
-    }
-
-    if (ImGui::BeginPopupContextItem()) {
-        selectedEntity_ = entity;
-        ImGui::BeginDisabled(mode_ == EditorMode::Play);
-        if (ImGui::MenuItem("Rename", "F2")) {
-            beginRename(entity);
-        }
-        if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
-            duplicateEntity(entity);
-        }
-        ImGui::EndDisabled();
-        ImGui::EndPopup();
-    }
-
-    if (open && hasChildren) {
-        const Hierarchy& hierarchy = world_.getComponent<Hierarchy>(entity);
-        for (Entity child : hierarchy.children) {
-            renderHierarchyEntity(child);
-        }
-        ImGui::TreePop();
-    }
-}
-
-void EditorState::renderInspectorPanel() {
-    ImGui::Begin("Inspector", &showInspector_);
-
-    if (!world_.isAlive(selectedEntity_)) {
-        ImGui::TextUnformatted("No entity selected");
-        ImGui::End();
-        return;
-    }
-
-    ImGui::Text("Entity #%u", selectedEntity_);
-    ImGui::Separator();
-
-    const bool readOnly = mode_ == EditorMode::Play;
-    ImGui::BeginDisabled(readOnly);
-    renderScriptInspector();
-
-    if (world_.hasComponent<Tag>(selectedEntity_) && ImGui::TreeNodeEx("Tag", ImGuiTreeNodeFlags_DefaultOpen)) {
-        Tag& tag = world_.getComponent<Tag>(selectedEntity_);
-        char buffer[128] = {};
-        copyStringToBuffer(tag.name, buffer, sizeof(buffer));
-        if (ImGui::InputText("Name", buffer, sizeof(buffer))) {
-            tag.name = buffer;
-        }
-        ImGui::TreePop();
-    }
-
-    if (world_.hasComponent<Transform>(selectedEntity_) && ImGui::TreeNodeEx("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-        Transform& transform = world_.getComponent<Transform>(selectedEntity_);
-        ImGui::DragFloat3("Position", &transform.position.x, 0.05f);
-        float rotationDegrees[3] = {
-            toDegrees(transform.rotation.x),
-            toDegrees(transform.rotation.y),
-            toDegrees(transform.rotation.z)
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(520.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Controls##modal", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        struct Row {
+            const char* keys;
+            const char* action;
         };
-        if (ImGui::DragFloat3("Rotation", rotationDegrees, 0.5f)) {
-            transform.rotation.x = toRadians(rotationDegrees[0]);
-            transform.rotation.y = toRadians(rotationDegrees[1]);
-            transform.rotation.z = toRadians(rotationDegrees[2]);
-        }
-        if (ImGui::DragFloat3("Scale", &transform.scale.x, 0.05f, 0.01f, 100.0f)) {
-            transform.scale.x = std::max(0.01f, transform.scale.x);
-            transform.scale.y = std::max(0.01f, transform.scale.y);
-            transform.scale.z = std::max(0.01f, transform.scale.z);
-        }
-        ImGui::TreePop();
-    }
-
-    if (world_.hasComponent<MeshRenderer>(selectedEntity_) && ImGui::TreeNodeEx("MeshRenderer", ImGuiTreeNodeFlags_DefaultOpen)) {
-        MeshRenderer& meshRenderer = world_.getComponent<MeshRenderer>(selectedEntity_);
-        ResourceManager& resources = ResourceManager::getInstance();
-
-        const auto meshIds = resources.getMeshIds();
-        if (ImGui::BeginCombo("Mesh", meshRenderer.meshId.empty() ? "<none>" : meshRenderer.meshId.c_str())) {
-            for (const std::string& id : meshIds) {
-                const bool selected = meshRenderer.meshId == id;
-                if (ImGui::Selectable(id.c_str(), selected)) {
-                    meshRenderer.meshId = id;
-                    meshRenderer.cachedMesh = resources.loadMeshAsync(id);
-                    meshRenderer.colliderBoundsInitialized = false;
-                    if (meshRenderer.cachedMesh && meshRenderer.cachedMesh->isLoaded()) {
-                        const auto& subMeshes = meshRenderer.cachedMesh->getData()->subMeshes;
-                        if (std::any_of(subMeshes.begin(), subMeshes.end(), [](const SubMesh& subMesh) {
-                            return !subMesh.material.diffuseTexturePath.empty();
-                        })) {
-                            meshRenderer.baseColorTextureId.clear();
-                            meshRenderer.cachedBaseColorTexture.reset();
-                        }
+        const Row sections[][9] = {
+            {{"RMB + WASD", "Fly the scene camera (Q/E down/up, Shift faster)"}, {"Alt + LMB", "Orbit around the pivot"},
+             {"MMB", "Pan"}, {"Wheel", "Zoom"}, {"F", "Frame selected"}, {"Axis gizmo", "Click an axis to look along it"},
+             {nullptr, nullptr}},
+            {{"Q / W / E / R", "Select / Move / Rotate / Scale"}, {"X", "Toggle local / global handles"},
+             {"Ctrl (while dragging)", "Invert snapping"}, {"Ctrl+D", "Duplicate"}, {"F2", "Rename"}, {"Del", "Delete"},
+             {nullptr, nullptr}},
+            {{"Ctrl+P", "Play / Stop"}, {"Ctrl+Shift+P", "Pause"}, {"Ctrl+Alt+P", "Step one frame"},
+             {"Arrows / WASD", "Move the player cube (Game view focused)"}, {"Space", "Jump"}, {"Ctrl+R", "Refresh assets"},
+             {nullptr, nullptr}},
+        };
+        const char* titles[] = {"Scene camera", "Editing", "Play mode"};
+        for (int section = 0; section < 3; ++section) {
+            EditorUI::pushSemibold();
+            ImGui::TextUnformatted(titles[section]);
+            EditorUI::popFont();
+            if (ImGui::BeginTable(titles[section], 2, ImGuiTableFlags_SizingFixedFit)) {
+                ImGui::TableSetupColumn("keys", ImGuiTableColumnFlags_WidthFixed, 170.0f);
+                ImGui::TableSetupColumn("action", ImGuiTableColumnFlags_WidthStretch);
+                for (const Row& row : sections[section]) {
+                    if (row.keys == nullptr) {
+                        break;
                     }
-                    if (world_.hasComponent<Collider>(selectedEntity_)) {
-                        fitColliderToMeshBounds(meshRenderer, world_.getComponent<Collider>(selectedEntity_));
-                    }
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    const std::string keys = EditorUI::shortcut(row.keys);
+                    ImGui::TextColored(toVec4(kAccentHovered), "%s", keys.c_str());
+                    ImGui::TableSetColumnIndex(1);
+                    EditorUI::textDim(row.action);
                 }
-                if (selected) {
-                    ImGui::SetItemDefaultFocus();
-                }
+                ImGui::EndTable();
             }
-            ImGui::EndCombo();
+            ImGui::Dummy(ImVec2(0.0f, 4.0f));
         }
-
-        texturePicker_.render(meshRenderer);
-
-        const auto shaderIds = resources.getShaderIds();
-        if (ImGui::BeginCombo("Shader", meshRenderer.shaderId.empty() ? "<none>" : meshRenderer.shaderId.c_str())) {
-            for (const std::string& id : shaderIds) {
-                const bool selected = meshRenderer.shaderId == id;
-                if (ImGui::Selectable(id.c_str(), selected)) {
-                    std::string vertexPath;
-                    std::string fragmentPath;
-                    if (splitShaderKey(id, vertexPath, fragmentPath)) {
-                        meshRenderer.shaderId = id;
-                        meshRenderer.cachedShader = resources.loadShader(vertexPath, fragmentPath);
-                    }
-                }
-                if (selected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-            ImGui::EndCombo();
-        }
-
-        ImGui::TreePop();
-    }
-
-    if (world_.hasComponent<Rigidbody>(selectedEntity_) && ImGui::TreeNodeEx("Rigidbody", ImGuiTreeNodeFlags_DefaultOpen)) {
-        Rigidbody& rigidbody = world_.getComponent<Rigidbody>(selectedEntity_);
-        ImGui::DragFloat("Mass", &rigidbody.mass, 0.05f, 0.0f, 1000.0f);
-        ImGui::Checkbox("Use Gravity", &rigidbody.useGravity);
-        ImGui::Text("Velocity: %.2f, %.2f, %.2f", rigidbody.velocity.x, rigidbody.velocity.y, rigidbody.velocity.z);
-        ImGui::Text("Acceleration: %.2f, %.2f, %.2f", rigidbody.acceleration.x, rigidbody.acceleration.y, rigidbody.acceleration.z);
-        ImGui::TreePop();
-    }
-
-    if (world_.hasComponent<Collider>(selectedEntity_) && ImGui::TreeNodeEx("Collider", ImGuiTreeNodeFlags_DefaultOpen)) {
-        Collider& collider = world_.getComponent<Collider>(selectedEntity_);
-        int typeIndex = collider.type == ColliderType::Sphere ? 1 : 0;
-        const char* types[] = {"Box", "Sphere"};
-        if (ImGui::Combo("Type", &typeIndex, types, 2)) {
-            collider.type = typeIndex == 1 ? ColliderType::Sphere : ColliderType::Box;
-        }
-        ImGui::DragFloat3("Offset", &collider.offset.x, 0.03f);
-        if (collider.type == ColliderType::Box) {
-            ImGui::DragFloat3("Half Extents", &collider.halfExtents.x, 0.03f, 0.01f, 100.0f);
-        } else {
-            ImGui::DragFloat("Radius", &collider.radius, 0.03f, 0.01f, 100.0f);
-        }
-        ImGui::TreePop();
-    }
-
-    ImGui::EndDisabled();
-
-    if (readOnly) {
         ImGui::Separator();
-        ImGui::TextUnformatted("Play mode is running. Stop to edit scene values.");
-    }
-
-    if (world_.hasComponent<Animator>(selectedEntity_) && world_.hasComponent<MeshRenderer>(selectedEntity_)
-        && ImGui::TreeNodeEx("Animation", ImGuiTreeNodeFlags_DefaultOpen)) {
-        auto& animator = world_.getComponent<Animator>(selectedEntity_);
-        const auto& mesh = world_.getComponent<MeshRenderer>(selectedEntity_).cachedMesh;
-        if (mesh && mesh->isLoaded() && !mesh->getData()->skeleton.clips.empty()) {
-            const auto& clips = mesh->getData()->skeleton.clips;
-            if (animator.clip >= clips.size()) animator.clip = 0;
-            if (ImGui::BeginCombo("Clip", clips[animator.clip].name.c_str())) {
-                for (unsigned int i=0; i<clips.size(); ++i) {
-                    ImGui::PushID(static_cast<int>(i));
-                    if (ImGui::Selectable(clips[i].name.c_str(), animator.clip == i)) { animator.clip=i; animator.time=0; }
-                    ImGui::PopID();
-                }
-                ImGui::EndCombo();
-            }
-            ImGui::Checkbox("Paused##character", &animator.paused);
-            ImGui::SliderFloat("Speed##character", &animator.speed, -2.0f, 3.0f);
-            float time = static_cast<float>(animator.time);
-            if (ImGui::SliderFloat("Time (s)", &time, 0, static_cast<float>(clips[animator.clip].duration))) animator.time=time;
-            ImGui::TextUnformatted("Looping. Global pause/speed are in Statistics.");
-        } else ImGui::TextUnformatted("Bind pose (no animation clips).");
-        ImGui::TreePop();
-    }
-
-    ImGui::End();
-}
-
-void EditorState::renderStatisticsPanel() {
-    ImGui::Begin("Statistics", &showStatistics_);
-    ResourceManager& resources = ResourceManager::getInstance();
-
-    ImGui::Text("FPS: %.1f", fpsAverage_);
-    ImGui::Text("Frame: %.2f ms", lastDt_ * 1000.0f);
-    ImGui::Separator();
-    ImGui::Text("Entities: %zu", world_.getEntityCount() - (world_.isAlive(editorCameraEntity_) ? 1u : 0u));
-    ImGui::Text("Drawn meshes: %zu", renderSystem_.getLastDrawnMeshCount());
-    ImGui::Text("Collisions: %zu", physicsSystem_.getLastCollisionCount());
-    ImGui::Separator();
-    ImGui::Text("Meshes: %zu", resources.getMeshCount());
-    ImGui::Text("Textures: %zu", resources.getTextureCount());
-    ImGui::Text("Shaders: %zu", resources.getShaderCount());
-    ImGui::Text("Resource memory: %s", formatBytes(resources.estimateMemoryUsageBytes()).c_str());
-    ImGui::Text("Loads pending: %zu", resources.pendingLoadCount());
-    renderAnimationPanel();
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Resource Loading");
-    ImGui::BeginDisabled(heavyLoad_.isRunning() || stress_.isRunning());
-    ImGui::Checkbox("Async (job system)", &heavyLoadAsync_);
-    ImGui::SetItemTooltip("On: decode on job workers, upload to GPU a few textures per frame.\n"
-        "Off: the old synchronous path on the main thread, for comparison.");
-    if (ImGui::Button("Burst")) {
-        heavyLoad_.start(LoadScenario::Mode::Burst, heavyLoadAsync_);
-    }
-    ImGui::SetItemTooltip("Request every image in assets/models in one frame.\nEach run reloads them from disk.");
-    ImGui::SameLine();
-    if (ImGui::Button("Stream")) {
-        heavyLoad_.start(LoadScenario::Mode::Stream, heavyLoadAsync_);
-    }
-    ImGui::SetItemTooltip("Request one image every 100 ms, at most one per frame.\nEach run reloads them from disk.");
-    ImGui::EndDisabled();
-    if (heavyLoad_.totalCount() > 0) {
-        ImGui::Text("%s %s: %zu/%zu requested, %.1f ms%s",
-            LoadScenario::modeName(heavyLoad_.mode()),
-            heavyLoad_.isAsync() ? "async" : "sync",
-            heavyLoad_.requestedCount(),
-            heavyLoad_.totalCount(),
-            heavyLoad_.elapsedMs(),
-            heavyLoad_.isRunning() ? "" : ", done");
-        if (heavyLoad_.fromCacheCount() > 0) {
-            ImGui::TextDisabled("%zu taken from cache: still held elsewhere, e.g. by the texture picker",
-                heavyLoad_.fromCacheCount());
+        if (EditorUI::primaryButton("Got it", ImVec2(120.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
         }
+        ImGui::EndPopup();
     }
 
-    ImGui::Separator();
-    ImGui::TextUnformatted("Stability Test");
-    bool stressOn = stress_.isRunning();
-    ImGui::BeginDisabled(heavyLoad_.isRunning() && !stressOn);
-    if (ImGui::Checkbox("Load and unload in a loop", &stressOn)) {
-        if (stressOn) {
-            stress_.start();
-        } else {
-            stress_.stop();
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("About##modal", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::PushFont(fonts().semibold, 20.0f);
+        ImGui::TextUnformatted(ICON_LC_BOX "  UzlezzEngine");
+        ImGui::PopFont();
+        EditorUI::textDim("Educational game engine, ITMO University");
+        ImGui::Dummy(ImVec2(0.0f, 4.0f));
+        EditorUI::textFaint("OpenGL 3.3  \xC2\xB7  Dear ImGui " IMGUI_VERSION "  \xC2\xB7  ImGuizmo  \xC2\xB7  enkiTS  \xC2\xB7  Assimp  \xC2\xB7  Tracy");
+        EditorUI::textFaint("Fonts: Inter, JetBrains Mono (OFL)  \xC2\xB7  Icons: Lucide (ISC)");
+        ImGui::Dummy(ImVec2(0.0f, 6.0f));
+        if (EditorUI::primaryButton("Close", ImVec2(100.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
         }
+        ImGui::EndPopup();
     }
-    ImGui::EndDisabled();
-    ImGui::SetItemTooltip("Burst and stream in turn, through the job system.\n"
-        "Memory and live GPU textures at cycle start must stay flat.");
-    const StressStats& stress = stress_.stats();
-    if (stress_.isRunning() || stress.cycles > 0) {
-        ImGui::Text("Cycles: %zu, failed textures: %zu, from cache: %zu",
-            stress.cycles, stress.failedTextures, stress.fromCache);
-        ImGui::Text("Frames over 33 ms: %zu, worst: %.1f ms", stress.hitches, stress.worstFrameMs);
-        ImGui::Text("Memory: %s now, %s at first cycle start",
-            formatBytes(static_cast<std::size_t>(stress.footprintNow)).c_str(),
-            formatBytes(stress.cycleStartFootprint.empty() ? 0 : static_cast<std::size_t>(stress.cycleStartFootprint.front())).c_str());
-        ImGui::Text("Live GPU textures at cycle start: %zu", stress.cycleStartTextures.empty() ? 0 : stress.cycleStartTextures.back());
-    }
-    ImGui::End();
-}
-
-void EditorState::renderViewportPanel() {
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::Begin("Viewport", &showViewport_, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PopStyleVar();
-
-    ImVec2 contentSize = ImGui::GetContentRegionAvail();
-    viewportWidth_ = std::max(1, static_cast<int>(contentSize.x));
-    viewportHeight_ = std::max(1, static_cast<int>(contentSize.y));
-    const ImVec2 viewportMin = ImGui::GetCursorScreenPos();
-    const ImVec2 viewportMax = ImVec2(viewportMin.x + contentSize.x, viewportMin.y + contentSize.y);
-
-    viewportHovered_ = ImGui::IsMouseHoveringRect(viewportMin, viewportMax, false);
-    if (viewportHovered_ &&
-        (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
-            ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
-            ImGui::IsMouseClicked(ImGuiMouseButton_Middle))) {
-        ImGui::SetWindowFocus();
-    }
-    viewportFocused_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
-
-    const ImGuiIO& io = ImGui::GetIO();
-    viewportInputActive_ = viewportHovered_ &&
-        !io.WantTextInput &&
-        !ImGuizmo::IsOver() &&
-        !ImGuizmo::IsUsing();
-
-    if (mode_ == EditorMode::Edit) {
-        const bool toolShortcutsEnabled =
-            (viewportFocused_ || (viewportHovered_ && ImGui::IsWindowHovered())) &&
-            !io.WantTextInput && !ImGui::IsAnyItemActive() &&
-            !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) &&
-            !io.KeyCtrl && !io.KeyAlt && !io.KeyShift && !io.KeySuper &&
-            !ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
-            !ImGui::IsMouseDown(ImGuiMouseButton_Right) &&
-            !ImGui::IsMouseDown(ImGuiMouseButton_Middle) &&
-            !ImGuizmo::IsUsing();
-        if (toolShortcutsEnabled) {
-            if (ImGui::IsKeyPressed(ImGuiKey_W, false)) gizmoOperation_ = GizmoOperation::Translate;
-            if (ImGui::IsKeyPressed(ImGuiKey_E, false)) gizmoOperation_ = GizmoOperation::Scale;
-            if (ImGui::IsKeyPressed(ImGuiKey_R, false)) gizmoOperation_ = GizmoOperation::Rotate;
-        }
-
-        if (viewportInputActive_ &&
-            InputManager::getInstance().isKeyPressed(KeyCode::F) &&
-            world_.isAlive(selectedEntity_) &&
-            world_.hasComponent<Transform>(selectedEntity_)) {
-            const Transform& transform = world_.getComponent<Transform>(selectedEntity_);
-            const float radius = std::max({transform.scale.x, transform.scale.y, transform.scale.z, 1.0f});
-            editorCamera_.focus(transform.position, radius);
-        }
-
-        editorCamera_.update(lastDt_, viewportWidth_, viewportHeight_, viewportInputActive_, viewportHovered_ ? io.MouseWheel : 0.0f);
-        syncEditorCameraEntity();
-    }
-
-    setCameraMode();
-    renderViewportScene(viewportWidth_, viewportHeight_);
-
-    const unsigned int textureId = renderer_.getViewportTextureId();
-    ImGui::Image(
-        reinterpret_cast<void*>(static_cast<intptr_t>(textureId)),
-        contentSize,
-        ImVec2(0.0f, 1.0f),
-        ImVec2(1.0f, 0.0f));
-    const bool viewportLeftClicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
-
-    if (mode_ == EditorMode::Edit) {
-        renderGizmo(viewportMin, contentSize);
-        if (viewportLeftClicked && !ImGuizmo::IsOver() && !ImGuizmo::IsUsing()) {
-            selectEntityAtViewportPosition(viewportMin, contentSize);
-        }
-    }
-
-    ImGui::End();
-}
-
-void EditorState::renderViewportScene(int width, int height) {
-    ZoneScopedN("Viewport");
-    renderer_.beginViewportFrame(width, height, 0.08f, 0.09f, 0.11f);
-    renderSystem_.render(world_);
-    debugRenderSystem_.render(world_);
-    renderer_.endViewportFrame();
-}
-
-void EditorState::renderGizmo(const ImVec2& viewportMin, const ImVec2& viewportSize) {
-    if (!world_.isAlive(selectedEntity_) || !world_.hasComponent<Transform>(selectedEntity_)) {
-        return;
-    }
-
-    Transform& transform = world_.getComponent<Transform>(selectedEntity_);
-    Mat4 model = Math::composeTransform(transform.position, transform.rotation, transform.scale);
-    Mat4 deltaMatrix = Mat4::identity();
-    const Mat4 view = activeViewMatrix();
-    const Mat4 projection = activeProjectionMatrix();
-
-    ImGuizmo::SetOrthographic(false);
-    ImGuizmo::AllowAxisFlip(false);
-    ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
-    ImGuizmo::SetRect(viewportMin.x, viewportMin.y, viewportSize.x, viewportSize.y);
-
-    ImGuizmo::OPERATION operation = ImGuizmo::TRANSLATE;
-    if (gizmoOperation_ == GizmoOperation::Rotate) {
-        operation = ImGuizmo::ROTATE;
-    } else if (gizmoOperation_ == GizmoOperation::Scale) {
-        operation = ImGuizmo::SCALE;
-    }
-
-    const ImGuizmo::MODE mode = gizmoLocalMode_ ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
-    if (ImGuizmo::Manipulate(view.data(), projection.data(), operation, mode, model.data(), deltaMatrix.data())) {
-        float translation[3] = {};
-        float rotation[3] = {};
-        float scale[3] = {};
-        ImGuizmo::DecomposeMatrixToComponents(model.data(), translation, rotation, scale);
-        transform.position = Vec3{translation[0], translation[1], translation[2]};
-        transform.scale = Vec3{scale[0], scale[1], scale[2]};
-
-        if (gizmoOperation_ == GizmoOperation::Rotate) {
-            float deltaTranslation[3] = {};
-            float deltaRotation[3] = {};
-            float deltaScale[3] = {};
-            ImGuizmo::DecomposeMatrixToComponents(deltaMatrix.data(), deltaTranslation, deltaRotation, deltaScale);
-            transform.rotation.x += toRadians(deltaRotation[0]);
-            transform.rotation.y += toRadians(deltaRotation[1]);
-            transform.rotation.z += toRadians(deltaRotation[2]);
-        } else {
-            transform.rotation = nearestEquivalentEuler(
-                Vec3{toRadians(rotation[0]), toRadians(rotation[1]), toRadians(rotation[2])},
-                transform.rotation);
-        }
-    }
-}
-
-void EditorState::selectEntityAtViewportPosition(const ImVec2& viewportMin, const ImVec2& viewportSize) {
-    if (viewportSize.x <= 1.0f || viewportSize.y <= 1.0f) {
-        return;
-    }
-
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
-    const float localX = mouse.x - viewportMin.x;
-    const float localY = mouse.y - viewportMin.y;
-    if (localX < 0.0f || localY < 0.0f || localX > viewportSize.x || localY > viewportSize.y) {
-        return;
-    }
-
-    const float ndcX = (localX / viewportSize.x) * 2.0f - 1.0f;
-    const float ndcY = 1.0f - (localY / viewportSize.y) * 2.0f;
-    const float aspect = viewportSize.y > 0.0f ? viewportSize.x / viewportSize.y : 1.0f;
-    const Vec3 rayOrigin = editorCamera_.getPosition();
-    const Vec3 rayDirection = editorCamera_.getRayDirection(ndcX, ndcY, aspect);
-
-    Entity bestEntity = kInvalidEntity;
-    float bestDistance = std::numeric_limits<float>::max();
-
-    for (Entity entity : world_.getEntities()) {
-        if (isEditorEntity(entity) || !world_.hasComponent<Transform>(entity)) {
-            continue;
-        }
-
-        const Transform& transform = world_.getComponent<Transform>(entity);
-        AABB bounds = buildPickBounds(transform);
-        if (world_.hasComponent<Collider>(entity)) {
-            const Collider& collider = world_.getComponent<Collider>(entity);
-            if (collider.type == ColliderType::Box) {
-                bounds = CollisionUtils::buildAABB(transform, collider);
-            } else {
-                const Sphere sphere = CollisionUtils::buildSphere(transform, collider);
-                bounds = AABB{
-                    sphere.center,
-                    Vec3{sphere.radius, sphere.radius, sphere.radius}
-                };
-            }
-        }
-
-        float distance = 0.0f;
-        if (rayIntersectsAABB(rayOrigin, rayDirection, bounds, distance) && distance < bestDistance) {
-            bestDistance = distance;
-            bestEntity = entity;
-        }
-    }
-
-    if (bestEntity != kInvalidEntity) {
-        selectedEntity_ = bestEntity;
-    }
-}
-
-void EditorState::startPlayMode() {
-    if (mode_ == EditorMode::Play) {
-        return;
-    }
-
-    playSnapshot_ = captureSnapshot();
-    if (world_.isAlive(prefabPreview_)) world_.destroyEntity(prefabPreview_);
-    if (!scripts_.start()) {
-        restoreSnapshot(playSnapshot_);
-        createEditorCameraEntity();
-        setCameraMode();
-        return;
-    }
-    mode_ = EditorMode::Play;
-    setCameraMode();
-    updateGameCamera(0.0f, false);
-    lmbWasPressed_ = false;
-    rmbWasPressed_ = false;
-    mmbWasPressed_ = false;
-}
-
-void EditorState::stopPlayMode() {
-    if (mode_ != EditorMode::Play) {
-        return;
-    }
-
-    scripts_.stop();
-    restoreSnapshot(playSnapshot_);
-    mode_ = EditorMode::Edit;
-    createEditorCameraEntity();
-    setCameraMode();
-}
-
-EditorState::SceneSnapshot EditorState::captureSnapshot() const {
-    SceneSnapshot snapshot;
-    snapshot.selectedEntity = selectedEntity_;
-    snapshot.controllableEntity = controllableEntity_;
-    snapshot.gameCameraEntity = gameCameraEntity_;
-
-    for (Entity entity : world_.getEntities()) {
-        if (isEditorEntity(entity)) {
-            continue;
-        }
-
-        EntitySnapshot entitySnapshot;
-        entitySnapshot.entity = entity;
-        if (world_.hasComponent<ScriptComponent>(entity)) {
-            entitySnapshot.hasScript = true;
-            entitySnapshot.script = world_.getComponent<ScriptComponent>(entity);
-        }
-        if (world_.hasComponent<Tag>(entity)) {
-            entitySnapshot.hasTag = true;
-            entitySnapshot.tag = world_.getComponent<Tag>(entity);
-        }
-        if (world_.hasComponent<Transform>(entity)) {
-            entitySnapshot.hasTransform = true;
-            entitySnapshot.transform = world_.getComponent<Transform>(entity);
-        }
-        if (world_.hasComponent<MeshRenderer>(entity)) {
-            entitySnapshot.hasMeshRenderer = true;
-            entitySnapshot.meshRenderer = world_.getComponent<MeshRenderer>(entity);
-        }
-        if (world_.hasComponent<Animator>(entity)) {
-            entitySnapshot.hasAnimator = true;
-            entitySnapshot.animator = world_.getComponent<Animator>(entity);
-        }
-        if (world_.hasComponent<Hierarchy>(entity)) {
-            entitySnapshot.hasHierarchy = true;
-            entitySnapshot.hierarchy = world_.getComponent<Hierarchy>(entity);
-        }
-        if (world_.hasComponent<Spin>(entity)) {
-            entitySnapshot.hasSpin = true;
-            entitySnapshot.spin = world_.getComponent<Spin>(entity);
-        }
-        if (world_.hasComponent<Camera>(entity)) {
-            entitySnapshot.hasCamera = true;
-            entitySnapshot.camera = world_.getComponent<Camera>(entity);
-        }
-        if (world_.hasComponent<Rigidbody>(entity)) {
-            entitySnapshot.hasRigidbody = true;
-            entitySnapshot.rigidbody = world_.getComponent<Rigidbody>(entity);
-        }
-        if (world_.hasComponent<Collider>(entity)) {
-            entitySnapshot.hasCollider = true;
-            entitySnapshot.collider = world_.getComponent<Collider>(entity);
-        }
-
-        snapshot.entities.push_back(entitySnapshot);
-    }
-
-    return snapshot;
-}
-
-void EditorState::restoreSnapshot(const SceneSnapshot& snapshot) {
-    world_.clear();
-    editorCameraEntity_ = kInvalidEntity;
-
-    for (const EntitySnapshot& entitySnapshot : snapshot.entities) {
-        world_.createEntityWithId(entitySnapshot.entity);
-    }
-
-    for (const EntitySnapshot& entitySnapshot : snapshot.entities) {
-        const Entity entity = entitySnapshot.entity;
-        if (entitySnapshot.hasScript) world_.addComponent<ScriptComponent>(entity, entitySnapshot.script);
-        if (entitySnapshot.hasTag) world_.addComponent<Tag>(entity, entitySnapshot.tag);
-        if (entitySnapshot.hasTransform) world_.addComponent<Transform>(entity, entitySnapshot.transform);
-        if (entitySnapshot.hasMeshRenderer) world_.addComponent<MeshRenderer>(entity, entitySnapshot.meshRenderer);
-        if (entitySnapshot.hasAnimator) world_.addComponent<Animator>(entity, entitySnapshot.animator);
-        if (entitySnapshot.hasHierarchy) world_.addComponent<Hierarchy>(entity, entitySnapshot.hierarchy);
-        if (entitySnapshot.hasSpin) world_.addComponent<Spin>(entity, entitySnapshot.spin);
-        if (entitySnapshot.hasCamera) world_.addComponent<Camera>(entity, entitySnapshot.camera);
-        if (entitySnapshot.hasRigidbody) world_.addComponent<Rigidbody>(entity, entitySnapshot.rigidbody);
-        if (entitySnapshot.hasCollider) world_.addComponent<Collider>(entity, entitySnapshot.collider);
-    }
-
-    selectedEntity_ = snapshot.selectedEntity;
-    controllableEntity_ = snapshot.controllableEntity;
-    gameCameraEntity_ = snapshot.gameCameraEntity;
-}
-
-std::string EditorState::entityLabel(Entity entity) const {
-    if (!world_.isAlive(entity)) {
-        return "Entity#" + std::to_string(entity);
-    }
-
-    if (world_.hasComponent<Tag>(entity)) {
-        const Tag& tag = world_.getComponent<Tag>(entity);
-        if (!tag.name.empty()) {
-            return tag.name + " (#" + std::to_string(entity) + ")";
-        }
-    }
-
-    return "Entity#" + std::to_string(entity);
-}
-
-bool EditorState::isEditorEntity(Entity entity) const {
-    return entity == editorCameraEntity_;
-}
-
-Mat4 EditorState::activeViewMatrix() const {
-    if (mode_ == EditorMode::Play &&
-        world_.isAlive(gameCameraEntity_) &&
-        world_.hasComponent<Camera>(gameCameraEntity_)) {
-        return world_.getComponent<Camera>(gameCameraEntity_).viewMatrix;
-    }
-
-    return editorCamera_.getViewMatrix();
-}
-
-Mat4 EditorState::activeProjectionMatrix() const {
-    if (mode_ == EditorMode::Play &&
-        world_.isAlive(gameCameraEntity_) &&
-        world_.hasComponent<Camera>(gameCameraEntity_)) {
-        return world_.getComponent<Camera>(gameCameraEntity_).projectionMatrix;
-    }
-
-    return editorCamera_.getProjectionMatrix();
 }

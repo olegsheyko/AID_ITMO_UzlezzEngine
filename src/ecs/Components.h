@@ -22,6 +22,10 @@ struct Tag {
 
 struct MeshRenderer {
     bool colliderBoundsInitialized = false;
+    bool visible = true;
+    // Меш в Y-up, как его отдаёт Assimp: RenderSystem сам поворачивает его в Z-up мира,
+    // чтобы трансформ стоящей модели оставался нулевым, а её оси совпадали с мировыми.
+    bool yUpSource = false;
     std::string meshId;
     std::string baseColorTextureId;
     std::string normalTextureId;

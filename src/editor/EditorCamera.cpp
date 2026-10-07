@@ -12,7 +12,6 @@ constexpr float kPi = 3.1415926f;
 constexpr float kLookSensitivity = 0.003f;
 constexpr float kOrbitSensitivity = 0.005f;
 constexpr float kPanSensitivity = 0.004f;
-constexpr float kBaseMoveSpeed = 5.0f;
 constexpr float kFastMoveMultiplier = 3.0f;
 constexpr float kZoomSpeed = 0.18f;
 constexpr float kMinDistance = 0.5f;
@@ -45,6 +44,17 @@ Vec3 normalize(const Vec3& value) {
 }
 
 void EditorCamera::update(float dt, int viewportWidth, int viewportHeight, bool inputEnabled, float mouseWheelDelta) {
+    if (animating_) {
+        constexpr float kDuration = 0.28f;
+        animationTime_ = std::min(kDuration, animationTime_ + dt);
+        float t = animationTime_ / kDuration;
+        t = t * t * (3.0f - 2.0f * t);
+        yaw_ = startYaw_ + (targetYaw_ - startYaw_) * t;
+        pitch_ = startPitch_ + (targetPitch_ - startPitch_) * t;
+        position_ = subtract(pivot_, scale(getForward(), distance_));
+        animating_ = animationTime_ < kDuration;
+    }
+
     if (inputEnabled) {
         InputManager& input = InputManager::getInstance();
         const Vec2 mouseDelta = input.getMouseDelta();
@@ -68,7 +78,8 @@ void EditorCamera::update(float dt, int viewportWidth, int viewportHeight, bool 
             if (input.isKeyDown(KeyCode::E)) moveUp += 1.0f;
             if (input.isKeyDown(KeyCode::Q)) moveUp -= 1.0f;
 
-            const float speed = kBaseMoveSpeed * (shift ? kFastMoveMultiplier : 1.0f);
+            animating_ = false;
+            const float speed = moveSpeed * (shift ? kFastMoveMultiplier : 1.0f);
             Vec3 flatForward = getForward();
             flatForward.z = 0.0f;
             flatForward = normalize(flatForward);
@@ -87,6 +98,7 @@ void EditorCamera::update(float dt, int viewportWidth, int viewportHeight, bool 
                 std::pow(position_.y - pivot_.y, 2.0f) +
                 std::pow(position_.z - pivot_.z, 2.0f)));
         } else if (alt && input.isMouseButtonDown(KeyCode::MouseLeft)) {
+            animating_ = false;
             yaw_ -= mouseDelta.x * kOrbitSensitivity;
             pitch_ -= mouseDelta.y * kOrbitSensitivity;
             pitch_ = std::clamp(pitch_, -kMaxPitch, kMaxPitch);
@@ -110,6 +122,23 @@ void EditorCamera::update(float dt, int viewportWidth, int viewportHeight, bool 
     }
 
     updateMatrices(viewportWidth, viewportHeight);
+}
+
+void EditorCamera::lookAlong(const Vec3& direction) {
+    const Vec3 d = normalize(direction);
+    if (length(d) <= 0.0001f) {
+        return;
+    }
+    startYaw_ = yaw_;
+    startPitch_ = pitch_;
+    targetPitch_ = std::clamp(std::asin(std::clamp(d.z, -1.0f, 1.0f)), -kMaxPitch, kMaxPitch);
+    // Сверху и снизу рыскание не определено — оставляем текущее.
+    targetYaw_ = std::abs(d.z) > 0.999f ? yaw_ : std::atan2(-d.x, d.y);
+    // Кратчайший путь по рысканию.
+    while (targetYaw_ - startYaw_ > kPi) targetYaw_ -= 2.0f * kPi;
+    while (targetYaw_ - startYaw_ < -kPi) targetYaw_ += 2.0f * kPi;
+    animationTime_ = 0.0f;
+    animating_ = true;
 }
 
 void EditorCamera::focus(const Vec3& target, float radius) {
