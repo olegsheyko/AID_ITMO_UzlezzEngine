@@ -16,6 +16,7 @@
 #include "editor/EditorCamera.h"
 #include "scripting/ScriptComponent.h"
 #include "scripting/ScriptSystem.h"
+#include "scripting/ScriptWatcher.h"
 
 #include <array>
 #include <cstddef>
@@ -138,7 +139,9 @@ public:
     Entity spawnPrefab(const std::string& path, const Vec3& position);
     void loadArenaScene();
     bool isArenaScene() const;
+    // Edit: перечитать все скрипты. Play: hot reload каждого файла сцены с диска (режим playReloadMode).
     bool reloadScripts();
+    bool applyScriptChange(const ScriptWatcher::Change& change);
     bool savePrefabFields(Entity entity);
 
     // Лаб-инструменты (ЛР 1)
@@ -151,6 +154,10 @@ public:
     World world;
     // Одна Lua VM на редактор; объявлена после world и уничтожается раньше него.
     ScriptSystem scripts{world};
+    // Сохранили .lua — вотчер (задача job system) находит и проверяет файл, применение — здесь, на главном потоке.
+    ScriptWatcher scriptWatcher;
+    bool autoReloadScripts = true;
+    ReloadMode playReloadMode = ReloadMode::KeepState;
     EditorCamera camera;
     PhysicsSystem physicsSystem;
     SpinSystem spinSystem;

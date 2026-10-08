@@ -2,11 +2,12 @@
 set(ENGINE_LUA_ROOT "${CMAKE_SOURCE_DIR}/external/lua/lua-5.4.8" CACHE PATH "Lua source directory")
 set(ENGINE_SOL_ROOT "${CMAKE_SOURCE_DIR}/external/sol2/sol2-3.3.1" CACHE PATH "sol2 source directory")
 if(NOT EXISTS "${ENGINE_LUA_ROOT}/src/lua.h" OR NOT EXISTS "${ENGINE_SOL_ROOT}/include/sol/sol.hpp")
-    message(FATAL_ERROR "Run powershell -ExecutionPolicy Bypass -File tools/setup_lua.ps1 first")
+    message(FATAL_ERROR "Lua/sol2 sources are missing. Run tools/setup_lua.sh (macOS/Linux) "
+        "or powershell -ExecutionPolicy Bypass -File tools/setup_lua.ps1 (Windows) first")
 endif()
 # sol2 3.3.1: optional<T&>::emplace calls a member that does not exist (fixed upstream
 # after the release). MSVC and GCC never look at the uninstantiated template, clang 19+ does.
-# Patch a copy in the build tree; the downloaded sources stay as setup_lua.ps1 left them.
+# Patch a copy in the build tree; the downloaded sources stay as the setup script left them.
 set(ENGINE_SOL_PATCH_DIR "${CMAKE_BINARY_DIR}/sol2-patched")
 file(READ "${ENGINE_SOL_ROOT}/include/sol/optional_implementation.hpp" ENGINE_SOL_OPTIONAL)
 string(FIND "${ENGINE_SOL_OPTIONAL}" "class optional<T&>" ENGINE_SOL_REFERENCE_AT)

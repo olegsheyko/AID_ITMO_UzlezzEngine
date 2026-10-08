@@ -28,8 +28,20 @@
         {
             "label": "Engine: run",
             "type": "shell",
-            "command": "./GameEngine",
-            "options": { "cwd": "${workspaceFolder}/build/mac" },
+            // Из корня репозитория: правки assets/scripts и assets/prefabs сразу видны движку,
+            // Save to Prefab пишет в исходники, а не в копию в build/mac, которую затирает CopyAssets.
+            "command": "./build/mac/GameEngine",
+            "options": { "cwd": "${workspaceFolder}" },
+            "dependsOn": "Engine: build (Release)",
+            "problemMatcher": [],
+            "presentation": { "panel": "dedicated", "clear": true }
+        },
+        {
+            "label": "Engine: run arena (ЛР 2)",
+            "type": "shell",
+            // Сразу Lua-арена: правки assets/scripts подхватываются на лету, в том числе в Play.
+            "command": "./build/mac/GameEngine --editor-arena",
+            "options": { "cwd": "${workspaceFolder}" },
             "dependsOn": "Engine: build (Release)",
             "problemMatcher": [],
             "presentation": { "panel": "dedicated", "clear": true }
@@ -69,7 +81,7 @@
         {
             "label": "Engine: tests",
             "type": "shell",
-            "command": "cmake --build build/mac --target PhysicsSystemTests CoordinateSystemTests TextureResourceTests --parallel $(sysctl -n hw.ncpu) && ctest --test-dir build/mac --output-on-failure",
+            "command": "cmake --build build/mac --parallel $(sysctl -n hw.ncpu) && ctest --test-dir build/mac --output-on-failure",
             "group": "test",
             "problemMatcher": { "base": "$gcc", "fileLocation": ["autoDetect", "${workspaceFolder}"] },
             "presentation": { "panel": "dedicated", "clear": true }

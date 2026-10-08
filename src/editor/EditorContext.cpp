@@ -22,7 +22,9 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <limits>
 
 using namespace EditorMath;
@@ -36,6 +38,8 @@ constexpr float kMinScale = 0.1f;
 constexpr const char* kDefaultScenePath = "assets/scenes/demo_scene.json";
 // Сцена ЛР 2 собирается из префабов, а не из манифеста.
 constexpr const char* kArenaScenePath = "assets/prefabs/arena.json";
+// Вотчер скриптов смотрит все .lua здесь и, сверх того, файлы, на которые ссылается сцена.
+constexpr const char* kScriptRoot = "assets/scripts";
 constexpr const char* kCubeMeshPath = "primitive:cube";
 constexpr const char* kCubeTexturePath = "assets/textures/WoodCrate02.dds";
 constexpr const char* kVertexShaderPath = "assets/shaders/mesh_vertex.glsl";
@@ -187,9 +191,14 @@ void EditorContext::update(float dt) {
         fpsFrames_ = 0;
     }
 
-    if (HotReload::getInstance().update()) {
-        for (const auto& path : HotReload::getInstance().getChangedFiles()) {
-            ResourceManager::getInstance().reloadShadersForFile(path);
+    // Шейдеры перезагружает Application (HotReload); здесь — скрипты.
+    const double now = ImGui::GetTime();
+    if (autoReloadScripts && scriptWatcher.due(now)) {
+        scriptWatcher.poll(now, {kScriptRoot}, scripts.scriptPaths());
+    }
+    for (const ScriptWatcher::Change& change : scriptWatcher.drain()) {
+        if (autoReloadScripts) {
+            applyScriptChange(change);
         }
     }
 
@@ -226,6 +235,7 @@ void EditorContext::resetSceneState() {
     selectedAsset.clear();
     scriptMessage.clear();
     scriptMessageIsError = false;
+    scripts.clearError();
 }
 
 bool EditorContext::loadScene(const std::string& manifestPath) {
@@ -322,12 +332,63 @@ void EditorContext::loadArenaScene() {
 }
 
 bool EditorContext::reloadScripts() {
-    const bool ok = scripts.reload();
-    setScriptMessage(ok ? "Scripts reloaded." : scripts.error(), !ok);
-    if (ok) {
-        LOG_INFO("Lua: scripts reloaded");
+    if (!isPlaying()) {
+        const bool ok = scripts.reload();
+        setScriptMessage(ok ? "Scripts reloaded." : scripts.error(), !ok);
+        if (ok) {
+            LOG_INFO("Lua: scripts reloaded");
+        }
+        return ok;
+    }
+    // В Play — тот же путь, что у вотчера: прочитать, проверить синтаксис, заменить классы на ходу.
+    bool ok = true;
+    for (const std::string& path : scripts.scriptPaths()) {
+        ScriptWatcher::Change change;
+        change.path = path;
+        std::ifstream in(path, std::ios::binary);
+        change.source.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        change.ok = in ? ScriptWatcher::validate(path, change.source, change.error) : false;
+        if (!in) {
+            change.error = path + ": cannot read file";
+        }
+        ok = applyScriptChange(change) && ok;
     }
     return ok;
+}
+
+bool EditorContext::applyScriptChange(const ScriptWatcher::Change& change) {
+    const std::string name = std::filesystem::path(change.path).filename().string();
+    if (!change.ok) {
+        LOG_ERROR("Lua: " + change.error);
+        setScriptMessage("Not reloaded, the previous code stays active. " + change.error, true);
+        return false;
+    }
+    const HotReloadReport report = scripts.hotReload(change.path, change.source, playReloadMode);
+    if (!report.ok) {
+        setScriptMessage("Not reloaded, the previous code stays active. " + report.error, true);
+        return false;
+    }
+    if (report.classes == 0) {
+        return true; // файл сцене не нужен
+    }
+    std::string text = name + " reloaded";
+    if (isPlaying()) {
+        text += " in Play: " + std::to_string(report.instances) + " instance(s)";
+        if (playReloadMode == ReloadMode::Reset) {
+            text += ", state reset (L1)";
+        } else {
+            text += ", state kept (L2): " + std::to_string(report.keptFields) + " field(s)";
+            if (report.migrated > 0) {
+                text += ", " + std::to_string(report.migrated) + " via on_reload";
+            }
+        }
+        if (report.revived > 0) {
+            text += ", " + std::to_string(report.revived) + " revived after an error";
+        }
+    }
+    LOG_INFO("Lua: " + text);
+    setScriptMessage(text + ".", false);
+    return true;
 }
 
 bool EditorContext::savePrefabFields(Entity entity) {
@@ -356,8 +417,8 @@ Entity EditorContext::spawnPrefab(const std::string& path, const Vec3& position)
         const Entity entity = PrefabManager::spawn(world, path);
         Transform& transform = world.getComponent<Transform>(entity);
         transform.position = add(position, transform.position);
-        if (world.hasComponent<ScriptComponent>(entity)) {
-            scripts.attachDefaults(entity);
+        if (world.hasComponent<ScriptComponent>(entity) && !scripts.attachDefaults(entity)) {
+            setScriptMessage(scripts.error(), true);
         }
         select(entity);
         LOG_INFO("Editor: placed prefab " + path);

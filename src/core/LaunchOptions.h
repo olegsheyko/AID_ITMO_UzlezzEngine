@@ -22,6 +22,7 @@ struct EditorStartupOptions {
     std::string browseFolder;
     std::vector<std::string> focusWindows;
     bool play = false;
+    bool arena = false; // открыть Lua-арену вместо сцены по умолчанию
     bool showColliders = false;
     bool listView = false;
     bool resetLayout = false;
@@ -41,6 +42,7 @@ struct LaunchOptions {
 // --exit-during-load, --upload-budget-ms <мс>, --stress-seconds <с>, --stress-out <файл>.
 // Скриншот редактора: --editor-screenshot <файл.png> [--editor-frames N] [--window-size WxH]
 // [--editor-select <имя>] [--editor-asset <путь>] [--editor-browse <папка>] [--editor-tab <окно>]... [--editor-play].
+// --editor-arena — сразу открыть Lua-арену ЛР 2 (вместе с --editor-play — сразу в игру).
 // Режим --bench всегда выключает vsync — иначе время кадра прилипает к частоте экрана.
 bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::string& outError);
 

@@ -191,6 +191,16 @@ if(BUILD_TESTING)
     deploy_assimp_runtime(ScriptSystemTests)
     add_test(NAME ScriptSystemTests COMMAND ScriptSystemTests "${CMAKE_CURRENT_BINARY_DIR}/script-test-fixtures")
     set_tests_properties(ScriptSystemTests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_executable(ScriptRuntimeTests
+        tests/ScriptRuntimeTests.cpp
+        src/scripting/ScriptSystem.cpp
+        src/scripting/ScriptWatcher.cpp
+        src/jobs/JobSystem.cpp
+        src/ecs/World.cpp)
+    target_include_directories(ScriptRuntimeTests PRIVATE src external)
+    target_link_libraries(ScriptRuntimeTests PRIVATE EngineLua enkiTS TracyHeaders)
+    add_test(NAME ScriptRuntimeTests COMMAND ScriptRuntimeTests "${CMAKE_CURRENT_BINARY_DIR}/script-runtime-fixtures")
+    set_tests_properties(ScriptRuntimeTests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
     add_executable(AnimationTests
         tests/AnimationTests.cpp
         src/animation/Animation.cpp
@@ -254,6 +264,7 @@ endif()
 # --- Game target ---
 add_executable(GameEngine
     src/scripting/ScriptSystem.cpp
+    src/scripting/ScriptWatcher.cpp
     src/prefabs/PrefabManager.cpp
     src/bench/AnimationBenchmark.cpp
     src/animation/Animation.cpp
