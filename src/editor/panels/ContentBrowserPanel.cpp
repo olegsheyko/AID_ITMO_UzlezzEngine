@@ -705,6 +705,14 @@ void ContentBrowserPanel::activate(EditorContext& context, const AssetEntry& ent
             context.spawnPrefab(entry.path, context.dropPoint(context.camera.getPosition(), context.camera.getForward()));
         }
         break;
+    case AssetType::Script:
+        if (entry.extension == ".lua") {
+            // Lua правится прямо в редакторе; во внешнем открывается из контекстного меню и из самого редактора.
+            context.openScriptRequest = entry.path;
+            break;
+        }
+        PlatformShell::openFile(entry.path);
+        break;
     default:
         PlatformShell::openFile(entry.path);
         break;
@@ -730,7 +738,12 @@ void ContentBrowserPanel::itemContextMenu(EditorContext& context, const AssetEnt
         }
         ImGui::EndDisabled();
     }
-    if (entry.type != AssetType::Folder && ImGui::MenuItem(ICON_LC_EXTERNAL_LINK "  Open in Default App")) {
+    const bool luaScript = entry.type == AssetType::Script && entry.extension == ".lua";
+    if (luaScript && ImGui::MenuItem(ICON_LC_FILE_PEN "  Edit Script")) {
+        activate(context, entry);
+    }
+    const std::string openLabel = std::string(ICON_LC_EXTERNAL_LINK) + (luaScript ? "  Open in External Editor" : "  Open in Default App");
+    if (entry.type != AssetType::Folder && ImGui::MenuItem(openLabel.c_str())) {
         PlatformShell::openFile(entry.path);
     }
     if (entry.type == AssetType::Shader && ImGui::MenuItem(ICON_LC_REFRESH_CW "  Reload Shader")) {

@@ -19,6 +19,7 @@ struct EditorStartupOptions {
     int windowHeight = 1000;
     std::string selectEntity;
     std::string selectAsset;
+    std::string openScript; // .lua, который сразу открыть в редакторе скриптов
     std::string browseFolder;
     std::vector<std::string> focusWindows;
     bool play = false;
@@ -41,7 +42,7 @@ struct LaunchOptions {
 // Аргументы запуска: --no-vsync, --bench burst|stream, --bench-out <файл.csv>, --load-mode async|sync,
 // --exit-during-load, --upload-budget-ms <мс>, --stress-seconds <с>, --stress-out <файл>.
 // Скриншот редактора: --editor-screenshot <файл.png> [--editor-frames N] [--window-size WxH]
-// [--editor-select <имя>] [--editor-asset <путь>] [--editor-browse <папка>] [--editor-tab <окно>]... [--editor-play].
+// [--editor-select <имя>] [--editor-asset <путь>] [--editor-open-script <файл.lua>] [--editor-browse <папка>] [--editor-tab <окно>]... [--editor-play].
 // --editor-arena — сразу открыть Lua-арену ЛР 2 (вместе с --editor-play — сразу в игру).
 // Режим --bench всегда выключает vsync — иначе время кадра прилипает к частоте экрана.
 bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::string& outError);

@@ -189,6 +189,9 @@ public:
     // Просьбы между панелями: показать ассет в Content Browser, вывести окно на передний план.
     std::string revealAssetRequest;
     std::string focusWindowRequest;
+    // Открыть .lua в редакторе скриптов (строка с 1, 0 — без перехода); забирает ScriptEditorPanel.
+    std::string openScriptRequest;
+    int openScriptLine = 0;
     // Флаги ввода, которые выставляют панели вьюпортов на прошлом кадре.
     bool sceneViewInputActive = false;
     bool gameViewInputActive = false;

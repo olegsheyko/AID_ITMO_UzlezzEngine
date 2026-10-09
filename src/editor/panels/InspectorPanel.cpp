@@ -781,6 +781,11 @@ void InspectorPanel::drawScript(EditorContext& context, Entity entity, bool lock
         if (script.fields.empty()) {
             EditorUI::textFaint("No fields: declare them in the Lua class.");
         }
+        ImGui::Dummy(ImVec2(0.0f, 2.0f));
+        if (ImGui::Button(ICON_LC_FILE_PEN "  Edit Script", ImVec2(-FLT_MIN, 0.0f))) {
+            context.openScriptRequest = script.path;
+        }
+        ImGui::SetItemTooltip("Open %s in the Script Editor. Works in Play too: saved changes reload in the running game.", script.path.c_str());
         if (!locked) {
             ImGui::Dummy(ImVec2(0.0f, 2.0f));
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
@@ -945,10 +950,20 @@ void InspectorPanel::drawAsset(EditorContext& context, const std::string& path) 
         drawAssetActions(context, *entry);
         drawTextAsset(*entry);
         return;
+    case AssetType::Script:
+        if (entry->extension == ".lua") {
+            // Правка прямо в редакторе; внешний редактор остаётся кнопкой «Open Externally» ниже.
+            if (EditorUI::primaryButton(ICON_LC_FILE_PEN "  Edit Script", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetFrameHeight() + 4.0f))) {
+                context.openScriptRequest = entry->path;
+            }
+            ImGui::SetItemTooltip("Edit this script in the Script Editor. Saved scripts reload in the running game.");
+        }
+        drawAssetActions(context, *entry);
+        drawTextAsset(*entry);
+        return;
     case AssetType::Shader:
     case AssetType::Json:
     case AssetType::Text:
-    case AssetType::Script:
         drawAssetActions(context, *entry);
         drawTextAsset(*entry);
         return;
@@ -1239,9 +1254,20 @@ void InspectorPanel::drawAssetActions(EditorContext& context, const AssetEntry& 
         ImGui::SetClipboardText(entry.path.c_str());
     }
     if (entry.type != AssetType::Folder) {
-        ImGui::SameLine();
-        if (ImGui::Button(ICON_LC_EXTERNAL_LINK "  Open")) {
+        const bool luaScript = entry.type == AssetType::Script && entry.extension == ".lua";
+        const char* openLabel = luaScript ? ICON_LC_EXTERNAL_LINK "  Open Externally" : ICON_LC_EXTERNAL_LINK "  Open";
+        // Длинная подпись не лезет за край узкого инспектора: уходит на следующую строку.
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const float needed = ImGui::CalcTextSize(openLabel).x + style.FramePadding.x * 2.0f;
+        const float rightEdge = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+        if (rightEdge - ImGui::GetItemRectMax().x - style.ItemSpacing.x >= needed) {
+            ImGui::SameLine();
+        }
+        if (ImGui::Button(openLabel)) {
             PlatformShell::openFile(entry.path);
+        }
+        if (luaScript) {
+            ImGui::SetItemTooltip("Open the file in the default app for .lua files (an external editor).");
         }
     }
     ImGui::Dummy(ImVec2(0.0f, 2.0f));

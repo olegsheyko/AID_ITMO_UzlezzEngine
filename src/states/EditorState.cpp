@@ -57,6 +57,7 @@ const char* windowForKey(const std::string& key) {
     if (key == "console") return EditorWindow::kConsole;
     if (key == "renderer") return EditorWindow::kRendererInfo;
     if (key == "gameplay") return EditorWindow::kGameplay;
+    if (key == "script") return EditorWindow::kScriptEditor;
     return nullptr;
 }
 
@@ -179,6 +180,7 @@ void EditorState::loadPreferences() {
     gameView_.open = prefBool("ShowGame", true);
     rendererInfo_.open = prefBool("ShowRendererInfo", true);
     gameplay_.open = prefBool("ShowGameplay", true);
+    scriptEditor_.open = prefBool("ShowScriptEditor", false);
     contentBrowser_.open = prefBool("ShowContentBrowser", true);
     console_.open = prefBool("ShowConsole", true);
 }
@@ -220,6 +222,7 @@ void EditorState::storePreferences() {
     setBool("ShowGame", gameView_.open);
     setBool("ShowRendererInfo", rendererInfo_.open);
     setBool("ShowGameplay", gameplay_.open);
+    setBool("ShowScriptEditor", scriptEditor_.open);
     setBool("ShowContentBrowser", contentBrowser_.open);
     setBool("ShowConsole", console_.open);
     if (values != preferences()) {
@@ -288,6 +291,7 @@ void EditorState::render() {
     console_.draw();
     // После Content Browser: новая вкладка в том же доке не перехватывает выбор при первом показе.
     gameplay_.draw(context_);
+    scriptEditor_.draw(context_);
     inspector_.draw(context_);
     renderModals();
     if (showImGuiDemo_) {
@@ -330,6 +334,9 @@ void EditorState::applyStartupOptions() {
     if (!startup_.selectAsset.empty()) {
         context_.revealAssetRequest = startup_.selectAsset;
     }
+    if (!startup_.openScript.empty()) {
+        context_.openScriptRequest = startup_.openScript;
+    }
     for (const std::string& key : startup_.focusWindows) {
         if (const char* window = windowForKey(key)) {
             ImGui::SetWindowFocus(window);
@@ -355,6 +362,9 @@ void EditorState::handleShortcuts() {
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_R, global)) {
         context_.assets.refresh();
         ThumbnailCache::instance().forgetFailures();
+    }
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, global)) {
+        scriptEditor_.saveAll();
     }
 
     const bool typing = io.WantTextInput || ImGui::IsAnyItemActive();
@@ -414,6 +424,10 @@ void EditorState::renderMainMenu() {
         }
         if (ImGui::MenuItem(ICON_LC_ROTATE_CCW "  Reload Scene")) {
             context_.reloadScene();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(ICON_LC_SAVE "  Save Scripts", EditorUI::shortcut("Ctrl+S").c_str(), false, scriptEditor_.hasUnsavedChanges())) {
+            scriptEditor_.saveAll();
         }
         ImGui::Separator();
         if (ImGui::MenuItem(ICON_LC_REFRESH_CW "  Refresh Assets", EditorUI::shortcut("Ctrl+R").c_str())) {
@@ -486,6 +500,7 @@ void EditorState::renderMainMenu() {
         ImGui::MenuItem(ICON_LC_GAMEPAD_2 "  Game", nullptr, &gameView_.open);
         ImGui::MenuItem(ICON_LC_ACTIVITY "  Renderer Info", nullptr, &rendererInfo_.open);
         ImGui::MenuItem(ICON_LC_SWORDS "  Gameplay", nullptr, &gameplay_.open);
+        ImGui::MenuItem(ICON_LC_FILE_CODE "  Script Editor", nullptr, &scriptEditor_.open);
         ImGui::MenuItem(ICON_LC_FOLDER "  Content Browser", nullptr, &contentBrowser_.open);
         ImGui::MenuItem(ICON_LC_SQUARE_TERMINAL "  Console", nullptr, &console_.open);
         ImGui::Separator();
@@ -597,6 +612,7 @@ void EditorState::renderMainToolbar() {
             ImGui::MenuItem("Game", nullptr, &gameView_.open);
             ImGui::MenuItem("Renderer Info", nullptr, &rendererInfo_.open);
             ImGui::MenuItem("Gameplay", nullptr, &gameplay_.open);
+            ImGui::MenuItem("Script Editor", nullptr, &scriptEditor_.open);
             ImGui::MenuItem("Content Browser", nullptr, &contentBrowser_.open);
             ImGui::MenuItem("Console", nullptr, &console_.open);
             ImGui::EndPopup();
@@ -714,6 +730,7 @@ void EditorState::buildDefaultLayout(unsigned int dockspaceId) {
     ImGui::DockBuilderDockWindow(EditorWindow::kScene, center);
     ImGui::DockBuilderDockWindow(EditorWindow::kGame, center);
     ImGui::DockBuilderDockWindow(EditorWindow::kRendererInfo, center);
+    ImGui::DockBuilderDockWindow(EditorWindow::kScriptEditor, center);
     ImGui::DockBuilderDockWindow(EditorWindow::kContentBrowser, bottom);
     ImGui::DockBuilderDockWindow(EditorWindow::kConsole, bottom);
     ImGui::DockBuilderDockWindow(EditorWindow::kGameplay, bottom);
@@ -750,7 +767,7 @@ void EditorState::renderModals() {
              {nullptr, nullptr}},
             {{"Q / W / E / R", "Select / Move / Rotate / Scale"}, {"X", "Toggle local / global handles"},
              {"Ctrl (while dragging)", "Invert snapping"}, {"Ctrl+D", "Duplicate"}, {"F2", "Rename"}, {"Del", "Delete"},
-             {nullptr, nullptr}},
+             {"Ctrl+S", "Save Lua scripts (Script Editor)"}, {nullptr, nullptr}},
             {{"Ctrl+P", "Play / Stop"}, {"Ctrl+Shift+P", "Pause"}, {"Ctrl+Alt+P", "Step one frame"},
              {"Arrows / WASD", "Move the player cube (Game view focused)"}, {"Space", "Jump"}, {"Ctrl+R", "Refresh assets"},
              {nullptr, nullptr}},
@@ -796,6 +813,44 @@ void EditorState::renderModals() {
         EditorUI::textFaint("Fonts: Inter, JetBrains Mono (OFL)  \xC2\xB7  Icons: Lucide (ISC)");
         ImGui::Dummy(ImVec2(0.0f, 6.0f));
         if (EditorUI::primaryButton("Close", ImVec2(100.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    // Окно закрывают, а в редакторе скриптов есть несохранённое: сохранить, выйти как есть или остаться.
+    if (quitDialogRequested_) {
+        ImGui::OpenPopup("Unsaved scripts##modal");
+        quitDialogRequested_ = false;
+        quitSaveFailed_ = false;
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Unsaved scripts##modal", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextUnformatted("These Lua scripts have changes that are not saved:");
+        ImGui::Dummy(ImVec2(0.0f, 2.0f));
+        for (const std::string& path : scriptEditor_.unsavedFiles()) {
+            EditorUI::iconLabel(ICON_LC_FILE_CODE, path.c_str(), kAccentHovered, kText);
+        }
+        if (quitSaveFailed_) {
+            ImGui::Dummy(ImVec2(0.0f, 2.0f));
+            ImGui::TextColored(toVec4(kError), ICON_LC_CIRCLE_ALERT "  Some scripts could not be saved. Fix that in the Script Editor first.");
+        }
+        ImGui::Dummy(ImVec2(0.0f, 6.0f));
+        if (EditorUI::primaryButton("Save All and Quit", ImVec2(150.0f, 0.0f))) {
+            if (scriptEditor_.saveAll()) {
+                quitConfirmed_ = true;
+                ImGui::CloseCurrentPopup();
+            } else {
+                quitSaveFailed_ = true;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Quit Without Saving", ImVec2(150.0f, 0.0f))) {
+            quitConfirmed_ = true;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(100.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();

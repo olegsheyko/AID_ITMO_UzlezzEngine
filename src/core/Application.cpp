@@ -149,6 +149,20 @@ void Application::update(float dt) {
 
 	current->update(dt);
 
+	// Закрыли окно, а в редакторе скриптов есть несохранённое: оставляем окно и спрашиваем. Режимы со скриншотами
+	// и сценариями закрывают окно сами и спрашивать не должны.
+	if (auto* editor = dynamic_cast<EditorState*>(current); editor && options_.editor.screenshotPath.empty()) {
+		if (auto* openGlRenderer = dynamic_cast<OpenGLRenderAdapter*>(renderer_.get()); openGlRenderer && openGlRenderer->getWindow()) {
+			GLFWwindow* window = openGlRenderer->getWindow();
+			if (editor->quitConfirmed()) {
+				glfwSetWindowShouldClose(window, GLFW_TRUE);
+			} else if (glfwWindowShouldClose(window) && editor->hasUnsavedScripts()) {
+				glfwSetWindowShouldClose(window, GLFW_FALSE);
+				editor->askToQuit();
+			}
+		}
+	}
+
 	if (auto* loading = dynamic_cast<LoadingState*>(current)) {
 		if (loading->isFinished()) {
 			stateManager_.change(std::make_unique<EditorState>(*renderer_, options_.editor));

@@ -6,8 +6,9 @@
 ./build/mac/GameEngine --editor-arena
 ```
 
-Рядом открыть VS Code с `assets/scripts/`. В окне **Gameplay**: «Reload on save» включён,
-режим «In Play: Keep state (L2)».
+Рядом открыть VS Code с `assets/scripts/` — или править прямо в редакторе: двойной клик по `.lua` в Content Browser
+открывает окно **Script Editor** (⌘S сохраняет, hot reload тот же; **Open Externally** — во внешнем редакторе).
+В окне **Gameplay**: «Reload on save» включён, режим «In Play: Keep state (L2)».
 
 ## Ход показа
 

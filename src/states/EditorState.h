@@ -11,6 +11,7 @@
 #include "editor/panels/InspectorPanel.h"
 #include "editor/panels/RendererInfoPanel.h"
 #include "editor/panels/SceneViewPanel.h"
+#include "editor/panels/ScriptEditorPanel.h"
 #include "states/IGameState.h"
 
 class IRenderAdapter;
@@ -31,6 +32,12 @@ public:
     // Для Application: скриншоты, которые сценарий просит снять после этого кадра, и конец сценария.
     std::vector<std::string> takeScreenshotRequests();
     bool scriptFinished() const { return scriptQuit_; }
+
+    // Закрытие окна при несохранённых Lua-скриптах: Application не закрывает окно, а просит редактор спросить,
+    // и закрывает его, только когда quitConfirmed().
+    bool hasUnsavedScripts() const { return scriptEditor_.hasUnsavedChanges(); }
+    void askToQuit() { quitDialogRequested_ = true; }
+    bool quitConfirmed() const { return quitConfirmed_; }
 
 private:
     void renderMainMenu();
@@ -54,6 +61,7 @@ private:
     GameViewPanel gameView_;
     RendererInfoPanel rendererInfo_;
     GameplayPanel gameplay_;
+    ScriptEditorPanel scriptEditor_;
     ContentBrowserPanel contentBrowser_;
     ConsolePanel console_;
     EditorStartupOptions startup_;
@@ -68,5 +76,8 @@ private:
     bool showControls_ = false;
     bool showAbout_ = false;
     bool showImGuiDemo_ = false;
+    bool quitDialogRequested_ = false;
+    bool quitConfirmed_ = false;
+    bool quitSaveFailed_ = false;
     int frame_ = 0;
 };

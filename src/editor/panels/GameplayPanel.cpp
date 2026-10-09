@@ -6,6 +6,7 @@
 #include "editor/EditorWidgets.h"
 #include "editor/EditorWindows.h"
 #include "editor/IconsLucide.h"
+#include "editor/ScriptText.h"
 
 #include <imgui.h>
 #include <lua.h>
@@ -115,6 +116,21 @@ void messageBox(const char* icon, const std::string& text, ImU32 color) {
     ImGui::PopTextWrapPos();
     ImGui::SetCursorScreenPos(ImVec2(min.x, min.y + height));
     ImGui::Dummy(ImVec2(width, px(4.0f)));
+}
+
+// «assets/scripts/enemy.lua:12: ...» в сообщении → кнопка, открывающая скрипт на этой строке в редакторе скриптов.
+void goToErrorButton(EditorContext& context, const std::string& message) {
+    std::string path;
+    int line = 0;
+    if (!ScriptText::parseErrorLocation(message, path, line)) {
+        return;
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton(ICON_LC_FILE_PEN "  Go to line")) {
+        context.openScriptRequest = path;
+        context.openScriptLine = line;
+    }
+    ImGui::SetItemTooltip("Open %s at line %d in the Script Editor", path.c_str(), line);
 }
 }
 
@@ -251,8 +267,10 @@ void GameplayPanel::drawStatus(EditorContext& context) {
         if (ImGui::SmallButton(ICON_LC_COPY "  Copy error")) {
             ImGui::SetClipboardText(error.c_str());
         }
+        goToErrorButton(context, error);
     } else if (context.scriptMessageIsError && !context.scriptMessage.empty()) {
         messageBox(ICON_LC_CIRCLE_ALERT, context.scriptMessage, kError);
+        goToErrorButton(context, context.scriptMessage);
     }
     EditorUI::componentSpacing();
 }

@@ -36,6 +36,31 @@ const char* const kLuaKeywords[] = {"and", "break", "do", "else", "elseif", "end
     "local", "not", "or", "repeat", "return", "then", "until", "while", nullptr};
 const char* const kLuaConstants[] = {"nil", "true", "false", "self", nullptr};
 
+// Конец блочного комментария, начиная с p: «*/» у GLSL, «]]» или «]=]» у Lua. nullptr — на этой строке не закрыт.
+const char* blockCommentEnd(SyntaxLanguage language, const char* p, const char* end) {
+    if (language == SyntaxLanguage::Lua) {
+        for (; p < end; ++p) {
+            if (*p != ']') {
+                continue;
+            }
+            const char* q = p + 1;
+            while (q < end && *q == '=') {
+                ++q;
+            }
+            if (q < end && *q == ']') {
+                return q + 1;
+            }
+        }
+        return nullptr;
+    }
+    for (; p + 1 < end; ++p) {
+        if (p[0] == '*' && p[1] == '/') {
+            return p + 2;
+        }
+    }
+    return nullptr;
+}
+
 struct Cursor {
     ImDrawList* drawList;
     ImVec2 position;
@@ -63,13 +88,10 @@ void highlight(Cursor* cursor, const char* p, const char* end, SyntaxLanguage la
     }
     while (p < end) {
         if (inBlockComment) {
-            const char* close = p;
-            while (close + 1 < end && !(close[0] == '*' && close[1] == '/')) {
-                ++close;
-            }
-            if (close + 1 < end) {
-                emit(p, close + 2, kComment);
-                p = close + 2;
+            const char* close = blockCommentEnd(language, p, end);
+            if (close) {
+                emit(p, close, kComment);
+                p = close;
                 inBlockComment = false;
             } else {
                 emit(p, end, kComment);
@@ -88,8 +110,21 @@ void highlight(Cursor* cursor, const char* p, const char* end, SyntaxLanguage la
             p += 2;
             continue;
         }
-        // В Lua «--» до конца строки; блочные --[[ ]] тоже считаем строчными — для превью этого хватает.
+        // В Lua «--» до конца строки, а «--[[» и «--[=[» открывают блочный комментарий.
         if (language == SyntaxLanguage::Lua && c == '-' && p + 1 < end && p[1] == '-') {
+            const char* q = p + 2;
+            if (q < end && *q == '[') {
+                ++q;
+                while (q < end && *q == '=') {
+                    ++q;
+                }
+                if (q < end && *q == '[') {
+                    inBlockComment = true;
+                    emit(p, q + 1, kComment);
+                    p = q + 1;
+                    continue;
+                }
+            }
             emit(p, end, kComment);
             return;
         }
@@ -183,7 +218,7 @@ void drawHighlightedLine(ImDrawList* drawList, const ImVec2& position, const cha
 }
 
 void advanceBlockComment(const char* begin, const char* end, SyntaxLanguage language, bool& inBlockComment) {
-    if (language != SyntaxLanguage::Glsl) {
+    if (language != SyntaxLanguage::Glsl && language != SyntaxLanguage::Lua) {
         return;
     }
     highlight(nullptr, begin, end, language, inBlockComment);

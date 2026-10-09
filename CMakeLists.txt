@@ -238,6 +238,13 @@ if(BUILD_TESTING)
     target_include_directories(EditorMathTests PRIVATE src external)
     add_test(NAME EditorMathTests COMMAND EditorMathTests)
 
+    add_executable(ScriptTextTests
+        tests/ScriptTextTests.cpp
+        src/editor/ScriptText.cpp
+    )
+    target_include_directories(ScriptTextTests PRIVATE src)
+    add_test(NAME ScriptTextTests COMMAND ScriptTextTests)
+
     add_executable(JobSystemTests
         tests/JobSystemTests.cpp
         src/jobs/JobSystem.cpp
@@ -297,6 +304,7 @@ add_executable(GameEngine
     src/editor/EditorWidgets.cpp
     src/editor/MeshBounds.cpp
     src/editor/PlatformShell.cpp
+    src/editor/ScriptText.cpp
     src/editor/SyntaxHighlight.cpp
     src/editor/TexturePicker.cpp
     src/editor/ThumbnailCache.cpp
@@ -308,6 +316,7 @@ add_executable(GameEngine
     src/editor/panels/InspectorPanel.cpp
     src/editor/panels/RendererInfoPanel.cpp
     src/editor/panels/SceneViewPanel.cpp
+    src/editor/panels/ScriptEditorPanel.cpp
     src/states/EditorState.cpp
     src/states/StateManager.cpp
     src/states/LoadingState.cpp

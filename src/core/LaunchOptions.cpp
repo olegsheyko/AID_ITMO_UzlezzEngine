@@ -34,7 +34,7 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
             else outOptions.animationBench->exitLoading=true;
         } else if (arg == "--editor-screenshot" || arg == "--editor-select" || arg == "--editor-asset" ||
                    arg == "--editor-browse" || arg == "--editor-tab" || arg == "--editor-frames" || arg == "--window-size" ||
-                   arg == "--editor-script" || arg == "--editor-ini") {
+                   arg == "--editor-script" || arg == "--editor-ini" || arg == "--editor-open-script") {
             if (i + 1 >= argc) {
                 outError = arg + " expects a value";
                 return false;
@@ -51,6 +51,8 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
                 editor.selectEntity = value;
             } else if (arg == "--editor-asset") {
                 editor.selectAsset = value;
+            } else if (arg == "--editor-open-script") {
+                editor.openScript = value;
             } else if (arg == "--editor-browse") {
                 editor.browseFolder = value;
             } else if (arg == "--editor-tab") {
@@ -179,5 +181,5 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
 }
 
 const char* launchUsage() {
-    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms] [--animation-bench sequential|parallel [--animation-characters N] [--animation-frames N] [--animation-out file.csv] [--animation-wait-tracy] [--animation-exit-loading]] [--editor-screenshot file.png [--editor-frames N] [--window-size WxH] [--editor-select name] [--editor-asset path] [--editor-browse folder] [--editor-tab window]... [--editor-play] [--editor-arena] [--editor-colliders] [--editor-list-view]] [--editor-reset-layout]";
+    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms] [--animation-bench sequential|parallel [--animation-characters N] [--animation-frames N] [--animation-out file.csv] [--animation-wait-tracy] [--animation-exit-loading]] [--editor-screenshot file.png [--editor-frames N] [--window-size WxH] [--editor-select name] [--editor-asset path] [--editor-open-script file.lua] [--editor-browse folder] [--editor-tab window]... [--editor-play] [--editor-arena] [--editor-colliders] [--editor-list-view]] [--editor-reset-layout]";
 }
