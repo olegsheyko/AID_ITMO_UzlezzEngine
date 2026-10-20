@@ -128,6 +128,34 @@ void RendererInfoPanel::drawScene(EditorContext& context) {
         EditorUI::propertyValue("Animated", std::to_string(context.animationSystem.characterCount).c_str());
         EditorUI::endProperties();
     }
+    ImGui::SeparatorText("Culling + submission");
+    ImGui::BeginDisabled(context.isPlaying());
+    if (ImGui::Button("Load 10,000-object scene")) context.loadCullingScene();
+    ImGui::EndDisabled();
+    ImGui::Checkbox("Frustum culling", &context.renderSystem.cullingEnabled);
+    ImGui::Checkbox("Sort submission", &context.renderSystem.sortingEnabled);
+    const auto& stats=context.sceneRenderStats;
+    ImGui::Text("Registered %zu / visible %zu / submitted %zu",stats.registered,stats.visible,stats.submitted);
+    ImGui::Text("CPU prepare %.3f / submit %.3f ms",stats.prepareMs,stats.submitMs);
+    ImGui::Text("Shader switches %zu / texture switches %zu",stats.shaderChanges,stats.textureChanges);
+    ImGui::Text("Dirty updates %zu / depth inversions %zu",stats.updates,stats.depthInversions);
+    if (context.cullingScene) {
+        if (ImGui::Checkbox("Move 100 objects", &context.cullingMove)) {
+            context.cullingCpuTotal={}; context.cullingFrameTotal={}; context.cullingSamples={};
+        }
+        ImGui::Checkbox("Fly through scene", &context.cullingFly);
+        if (ImGui::Button("Add 100")) context.addCullingObjects(100);
+        ImGui::SameLine();
+        if (ImGui::Button("Delete 100")) context.removeCullingObjects(100);
+        if (ImGui::Button("Reset live averages")) {
+            context.cullingCpuTotal={}; context.cullingFrameTotal={}; context.cullingSamples={};
+        }
+        for (int i=0;i<4;++i) if (context.cullingSamples[i]) {
+            ImGui::Text("Cull %s / Sort %s (%u frames)",i&2 ? "ON":"OFF",i&1 ? "ON":"OFF",context.cullingSamples[i]);
+            ImGui::Text("  Frame %.2f ms / CPU render %.2f ms",context.cullingFrameTotal[i]/context.cullingSamples[i],context.cullingCpuTotal[i]/context.cullingSamples[i]);
+        }
+        ImGui::TextWrapped("Scene camera: RMB + WASD, Q/E up/down. Objects are editable in Hierarchy and Inspector. Live means include editor overhead; use the benchmark CSV for median/p95/p99.");
+    }
     EditorUI::componentSpacing();
 }
 

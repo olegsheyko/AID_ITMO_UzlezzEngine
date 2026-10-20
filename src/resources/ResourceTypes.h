@@ -33,11 +33,23 @@ struct Material {
     std::shared_ptr<Resource<TextureData>> cachedDiffuseTexture;
 };
 
+struct SkinBoundsBox {
+    Vec3 min{}, max{};
+    bool valid=false;
+};
+struct SkinBoundsCache {
+    bool ready=false, safe=true;
+    std::vector<SkinBoundsBox> bones;
+    SkinBoundsBox unweighted, all;
+};
 // Подмеш (часть модели с одним материалом)
 struct SubMesh {
     unsigned int skeletonNode = 0;
     std::vector<SkinBone> bones;
     std::vector<Vertex> vertices;
+    // Built on first visibility sync on the main thread. Imported vertices are
+    // immutable; replacing them must invalidate this cache.
+    mutable SkinBoundsCache visibilityBounds;
     std::vector<uint32_t> indices;
     Material material;
     

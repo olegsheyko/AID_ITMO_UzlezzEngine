@@ -1,0 +1,11 @@
+check,expected,actual,result
+initial,10000,10000,PASS
+animated_cullable,100,100,PASS
+add,10100,10100,PASS
+delete,10000,10000,PASS
+move,10000,10000,PASS
+moving_bounds,1,1,PASS
+reload,10000,10000,PASS
+delete_all,0,0,PASS
+add_after_empty,100,100,PASS
+reload_after_empty,10000,10000,PASS

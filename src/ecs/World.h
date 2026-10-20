@@ -3,6 +3,7 @@
 #include "ecs/Component.h"
 #include "ecs/Entity.h"
 #include "ecs/System.h"
+#include "ecs/Visibility.h"
 
 #include <algorithm>
 #include <cassert>
@@ -15,8 +16,23 @@
 #include <utility>
 #include <vector>
 
+struct Transform;
+struct MeshRenderer;
+struct Hierarchy;
 class World {
 public:
+    // Mutable component access is an edit notification. Do not retain mutable
+    // references across frames; call markSpatialDirty after a retained-reference edit.
+    // Readers use the const World overload / forEachRead to avoid false invalidations.
+    void markSpatialDirty(Entity entity) { spatialDirty_.insert(entity); }
+    std::unordered_set<Entity> takeSpatialChanges() {
+        std::unordered_set<Entity> result;
+        result.swap(spatialDirty_);
+        return result;
+    }
+    Visibility::Service visibility;
+    std::unordered_map<Entity,Visibility::Handle> visibilityHandles;
+    std::unordered_set<Entity> visibilityPending;
     // Weak lifetime token invalidates handles on clear and World destruction.
     std::weak_ptr<int> lifetime() const { return lifetime_; }
     std::uint64_t generation(Entity e) const { auto it = generations_.find(e); return it == generations_.end() ? 0 : it->second; }
@@ -43,6 +59,7 @@ public:
         if (!inserted) {
             it->second = T{std::forward<Args>(args)...};
         }
+        notifyComponentEdit<T>(entity);
         return it->second;
     }
 
@@ -57,6 +74,7 @@ public:
     T& getComponent(Entity entity) {
         static_assert(kIsComponent<T>, "T must satisfy the Component contract");
         assert(isAlive(entity));
+        notifyComponentEdit<T>(entity);
         return getStorage<T>().components.at(entity);
     }
 
@@ -73,6 +91,7 @@ public:
         auto* storage = tryGetStorage<T>();
         if (storage != nullptr) {
             storage->components.erase(entity);
+            notifyComponentEdit<T>(entity);
         }
     }
 
@@ -86,12 +105,27 @@ public:
 
         for (auto& [entity, firstComponent] : firstStorage->components) {
             if ((hasComponent<TRest>(entity) && ...)) {
+                notifyComponentEdit<TFirst>(entity);
                 func(entity, firstComponent, getComponent<TRest>(entity)...);
             }
         }
     }
 
+    template <typename TFirst, typename... TRest, typename Func>
+    void forEachRead(Func&& func) const {
+        const auto* storage=tryGetStorage<TFirst>();
+        if (!storage) return;
+        for (const auto& [entity,first]:storage->components)
+            if ((hasComponent<TRest>(entity) && ...))
+                func(entity,first,getComponent<TRest>(entity)...);
+    }
+
 private:
+    template<typename T> void notifyComponentEdit(Entity e) {
+        if constexpr (std::is_same_v<T,Transform> || std::is_same_v<T,MeshRenderer> || std::is_same_v<T,Hierarchy>)
+            markSpatialDirty(e);
+    }
+    std::unordered_set<Entity> spatialDirty_;
     struct IStorage {
         virtual ~IStorage() = default;
         virtual void remove(Entity entity) = 0;

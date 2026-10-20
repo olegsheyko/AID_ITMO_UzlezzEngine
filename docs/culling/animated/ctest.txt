@@ -1,0 +1,541 @@
+Start testing: Oct 20 20:33 RTZ 2 (зима)
+----------------------------------------------------------
+1/12 Testing: VisibilityTests
+1/12 Test: VisibilityTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/VisibilityTests.exe"
+Directory: C:/Users/viman/uzlezz-culling-build
+"VisibilityTests" start time: Oct 20 20:33 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+VisibilityTests: passed
+<end of output>
+Test time =   0.08 sec
+----------------------------------------------------------
+Test Passed.
+"VisibilityTests" end time: Oct 20 20:33 RTZ 2 (зима)
+"VisibilityTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/12 Testing: ScriptSystemTests
+2/12 Test: ScriptSystemTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/ScriptSystemTests.exe" "C:/Users/viman/uzlezz-culling-build/script-test-fixtures"
+Directory: C:/Users/viman/OneDrive/Р Р°Р±РѕС‡РёР№ СЃС‚РѕР»/dvizhok_AID/AID_ITMO_UzlezzEngine
+"ScriptSystemTests" start time: Oct 20 20:33 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+20:33:57 [INFO] Lua runtime initialized: Lua 5.4.8 (sol2, statically linked)
+20:33:59 [ERROR] Lua: ...\uzlezz-culling-build\script-test-fixtures\behaviour.lua:1: syntax error near 'is'
+20:33:59 [ERROR] Lua: ...\uzlezz-culling-build\script-test-fixtures\behaviour.lua:13: expected test error
+stack traceback:
+	[C]: in function 'base.error'
+	...\uzlezz-culling-build\script-test-fixtures\behaviour.lua:13: in function <...\uzlezz-culling-build\script-test-fixtures\behaviour.lua:13>
+20:33:59 [ERROR] Lua: C:\Users\viman\uzlezz-culling-build\script-test-fixtures\behaviour.lua: callback must be a function: on_update
+20:33:59 [ERROR] Lua: C:\Users\viman\uzlezz-culling-build\script-test-fixtures\behaviour.lua: class must extend uzlezz.ScriptBehaviour using uzlezz.behaviour
+ScriptSystemTests passed: 30 simulated minutes, waves, damage, pulse, input gating, 100 reload/play cycles, handles, exceptions, prefab persistence
+20:33:59 [INFO] Lua runtime shut down
+<end of output>
+Test time =   2.52 sec
+----------------------------------------------------------
+Test Passed.
+"ScriptSystemTests" end time: Oct 20 20:33 RTZ 2 (зима)
+"ScriptSystemTests" time elapsed: 00:00:02
+----------------------------------------------------------
+
+3/12 Testing: ScriptRuntimeTests
+3/12 Test: ScriptRuntimeTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/ScriptRuntimeTests.exe" "C:/Users/viman/uzlezz-culling-build/script-runtime-fixtures"
+Directory: C:/Users/viman/OneDrive/Р Р°Р±РѕС‡РёР№ СЃС‚РѕР»/dvizhok_AID/AID_ITMO_UzlezzEngine
+"ScriptRuntimeTests" start time: Oct 20 20:33 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+20:33:59 [INFO] JobSystem: started 15 worker threads
+20:33:59 [INFO] Lua runtime initialized: Lua 5.4.8 (sol2, statically linked)
+20:33:59 [ERROR] Lua: ...an\uzlezz-culling-build\script-runtime-fixtures\typo.lua:3: Typo: unknown field 'helth'
+stack traceback:
+	[C]: in method 'get_field'
+	...an\uzlezz-culling-build\script-runtime-fixtures\typo.lua:3: in function <...an\uzlezz-culling-build\script-runtime-fixtures\typo.lua:2>
+20:33:59 [INFO] Lua runtime shut down
+[PASS] binding errors have location
+20:33:59 [INFO] Lua runtime initialized: Lua 5.4.8 (sol2, statically linked)
+20:33:59 [INFO] Lua: ...n\uzlezz-culling-build\script-runtime-fixtures\print.lua:4: hello	42	nil
+20:33:59 [INFO] Lua runtime shut down
+[PASS] print goes to log, file access closed
+20:33:59 [INFO] Lua runtime initialized: Lua 5.4.8 (sol2, statically linked)
+20:33:59 [WARN] Lua: C:\Users\viman\uzlezz-culling-build\script-runtime-fixtures\types.lua: field 'flag' is string, class Types declares boolean; reset to default
+20:33:59 [WARN] Lua: C:\Users\viman\uzlezz-culling-build\script-runtime-fixtures\types.lua: field 'legacy' is not declared by Types; dropped
+20:33:59 [ERROR] Lua: ...n\uzlezz-culling-build\script-runtime-fixtures\types.lua:7: Types: field 'count' expects integer, got number
+stack traceback:
+	[C]: in method 'set_field'
+	...n\uzlezz-culling-build\script-runtime-fixtures\types.lua:7: in function <...n\uzlezz-culling-build\script-runtime-fixtures\types.lua:6>
+20:33:59 [INFO] Lua runtime shut down
+[PASS] field types are coerced
+20:33:59 [INFO] Lua runtime initialized: Lua 5.4.8 (sol2, statically linked)
+20:33:59 [ERROR] Lua: ...an\uzlezz-culling-build\script-runtime-fixtures\loop.lua:4: script exceeded the 50 ms time budget
+stack traceback:
+	...an\uzlezz-culling-build\script-runtime-fixtures\loop.lua:4: in function <...an\uzlezz-culling-build\script-runtime-fixtures\loop.lua:2>
+20:33:59 [ERROR] Lua: ...zlezz-culling-build\script-runtime-fixtures\toplevel.lua:2: script exceeded the 50 ms time budget
+stack traceback:
+	...zlezz-culling-build\script-runtime-fixtures\toplevel.lua:2: in main chunk
+20:33:59 [INFO] Lua runtime shut down
+[PASS] runaway script is interrupted
+20:33:59 [INFO] Lua runtime initialized: Lua 5.4.8 (sol2, statically linked)
+20:33:59 [ERROR] Lua: Hog:on_update: Lua heap limit exceeded (256 MB)
+20:33:59 [INFO] Lua runtime shut down
+[PASS] heap limit is enforced
+20:33:59 [INFO] Lua runtime initialized: Lua 5.4.8 (sol2, statically linked)
+20:33:59 [INFO] Lua runtime shut down
+[PASS] IDE stubs match bindings
+20:33:59 [INFO] Lua runtime initialized: Lua 5.4.8 (sol2, statically linked)
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:11: boom
+stack traceback:
+	[C]: in function 'base.error'
+	...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:11: in function <...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:11>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:11: broken update
+stack traceback:
+	[C]: in function 'base.error'
+	...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:11: in function <...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:11>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [WARN] Lua: C:\Users\viman\uzlezz-culling-build\script-runtime-fixtures\mover.lua: field 'boost' is not declared by Mover; dropped
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [ERROR] Lua: ...n/uzlezz-culling-build/script-runtime-fixtures/mover.lua:2: unexpected symbol near <eof>
+20:33:59 [INFO] Lua runtime shut down
+[PASS] hot reload in Play (L1/L2)
+[PASS] watcher uses the job system
+20:33:59 [INFO] JobSystem: stopped
+<end of output>
+Test time =   0.29 sec
+----------------------------------------------------------
+Test Passed.
+"ScriptRuntimeTests" end time: Oct 20 20:33 RTZ 2 (зима)
+"ScriptRuntimeTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/12 Testing: AnimationTests
+4/12 Test: AnimationTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/AnimationTests.exe" "C:/Users/viman/uzlezz-culling-build/animation-test-fixtures"
+Directory: C:/Users/viman/uzlezz-culling-build
+"AnimationTests" start time: Oct 20 20:33 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+20:33:59 [INFO] Loading mesh from: C:/Users/viman/uzlezz-culling-build/animation-test-fixtures\skin.gltf
+20:33:59 [INFO] Processed 1 submeshes
+20:33:59 [INFO] JobSystem: started 4 worker threads
+20:33:59 [INFO] JobSystem: stopped
+20:33:59 [INFO] Loading mesh from: primitive:cube
+PASS: interpolation, looping, hierarchy, glTF import, 257 sequential/parallel poses, pause and lifecycle
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"AnimationTests" end time: Oct 20 20:33 RTZ 2 (зима)
+"AnimationTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/12 Testing: WalkingAnimationTests
+5/12 Test: WalkingAnimationTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/AnimationTests.exe" "C:/Users/viman/uzlezz-culling-build/walking-test-fixtures" "assets/models/animation/Walking.fbx"
+Directory: C:/Users/viman/OneDrive/Р Р°Р±РѕС‡РёР№ СЃС‚РѕР»/dvizhok_AID/AID_ITMO_UzlezzEngine
+"WalkingAnimationTests" start time: Oct 20 20:33 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+20:33:59 [INFO] Loading mesh from: C:/Users/viman/uzlezz-culling-build/walking-test-fixtures\skin.gltf
+20:33:59 [INFO] Processed 1 submeshes
+20:33:59 [INFO] JobSystem: started 4 worker threads
+20:33:59 [INFO] JobSystem: stopped
+20:33:59 [INFO] Loading mesh from: primitive:cube
+20:33:59 [INFO] Loading mesh from: assets/models/animation/Walking.fbx
+20:33:59 [INFO] Processed 2 submeshes
+MODEL assets/models/animation/Walking.fbx nodes=68 submeshes=2
+MESH vertices=15991 triangles=28272 bones=65 material=Beta_HighLimbsGeoSG3 texture=
+bounds -90.2566 -0.0321938 -14.8957 to 90.2566 180.888 17.1742
+MESH vertices=12473 triangles=20840 bones=64 material=Beta_Joints_MAT1 texture=
+bounds -88.3467 -0.0351161 -12.9905 to 88.3467 159.644 12.5019
+CLIP mixamo.com seconds=1.03333 tracks=51 keys=3873
+WALK ground bounds -0.00237482 .. 0.0172832
+20:34:00 [INFO] JobSystem: started 4 worker threads
+PASS: actual FBX poses change, loop and match sequential/parallel for 512 characters
+20:34:00 [INFO] JobSystem: stopped
+PASS: interpolation, looping, hierarchy, glTF import, 257 sequential/parallel poses, pause and lifecycle
+<end of output>
+Test time =   0.13 sec
+----------------------------------------------------------
+Test Passed.
+"WalkingAnimationTests" end time: Oct 20 20:34 RTZ 2 (зима)
+"WalkingAnimationTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/12 Testing: PhysicsSystemTests
+6/12 Test: PhysicsSystemTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/PhysicsSystemTests.exe"
+Directory: C:/Users/viman/uzlezz-culling-build
+"PhysicsSystemTests" start time: Oct 20 20:34 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+PASS: falling sphere, created first
+PASS: falling sphere, created second
+PASS: dynamic box, static sphere
+PASS: sphere contacts box edges/corners
+PASS: sphere does not collide as a box
+PASS: sphere inside box
+PASS: sphere pairs, including coincident centers
+PASS: sphere radius, scale and offset
+PASS: box-box regression
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"PhysicsSystemTests" end time: Oct 20 20:34 RTZ 2 (зима)
+"PhysicsSystemTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/12 Testing: AssetDatabaseTests
+7/12 Test: AssetDatabaseTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/AssetDatabaseTests.exe" "C:/Users/viman/uzlezz-culling-build/asset-database-fixtures"
+Directory: C:/Users/viman/uzlezz-culling-build
+"AssetDatabaseTests" start time: Oct 20 20:34 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+AssetDatabaseTests passed
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"AssetDatabaseTests" end time: Oct 20 20:34 RTZ 2 (зима)
+"AssetDatabaseTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+8/12 Testing: EditorMathTests
+8/12 Test: EditorMathTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/EditorMathTests.exe"
+Directory: C:/Users/viman/uzlezz-culling-build
+"EditorMathTests" start time: Oct 20 20:34 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+EditorMathTests passed
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"EditorMathTests" end time: Oct 20 20:34 RTZ 2 (зима)
+"EditorMathTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+9/12 Testing: ScriptTextTests
+9/12 Test: ScriptTextTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/ScriptTextTests.exe"
+Directory: C:/Users/viman/uzlezz-culling-build
+"ScriptTextTests" start time: Oct 20 20:34 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+ScriptTextTests passed
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"ScriptTextTests" end time: Oct 20 20:34 RTZ 2 (зима)
+"ScriptTextTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+10/12 Testing: JobSystemTests
+10/12 Test: JobSystemTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/JobSystemTests.exe"
+Directory: C:/Users/viman/uzlezz-culling-build
+"JobSystemTests" start time: Oct 20 20:34 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+20:34:00 [INFO] JobSystem: started 4 worker threads
+PASS: starts the requested number of workers
+PASS: submit runs every job exactly once
+PASS: parallelFor visits every index once
+PASS: jobs can submit and wait for jobs
+PASS: jobs of every priority run
+20:34:00 [ERROR] JobSystem: job threw: expected test exception
+PASS: a throwing job keeps workers alive
+PASS: collectCompleted releases finished jobs
+20:34:00 [INFO] JobSystem: stopped
+20:34:00 [INFO] JobSystem: started 4 worker threads
+PASS: background work stays off main and drains on shutdown
+20:34:01 [INFO] JobSystem: stopped
+PASS: shutdown waits for pending jobs
+PASS: submit after shutdown runs inline
+20:34:01 [INFO] JobSystem: started 2 worker threads
+20:34:01 [INFO] JobSystem: stopped
+PASS: restart after shutdown
+<end of output>
+Test time =   0.73 sec
+----------------------------------------------------------
+Test Passed.
+"JobSystemTests" end time: Oct 20 20:34 RTZ 2 (зима)
+"JobSystemTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+11/12 Testing: CoordinateSystemTests
+11/12 Test: CoordinateSystemTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/CoordinateSystemTests.exe"
+Directory: C:/Users/viman/OneDrive/Р Р°Р±РѕС‡РёР№ СЃС‚РѕР»/dvizhok_AID/AID_ITMO_UzlezzEngine
+"CoordinateSystemTests" start time: Oct 20 20:34 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+20:34:01 [INFO] Scene manifest loaded: assets/scenes/demo_scene.json
+PASS: Z-up camera, movement, mouse look, picking, focus, gravity, spin and scene
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"CoordinateSystemTests" end time: Oct 20 20:34 RTZ 2 (зима)
+"CoordinateSystemTests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+12/12 Testing: TextureResourceTests
+12/12 Test: TextureResourceTests
+Command: "C:/Users/viman/uzlezz-culling-build/verified/Release/TextureResourceTests.exe" "C:/Users/viman/uzlezz-culling-build/texture-test-fixtures" "assets/models/animation/Walking.fbx"
+Directory: C:/Users/viman/OneDrive/Р Р°Р±РѕС‡РёР№ СЃС‚РѕР»/dvizhok_AID/AID_ITMO_UzlezzEngine
+"TextureResourceTests" start time: Oct 20 20:34 RTZ 2 (зима)
+Output:
+----------------------------------------------------------
+20:34:01 [INFO] ShaderProgram: compiled OK
+20:34:01 [INFO] OpenGLRenderAdapter: Successfully initialized OpenGL context
+20:34:01 [INFO] ResourceManager initialized
+20:34:01 [INFO] Loading texture from disk: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/colors.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=1 (3x2, 0.07 ms)
+20:34:01 [INFO] Texture loaded: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/colors.png
+20:34:01 [INFO] Texture loaded from cache: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/colors.png
+20:34:01 [INFO] Loading texture from disk: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/alpha.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=2 (1x1, 0.02 ms)
+20:34:01 [INFO] Texture loaded: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/alpha.png
+20:34:01 [INFO] Loading texture from disk: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/invalid.png
+20:34:01 [ERROR] Texture decode failed: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/invalid.png (unknown image type)
+20:34:01 [ERROR] Failed to load texture: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/invalid.png
+20:34:01 [INFO] Loading texture from disk: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/missing.png
+20:34:01 [ERROR] Texture file does not exist or cannot be opened: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/missing.png
+20:34:01 [ERROR] Failed to load texture: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/missing.png
+20:34:01 [INFO] Loading texture from disk: assets/models/Bakes/Bookcase&Handle baked diffuse.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=3 (1024x1024, 1.24 ms)
+20:34:01 [INFO] Texture loaded: assets/models/Bakes/Bookcase&Handle baked diffuse.png
+20:34:01 [INFO] Loading texture from disk: assets/models/Bakes/Bookcase&Handle baked roughness.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=4 (1024x1024, 4.66 ms)
+20:34:01 [INFO] Texture loaded: assets/models/Bakes/Bookcase&Handle baked roughness.png
+20:34:01 [INFO] Loading texture from disk: assets/models/Bakes/Paws baked diffuse.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=5 (1024x1024, 5.03 ms)
+20:34:01 [INFO] Texture loaded: assets/models/Bakes/Paws baked diffuse.png
+20:34:01 [INFO] Loading texture from disk: assets/models/Bakes/Paws baked roughness.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=6 (1024x1024, 3.08 ms)
+20:34:01 [INFO] Texture loaded: assets/models/Bakes/Paws baked roughness.png
+20:34:01 [INFO] Loading texture from disk: assets/models/Bakes/Sides baked diffuse.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=7 (1024x1024, 4.50 ms)
+20:34:01 [INFO] Texture loaded: assets/models/Bakes/Sides baked diffuse.png
+20:34:01 [INFO] Loading texture from disk: assets/models/Bakes/Sides baked roughness.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=8 (1024x1024, 3.55 ms)
+20:34:01 [INFO] Texture loaded: assets/models/Bakes/Sides baked roughness.png
+20:34:01 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_AO.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=9 (2048x2048, 7.22 ms)
+20:34:01 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_AO.png
+20:34:01 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_BaseColor.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=10 (2048x2048, 16.89 ms)
+20:34:01 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_BaseColor.png
+20:34:01 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_Height.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=11 (2048x2048, 12.42 ms)
+20:34:01 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_Height.png
+20:34:01 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_Metallic.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=12 (2048x2048, 16.11 ms)
+20:34:01 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_Metallic.png
+20:34:01 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_Normal.png
+20:34:01 [INFO] Texture uploaded to GPU: ID=13 (2048x2048, 13.09 ms)
+20:34:01 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_Normal.png
+20:34:01 [INFO] Loading texture from disk: assets/models/textures/Cowboy Hat_Hat_Roughness.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=14 (2048x2048, 12.39 ms)
+20:34:02 [INFO] Texture loaded: assets/models/textures/Cowboy Hat_Hat_Roughness.png
+20:34:02 [INFO] Loading texture from disk: assets/samples/Avocado/Avocado_baseColor.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=15 (2048x2048, 14.64 ms)
+20:34:02 [INFO] Texture loaded: assets/samples/Avocado/Avocado_baseColor.png
+20:34:02 [INFO] Loading texture from disk: assets/samples/Avocado/Avocado_normal.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=16 (2048x2048, 13.68 ms)
+20:34:02 [INFO] Texture loaded: assets/samples/Avocado/Avocado_normal.png
+20:34:02 [INFO] Loading texture from disk: assets/samples/Avocado/Avocado_roughnessMetallic.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=17 (2048x2048, 11.88 ms)
+20:34:02 [INFO] Texture loaded: assets/samples/Avocado/Avocado_roughnessMetallic.png
+20:34:02 [INFO] Loading texture from disk: assets/samples/Fox/Texture.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=18 (1024x1024, 10.73 ms)
+20:34:02 [INFO] Texture loaded: assets/samples/Fox/Texture.png
+20:34:02 [INFO] Loading texture from disk: assets/samples/Lantern/Lantern_baseColor.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=19 (2048x2048, 6.67 ms)
+20:34:02 [INFO] Texture loaded: assets/samples/Lantern/Lantern_baseColor.png
+20:34:02 [INFO] Loading texture from disk: assets/samples/Lantern/Lantern_emissive.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=20 (2048x2048, 13.35 ms)
+20:34:02 [INFO] Texture loaded: assets/samples/Lantern/Lantern_emissive.png
+20:34:02 [INFO] Loading texture from disk: assets/samples/Lantern/Lantern_normal.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=21 (2048x2048, 14.09 ms)
+20:34:02 [INFO] Texture loaded: assets/samples/Lantern/Lantern_normal.png
+20:34:02 [INFO] Loading texture from disk: assets/samples/Lantern/Lantern_roughnessMetallic.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=22 (2048x2048, 15.47 ms)
+20:34:02 [INFO] Texture loaded: assets/samples/Lantern/Lantern_roughnessMetallic.png
+20:34:02 [INFO] Loading texture from disk: assets/textures/WireFence.dds
+20:34:02 [INFO] Texture uploaded to GPU: ID=23 (512x512, 8.83 ms)
+20:34:02 [INFO] Texture loaded: assets/textures/WireFence.dds
+20:34:02 [INFO] Loading texture from disk: assets/textures/WoodCrate02.dds
+20:34:02 [INFO] Texture uploaded to GPU: ID=24 (512x512, 2.37 ms)
+20:34:02 [INFO] Texture loaded: assets/textures/WoodCrate02.dds
+20:34:02 [INFO] Loading texture from disk: assets/textures/demo_checker.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=25 (256x256, 1.42 ms)
+20:34:02 [INFO] Texture loaded: assets/textures/demo_checker.png
+20:34:02 [INFO] Loading texture from disk: assets/textures/demo_panel.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=26 (256x256, 0.84 ms)
+20:34:02 [INFO] Texture loaded: assets/textures/demo_panel.png
+20:34:02 [INFO] Loading texture from disk: assets/textures/stone.dds
+20:34:02 [INFO] Texture uploaded to GPU: ID=27 (512x512, 1.04 ms)
+20:34:02 [INFO] Texture loaded: assets/textures/stone.dds
+PASS: PNG pixels, alpha, orientation, errors, cache and 25 project PNG/DDS files
+20:34:02 [INFO] Loading mesh from: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/quad.obj
+20:34:02 [INFO] Processed 1 submeshes
+20:34:02 [INFO] Mesh uploaded to GPU successfully
+20:34:02 [INFO] Texture loaded from cache: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/colors.png
+20:34:02 [INFO] Mesh loaded: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/quad.obj
+20:34:02 [INFO] Shader program compiled successfully, ID=18
+20:34:02 [INFO] Shader loaded: assets/shaders/mesh_vertex.glsl|assets/shaders/mesh_fragment_simple_texture.glsl
+20:34:02 [INFO] Texture loaded from cache: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/alpha.png
+PASS: OBJ/MTL texture resolution, actual rendered colors, override and missing-texture fallback
+20:34:02 [INFO] Loading mesh from: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/skin/skin.gltf
+20:34:02 [INFO] Processed 1 submeshes
+20:34:02 [INFO] Mesh uploaded to GPU successfully
+20:34:02 [INFO] Mesh loaded: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/skin/skin.gltf
+20:34:02 [INFO] Shader loaded from cache: assets/shaders/mesh_vertex.glsl|assets/shaders/mesh_fragment_simple_texture.glsl
+PASS: actual GPU skinning, integer attributes, palette upload, normals and static fallback
+20:34:02 [INFO] Loading mesh from: assets/models/animation/Walking.fbx
+20:34:02 [INFO] Processed 2 submeshes
+20:34:02 [INFO] Mesh uploaded to GPU successfully
+20:34:02 [INFO] Mesh loaded: assets/models/animation/Walking.fbx
+20:34:02 [INFO] Shader loaded from cache: assets/shaders/mesh_vertex.glsl|assets/shaders/mesh_fragment_simple_texture.glsl
+PASS: Walking.fbx full GPU/CPU vertex comparison and four rendered poses
+20:34:02 [INFO] Resource cache cleared
+20:34:02 [INFO] JobSystem: started 4 worker threads
+20:34:02 [INFO] Loading mesh from: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/quad.obj
+20:34:02 [INFO] Loading mesh from: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/missing.fbx
+20:34:02 [ERROR] Assimp error: Unable to open file "C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/missing.fbx".
+20:34:02 [INFO] Scene manifest loaded: assets/scenes/demo_scene.json
+20:34:02 [INFO] Processed 1 submeshes
+20:34:02 [INFO] Shader program compiled successfully, ID=18
+20:34:02 [INFO] Shader loaded: assets/shaders/mesh_vertex.glsl|assets/shaders/mesh_fragment_simple_texture.glsl
+20:34:02 [ERROR] Resource decode failed: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/broken.json: [json.exception.parse_error.101] parse error at line 1, column 2: syntax error while parsing object key - invalid literal; last read: '{b'; expected string literal
+20:34:02 [INFO] Loading mesh from: primitive:cube
+20:34:02 [INFO] Mesh uploaded to GPU successfully
+20:34:02 [INFO] Mesh loaded: primitive:cube
+20:34:02 [INFO] Loading texture from disk: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/colors.png
+20:34:02 [INFO] Texture uploaded to GPU: ID=3 (3x2, 0.07 ms)
+20:34:02 [INFO] Loading mesh from: assets/models/animation/Walking.fbx
+20:34:02 [INFO] Processed 2 submeshes
+20:34:02 [INFO] ResourceManager: shutting down, 2 loads pending
+20:34:02 [INFO] Loading mesh from: C:/Users/viman/uzlezz-culling-build/texture-test-fixtures/shutdown.obj
+20:34:02 [INFO] Processed 1 submeshes
+20:34:02 [INFO] JobSystem: stopped
+20:34:02 [INFO] Resource cache cleared
+20:34:02 [INFO] ResourceManager initialized
+PASS: async mesh/scene/material, placeholders, failures, incremental GPU budget and shutdown
+20:34:02 [INFO] Resource cache cleared
+20:34:02 [INFO] OpenGLRenderAdapter: Shutdown complete
+<end of output>
+Test time =   1.85 sec
+----------------------------------------------------------
+Test Passed.
+"TextureResourceTests" end time: Oct 20 20:34 RTZ 2 (зима)
+"TextureResourceTests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+End testing: Oct 20 20:34 RTZ 2 (зима)

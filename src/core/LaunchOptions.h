@@ -3,6 +3,7 @@
 #include "bench/Benchmark.h"
 #include "bench/StressRun.h"
 #include "bench/AnimationBenchmark.h"
+#include "bench/CullingBenchmark.h"
 
 #include <optional>
 #include <string>
@@ -23,6 +24,8 @@ struct EditorStartupOptions {
     std::string browseFolder;
     std::vector<std::string> focusWindows;
     bool play = false;
+    bool cullingScene = false;
+    std::string cullingCheck;
     bool arena = false; // открыть Lua-арену вместо сцены по умолчанию
     bool showColliders = false;
     bool listView = false;
@@ -31,6 +34,7 @@ struct EditorStartupOptions {
 
 struct LaunchOptions {
     bool vsync = true;
+    std::optional<CullingBenchmark::Config> cullingBench;
     // Бюджет пампа заливки на кадр, мс; отрицательное — оставить значение по умолчанию.
     double uploadBudgetMs = -1.0;
     std::optional<Benchmark::Config> bench;

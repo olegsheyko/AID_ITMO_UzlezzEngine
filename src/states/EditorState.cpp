@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <fstream>
 #include <sstream>
 #include <string>
 
@@ -305,6 +306,46 @@ void EditorState::render() {
     if (frame_ == 2) {
         applyStartupOptions();
     }
+    if (!startup_.cullingCheck.empty()) {
+        // Acceptance uses the same scene commands as the panel, between real
+        // editor frames. The following frame must observe the updated registry.
+        auto verify=[&](const char* name, std::size_t expected) {
+            std::ofstream report(startup_.cullingCheck, std::ios::app);
+            report << name << ',' << expected << ',' << context_.world.visibility.size()
+                   << ',' << (context_.world.visibility.size()==expected ? "PASS":"FAIL") << '\n';
+        };
+        if (frame_==9) {std::ofstream report(startup_.cullingCheck);report<<"check,expected,actual,result\n";}
+        if (frame_==10) {
+            verify("initial",10000);
+            std::size_t animated=0;
+            for (Entity e:context_.cullingObjects) {
+                const World& read=context_.world;
+                if (!read.hasComponent<Animator>(e)) continue;
+                const auto* record=read.visibility.get(read.visibilityHandles.at(e));
+                if (record && !record->alwaysVisible &&
+                    read.getComponent<Animator>(e).evaluatedMesh) ++animated;
+            }
+            std::ofstream report(startup_.cullingCheck,std::ios::app);
+            report<<"animated_cullable,100,"<<animated<<','<<(animated==100 ? "PASS":"FAIL")<<'\n';
+            context_.addCullingObjects(100);
+        }
+        if (frame_==12) {verify("add",10100);context_.removeCullingObjects(100);}
+        if (frame_==14) {verify("delete",10000);context_.cullingMove=true;}
+        if (frame_==20) {
+            verify("move",10000);
+            const Entity e=context_.cullingObjects.front();
+            const World& read=context_.world;
+            const auto* record=read.visibility.get(read.visibilityHandles.at(e));
+            const bool moved=record && std::abs(record->model.values[14]-read.getComponent<Transform>(e).position.z)<1e-5f;
+            std::ofstream report(startup_.cullingCheck,std::ios::app);
+            report<<"moving_bounds,1,"<<moved<<','<<(moved ? "PASS":"FAIL")<<'\n';
+            context_.reloadScene();
+        }
+        if (frame_==24) {verify("reload",10000);context_.removeCullingObjects(10000);}
+        if (frame_==26) {verify("delete_all",0);context_.addCullingObjects(100);}
+        if (frame_==28) {verify("add_after_empty",100);context_.reloadScene();}
+        if (frame_==32) verify("reload_after_empty",10000);
+    }
     storePreferences();
     if (!script_.empty()) {
         for (const std::string& path : script_.screenshots(frame_)) {
@@ -316,6 +357,10 @@ void EditorState::render() {
 }
 
 void EditorState::applyStartupOptions() {
+    if (startup_.cullingScene) {
+        context_.loadCullingScene();
+        rendererInfo_.open=true;
+    }
     if (startup_.arena) {
         context_.loadArenaScene();
     }
@@ -553,13 +598,6 @@ void EditorState::renderMainMenu() {
         ImGui::EndMenu();
     }
 
-    // Справа — название проекта и сцены, как в заголовке Unity.
-    const std::string title = std::string("UzlezzEngine  \xC2\xB7  ") + context_.sceneName();
-    const float width = ImGui::CalcTextSize(title.c_str()).x;
-    ImGui::SameLine(ImGui::GetWindowWidth() - width - 16.0f);
-    ImGui::PushStyleColor(ImGuiCol_Text, toVec4(kTextFaint));
-    ImGui::TextUnformatted(title.c_str());
-    ImGui::PopStyleColor();
     ImGui::EndMainMenuBar();
 }
 
@@ -729,7 +767,7 @@ void EditorState::buildDefaultLayout(unsigned int dockspaceId) {
     ImGui::DockBuilderDockWindow(EditorWindow::kInspector, right);
     ImGui::DockBuilderDockWindow(EditorWindow::kScene, center);
     ImGui::DockBuilderDockWindow(EditorWindow::kGame, center);
-    ImGui::DockBuilderDockWindow(EditorWindow::kRendererInfo, center);
+    ImGui::DockBuilderDockWindow(EditorWindow::kRendererInfo, startup_.cullingScene ? right : center);
     ImGui::DockBuilderDockWindow(EditorWindow::kScriptEditor, center);
     ImGui::DockBuilderDockWindow(EditorWindow::kContentBrowser, bottom);
     ImGui::DockBuilderDockWindow(EditorWindow::kConsole, bottom);

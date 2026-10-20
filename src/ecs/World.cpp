@@ -41,6 +41,13 @@ void World::destroyEntity(Entity entity) {
         }
     }
 
+    auto handle=visibilityHandles.find(entity);
+    if (handle!=visibilityHandles.end()) {
+        visibility.unregisterObject(handle->second);
+        visibilityHandles.erase(handle);
+    }
+    visibilityPending.erase(entity);
+    spatialDirty_.erase(entity);
     aliveEntities_.erase(entity);
     generations_.erase(entity);
 
@@ -51,6 +58,10 @@ void World::destroyEntity(Entity entity) {
 }
 
 void World::clear() {
+    visibility.clear();
+    visibilityHandles.clear();
+    visibilityPending.clear();
+    spatialDirty_.clear();
     lifetime_ = std::make_shared<int>(0);
     aliveEntities_.clear();
     generations_.clear();

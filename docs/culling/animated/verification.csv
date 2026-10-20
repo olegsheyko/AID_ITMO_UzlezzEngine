@@ -1,0 +1,14 @@
+# objects=10000
+# gpu_sync=glFinish_before_present
+# warmup=120
+# vsync=0
+# culling=1
+# animated=100
+# sorting=1
+# depth_sort=1
+# complete=1
+# gpu=NVIDIA GeForce RTX 3050 Laptop GPU/PCIe/SSE2
+# gl=3.3.0 NVIDIA 617.14
+# framebuffer=1280x720
+frame,frame_ms,prepare_ms,submit_ms,registered,visible,submitted,updates,shader_changes,texture_changes,depth_inversions
+0,9.6211,2.2172,2.7062,10000,1824,1824,100,1,16,0

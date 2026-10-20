@@ -1,0 +1,3 @@
+# Local exploratory runs and uncompressed framebuffer captures.
+results/
+**/*.ppm

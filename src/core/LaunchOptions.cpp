@@ -12,7 +12,26 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
-        if (arg == "--animation-bench") {
+        if (arg == "--culling-bench" || arg == "--culling-demo") {
+            outOptions.cullingBench=CullingBenchmark::Config{};
+            outOptions.cullingBench->live=arg=="--culling-demo";
+        } else if (arg=="--culling-off" || arg=="--sorting-off" || arg=="--depth-sort-off" || arg=="--culling-verify" || arg=="--culling-animated") {
+            if (!outOptions.cullingBench) {outError=arg+" requires --culling-bench or --culling-demo first";return false;}
+            if (arg=="--culling-off") outOptions.cullingBench->culling=false;
+            if (arg=="--depth-sort-off") outOptions.cullingBench->depthSort=false;
+            if (arg=="--sorting-off") outOptions.cullingBench->sorting=false;
+            if (arg=="--culling-verify") outOptions.cullingBench->verify=true;
+            if (arg=="--culling-animated") outOptions.cullingBench->animated=true;
+        } else if (arg=="--culling-out" || arg=="--culling-frames") {
+            if (!outOptions.cullingBench || i+1>=argc) {outError="Missing culling option/value";return false;}
+            const char* value=argv[++i];
+            if (arg=="--culling-out") outOptions.cullingBench->output=value;
+            else {
+                char* end=nullptr; long n=std::strtol(value,&end,10);
+                if (end==value || *end || n<1 || n>1000000) {outError="Invalid culling frame count";return false;}
+                outOptions.cullingBench->frames=static_cast<unsigned int>(n);
+            }
+        } else if (arg == "--animation-bench") {
             if (i+1>=argc) { outError="--animation-bench expects sequential or parallel"; return false; }
             const std::string mode=argv[++i];
             if (mode!="sequential" && mode!="parallel") { outError="Invalid animation mode"; return false; }
@@ -77,6 +96,12 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
             }
         } else if (arg == "--editor-play") {
             outOptions.editor.play = true;
+        } else if (arg == "--editor-culling-check") {
+            if (i+1>=argc) {outError="--editor-culling-check expects report path";return false;}
+            outOptions.editor.cullingCheck=argv[++i];
+            outOptions.editor.cullingScene=true;
+        } else if (arg == "--editor-culling") {
+            outOptions.editor.cullingScene=true;
         } else if (arg == "--editor-arena") {
             outOptions.editor.arena = true;
         } else if (arg == "--editor-colliders") {
@@ -160,6 +185,8 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
         outError = "--bench and --stress-seconds cannot be combined";
         return false;
     }
+    if (outOptions.cullingBench && (outOptions.animationBench || outOptions.bench || outOptions.stress)) {outError="Culling benchmark is a separate mode";return false;}
+    if (outOptions.cullingBench) outOptions.vsync=false;
     if (outOptions.animationBench && outOptions.bench) { outError="Animation and loading benchmarks are separate modes"; return false; }
     if (outOptions.animationBench) outOptions.vsync=false;
     if (!stressOut.empty() && !outOptions.stress) {
@@ -181,5 +208,5 @@ bool parseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions, std::s
 }
 
 const char* launchUsage() {
-    return "Usage: GameEngine [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms] [--animation-bench sequential|parallel [--animation-characters N] [--animation-frames N] [--animation-out file.csv] [--animation-wait-tracy] [--animation-exit-loading]] [--editor-screenshot file.png [--editor-frames N] [--window-size WxH] [--editor-select name] [--editor-asset path] [--editor-open-script file.lua] [--editor-browse folder] [--editor-tab window]... [--editor-play] [--editor-arena] [--editor-colliders] [--editor-list-view]] [--editor-reset-layout]";
+    return "Usage: GameEngine [--culling-bench|--culling-demo [--culling-off] [--sorting-off] [--depth-sort-off] [--culling-verify] [--culling-frames N] [--culling-out file.csv]] [--no-vsync] [--bench burst|stream [--load-mode async|sync] [--exit-during-load] [--bench-out file.csv]] [--stress-seconds s [--stress-out file]] [--upload-budget-ms ms] [--animation-bench sequential|parallel [--animation-characters N] [--animation-frames N] [--animation-out file.csv] [--animation-wait-tracy] [--animation-exit-loading]] [--editor-screenshot file.png [--editor-frames N] [--window-size WxH] [--editor-select name] [--editor-asset path] [--editor-open-script file.lua] [--editor-browse folder] [--editor-tab window]... [--editor-play] [--editor-arena] [--editor-colliders] [--editor-list-view]] [--editor-reset-layout]";
 }

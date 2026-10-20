@@ -176,6 +176,9 @@ endfunction()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(VisibilityTests tests/VisibilityTests.cpp src/ecs/World.cpp)
+    target_include_directories(VisibilityTests PRIVATE src)
+    add_test(NAME VisibilityTests COMMAND VisibilityTests)
     add_executable(ScriptSystemTests
         tests/ScriptSystemTests.cpp
         src/scripting/ScriptSystem.cpp
@@ -214,7 +217,8 @@ if(BUILD_TESTING)
     target_link_libraries(AnimationTests PRIVATE enkiTS TracyHeaders ${ENGINE_ASSIMP_TARGET})
     deploy_assimp_runtime(AnimationTests)
     add_test(NAME AnimationTests COMMAND AnimationTests "${CMAKE_CURRENT_BINARY_DIR}/animation-test-fixtures")
-    add_test(NAME WalkingAnimationTests COMMAND AnimationTests "${CMAKE_CURRENT_BINARY_DIR}/walking-test-fixtures" "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/animation/Walking.fbx")
+    add_test(NAME WalkingAnimationTests COMMAND AnimationTests "${CMAKE_CURRENT_BINARY_DIR}/walking-test-fixtures" "assets/models/animation/Walking.fbx")
+    set_tests_properties(WalkingAnimationTests PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
     add_executable(PhysicsSystemTests
         tests/PhysicsSystemTests.cpp
@@ -270,6 +274,7 @@ endif()
 
 # --- Game target ---
 add_executable(GameEngine
+    src/bench/CullingBenchmark.cpp
     src/scripting/ScriptSystem.cpp
     src/scripting/ScriptWatcher.cpp
     src/prefabs/PrefabManager.cpp
@@ -298,6 +303,7 @@ add_executable(GameEngine
     src/editor/AssetPreview.cpp
     src/editor/EditorCamera.cpp
     src/editor/EditorContext.cpp
+    src/editor/CullingScene.cpp
     src/editor/EditorIcons.cpp
     src/editor/EditorScript.cpp
     src/editor/EditorTheme.cpp
@@ -418,7 +424,7 @@ if(BUILD_TESTING)
     if(TARGET DeploySharedRuntime)
         add_dependencies(DeploySharedRuntime TextureResourceTests)
     endif()
-    add_test(NAME TextureResourceTests COMMAND TextureResourceTests "${CMAKE_CURRENT_BINARY_DIR}/texture-test-fixtures" "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/animation/Walking.fbx")
+    add_test(NAME TextureResourceTests COMMAND TextureResourceTests "${CMAKE_CURRENT_BINARY_DIR}/texture-test-fixtures" "assets/models/animation/Walking.fbx")
     set_tests_properties(TextureResourceTests PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         SKIP_RETURN_CODE 77

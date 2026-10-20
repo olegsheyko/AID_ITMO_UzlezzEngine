@@ -1,3 +1,4 @@
+#include "ecs/SkinBounds.h"
 #include "AnimationFixture.h"
 #include "animation/Animation.h"
 #include "ecs/AnimationSystem.h"
@@ -122,6 +123,24 @@ void inspectModel(const std::string& path, const std::filesystem::path& output, 
         Animation::evaluate(mesh,0,mesh.skeleton.clips[0].duration*phase/64.0,inPlace,"mixamorig:Hips");
         close(inPlace.globals[hips].values[12],startHips.values[12],"In-place walk drifts sideways");
         close(inPlace.globals[hips].values[14],startHips.values[14],"In-place walk drifts forward and snaps on loop");
+        for (size_t s=0;s<mesh.subMeshes.size();++s) {
+            const auto& sub=mesh.subMeshes[s];
+            const Mat4 node=Math::multiply(mesh.skeleton.rootInverse,inPlace.globals[sub.skeletonNode]);
+            Visibility::Bounds bounds;
+            require(SkinBounds::evaluate(sub,node,&inPlace.palettes[s],bounds),"Skin bounds unavailable");
+            for (const auto& v:sub.vertices) {
+                Mat4 deformation=node;
+                float total=0; for(float weight:v.boneWeights) total+=weight;
+                if (!sub.bones.empty() && total>0) {
+                    deformation={};
+                    for(size_t b=0;b<4;++b) for(size_t k=0;k<16;++k)
+                        deformation.values[k]+=inPlace.palettes[s][v.boneIds[b]].values[k]*v.boneWeights[b];
+                }
+                const Vec3 p=Visibility::point(deformation,v.position);
+                require(p.x>=bounds.min.x && p.x<=bounds.max.x && p.y>=bounds.min.y && p.y<=bounds.max.y && p.z>=bounds.min.z && p.z<=bounds.max.z,
+                    "Bone influence bounds exclude skinned vertex");
+            }
+        }
         float foot=1e30f;
         for(size_t s=0;s<mesh.subMeshes.size();++s)for(const auto& v:mesh.subMeshes[s].vertices) {
             float y=0;

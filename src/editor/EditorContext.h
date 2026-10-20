@@ -147,6 +147,19 @@ public:
     // Лаб-инструменты (ЛР 1)
     void rebuildAnimationDemo();
     void removeAnimationDemo();
+    void loadCullingScene();
+    void addCullingObjects(int count);
+    void removeCullingObjects(int count);
+    bool cullingScene = false, cullingMove = false, cullingFly = false;
+    std::vector<Entity> cullingObjects;
+    std::vector<Entity> cullingGroups;
+    unsigned int cullingSerial = 0;
+    float cullingTime = 0;
+    RenderSystem::Stats sceneRenderStats;
+    double spatialSyncMs=0;
+    std::size_t spatialSyncUpdates=0;
+    std::array<double,4> cullingCpuTotal{}, cullingFrameTotal{};
+    std::array<unsigned int,4> cullingSamples{};
 
     IRenderAdapter& renderer;
     AssetDatabase assets{"assets"};

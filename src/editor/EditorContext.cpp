@@ -1,4 +1,6 @@
 #include "editor/EditorContext.h"
+#include "ecs/SceneVisibility.h"
+#include <chrono>
 
 #include "animation/Animation.h"
 #include "core/Logger.h"
@@ -167,13 +169,27 @@ void EditorContext::exit() {
 
 void EditorContext::update(float dt) {
     ZoneScoped;
-    world.forEach<MeshRenderer, Collider>([](Entity, MeshRenderer& mesh, Collider& collider) {
+    world.forEachRead<MeshRenderer, Collider>([&](Entity entity, const MeshRenderer& mesh, const Collider&) {
         if (!mesh.colliderBoundsInitialized && mesh.cachedMesh && mesh.cachedMesh->isLoaded()) {
-            fitColliderToMeshBounds(mesh, collider);
-            mesh.colliderBoundsInitialized = true;
+            auto& edit=world.getComponent<MeshRenderer>(entity);
+            fitColliderToMeshBounds(edit, world.getComponent<Collider>(entity));
+            edit.colliderBoundsInitialized = true;
         }
     });
 
+    if (cullingScene) {
+        cullingTime+=dt;
+        if (cullingFly) camera.setPose({35.f*std::sin(cullingTime*.4f),-35.f*std::cos(cullingTime*.4f),14.f},-.12f,cullingTime*.28f);
+        if (cullingMove) {
+            std::size_t count=0;
+            for (Entity e:cullingObjects) {
+                if (world.isAlive(e) && world.hasComponent<Transform>(e)) {
+                    world.getComponent<Transform>(e).position.z=4.f+3.f*std::sin(cullingTime*2.f+float(count));
+                    if (++count==100) break;
+                }
+            }
+        }
+    }
     lastDt = dt;
     previewer.beginFrame();
     frameTimesMs[frameHistoryOffset] = dt * 1000.0f;
@@ -221,9 +237,15 @@ void EditorContext::update(float dt) {
     if (mode == EditorMode::Edit || simulate) {
         animationSystem.update(world, mode == EditorMode::Play ? simulationDt : dt);
     }
+    // Spatial state stays current even when both viewport tabs are hidden.
+    const auto spatialStart=std::chrono::steady_clock::now();
+    spatialSyncUpdates=SceneVisibility::synchronize(world);
+    spatialSyncMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-spatialStart).count();
 }
 
 void EditorContext::resetSceneState() {
+    cullingScene=false; cullingMove=false; cullingFly=false;
+    cullingObjects.clear(); cullingGroups.clear();
     cancelDragPreview();
     dropHighlight = kInvalidEntity;
     if (mode == EditorMode::Play) {
@@ -277,10 +299,12 @@ void EditorContext::placeGridOnGround() {
 }
 
 void EditorContext::reloadScene() {
+    if (cullingScene) {loadCullingScene();return;}
     loadScene(scenePath_.empty() ? std::string(kDefaultScenePath) : scenePath_);
 }
 
 std::string EditorContext::sceneName() const {
+    if (cullingScene) return "Culling - 10000 objects";
     if (isArenaScene()) {
         return "Arena";
     }
@@ -1298,6 +1322,15 @@ void EditorContext::renderSceneView(int width, int height) {
     renderer.drawSky(camera.getViewMatrix(), camera.getProjectionMatrix(), camera.getPosition(), kSunDirection);
     renderSystem.render(world);
     sceneDrawnMeshes = renderSystem.getLastDrawnMeshCount();
+    sceneRenderStats=renderSystem.stats();
+    sceneRenderStats.prepareMs+=spatialSyncMs;
+    sceneRenderStats.updates+=spatialSyncUpdates;
+    if (cullingScene) {
+        const int index=(renderSystem.cullingEnabled ? 2:0)+(renderSystem.sortingEnabled ? 1:0);
+        cullingCpuTotal[index]+=sceneRenderStats.prepareMs+sceneRenderStats.submitMs;
+        cullingFrameTotal[index]+=lastDt*1000.;
+        ++cullingSamples[index];
+    }
     if (sceneView.showGrid) {
         renderer.drawGrid(camera.getViewMatrix(), camera.getProjectionMatrix(), camera.getPosition(), sceneView.gridHeight);
     }
@@ -1383,7 +1416,7 @@ void EditorContext::updateGameplay(float dt, bool allowInput) {
     }
 
     bool waitingForColliders = false;
-    world.forEach<MeshRenderer, Collider>([&](Entity, MeshRenderer& mesh, Collider&) {
+    world.forEachRead<MeshRenderer, Collider>([&](Entity, const MeshRenderer& mesh, const Collider&) {
         waitingForColliders |= mesh.cachedMesh && mesh.cachedMesh->isPending();
     });
     if (!waitingForColliders) {

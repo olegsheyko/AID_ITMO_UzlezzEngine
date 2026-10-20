@@ -9,56 +9,81 @@
 
 #include <cstddef>
 #include <unordered_set>
-
-namespace {
-Mat4 buildLocalMatrix(const Transform& transform) {
-    return Math::composeTransform(transform.position, transform.rotation, transform.scale);
-}
-
-Mat4 buildWorldMatrix(World& world, Entity entity, std::unordered_set<Entity>& visited) {
-    if (!world.isAlive(entity) || !world.hasComponent<Transform>(entity)) {
-        return Mat4::identity();
-    }
-
-    if (!visited.insert(entity).second) {
-        return buildLocalMatrix(world.getComponent<Transform>(entity));
-    }
-
-    Mat4 worldMatrix = buildLocalMatrix(world.getComponent<Transform>(entity));
-    if (world.hasComponent<Hierarchy>(entity)) {
-        const Hierarchy& hierarchy = world.getComponent<Hierarchy>(entity);
-        if (hierarchy.parent != kInvalidEntity) {
-            worldMatrix = Math::multiply(buildWorldMatrix(world, hierarchy.parent, visited), worldMatrix);
-        }
-    }
-
-    visited.erase(entity);
-    return worldMatrix;
-}
-}
+#include "ecs/SceneVisibility.h"
+#include <chrono>
+#include <tuple>
+#include <algorithm>
 
 RenderSystem::RenderSystem(IRenderAdapter& renderer)
     : renderer_(renderer) {
 }
 
 void RenderSystem::render(World& world) {
-    ZoneScopedN("Scene render");
-    lastDrawnMeshCount_ = 0;
-    ZoneNamedN(submission, "Skin palette upload and scene draws", true);
-    world.forEach<Transform, MeshRenderer>([this, &world](Entity entity, Transform&, MeshRenderer& meshRenderer) {
-        if (drawEntity(world, entity, meshRenderer, 0)) {
-            ++lastDrawnMeshCount_;
-        }
+    ZoneScopedN("Scene visibility and submission");
+    stats_={};
+    lastDrawnMeshCount_=0;
+    auto start=std::chrono::steady_clock::now();
+    prepare(world);
+    auto prepared=std::chrono::steady_clock::now();
+    submit(world);
+    stats_.prepareMs=std::chrono::duration<double,std::milli>(prepared-start).count();
+    stats_.submitMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-prepared).count();
+}
+
+void RenderSystem::prepare(World& world) {
+    ZoneScopedN("Visible set and sorted packet");
+    selectCamera(world);
+    stats_.updates=SceneVisibility::synchronize(world);
+    stats_.registered=world.visibility.size();
+    visible_=world.visibility.query(Math::multiply(projection_,view_),cullingEnabled);
+    stats_.visible=visible_.size();
+    packet_.clear();
+    const World& read=world;
+    for (auto h:visible_) {
+        const auto& r=*world.visibility.get(h);
+        const auto& mr=read.getComponent<MeshRenderer>(r.entity);
+        const unsigned int shader=mr.cachedShader->isLoaded() ? mr.cachedShader->getData()->programId:0;
+        const Vec3 center={(r.bounds.min.x+r.bounds.max.x)*.5f,(r.bounds.min.y+r.bounds.max.y)*.5f,(r.bounds.min.z+r.bounds.max.z)*.5f};
+        packet_.push_back({r.entity,r.model,shader,reinterpret_cast<std::uintptr_t>(mr.cachedMesh.get()),
+            reinterpret_cast<std::uintptr_t>(mr.cachedBaseColorTexture.get()),-Visibility::point(view_,center).z});
+    }
+    // Stable unsorted order makes A/B runs independent of hash table iteration.
+    std::sort(packet_.begin(),packet_.end(),[](const auto& a,const auto& b){return a.entity<b.entity;});
+    if (sortingEnabled) std::sort(packet_.begin(),packet_.end(),[this](const auto& a,const auto& b) {
+        if (!depthSortingEnabled)
+            return std::tie(a.shader,a.mesh,a.texture,a.entity)<std::tie(b.shader,b.mesh,b.texture,b.entity);
+        return std::tie(a.shader,a.mesh,a.texture,a.depth,a.entity)<std::tie(b.shader,b.mesh,b.texture,b.depth,b.entity);
     });
+    for (std::size_t i=1;i<packet_.size();++i) {
+        const auto& a=packet_[i-1]; const auto& b=packet_[i];
+        if (std::tie(a.shader,a.mesh,a.texture)==std::tie(b.shader,b.mesh,b.texture) && a.depth>b.depth)
+            ++stats_.depthInversions;
+    }
+}
+
+void RenderSystem::submit(World& world) {
+    ZoneScopedN("Submission packet");
+    boundProgram_=boundTexture_=~0u;
+    const World& read=world;
+    for (const auto& item:packet_) {
+        submittedModel_=&item.model;
+        if (drawEntity(world,item.entity,read.getComponent<MeshRenderer>(item.entity),0)) ++lastDrawnMeshCount_;
+    }
+    submittedModel_=nullptr;
+    renderer_.useShaderProgram(0);
+    renderer_.bindTexture2D(0,0);
+    stats_.submitted=lastDrawnMeshCount_;
 }
 
 void RenderSystem::renderMask(World& world, const std::vector<Entity>& entities, unsigned int maskProgram) {
     if (maskProgram == 0) {
         return;
     }
+    selectCamera(world);
+    boundProgram_=boundTexture_=~0u;
     for (Entity entity : entities) {
         if (world.isAlive(entity) && world.hasComponent<Transform>(entity) && world.hasComponent<MeshRenderer>(entity)) {
-            drawEntity(world, entity, world.getComponent<MeshRenderer>(entity), maskProgram);
+            drawEntity(world, entity, static_cast<const World&>(world).getComponent<MeshRenderer>(entity), maskProgram);
         }
     }
 }
@@ -87,20 +112,24 @@ bool RenderSystem::drawEntity(World& world, Entity entity, const MeshRenderer& m
     const unsigned int program = mask ? maskProgram : shaderData->programId;
 
     std::unordered_set<Entity> visited;
-    Mat4 modelMatrix = buildWorldMatrix(world, entity, visited);
-    if (meshRenderer.yUpSource) {
+    Mat4 modelMatrix = submittedModel_ ? *submittedModel_ : SceneVisibility::worldMatrix(world, entity, visited);
+    if (!submittedModel_ && meshRenderer.yUpSource) {
         modelMatrix = Math::multiply(modelMatrix, Math::rotationX(1.5707963f));
     }
 
-    renderer_.useShaderProgram(program);
-    setupMatrices(world, program, modelMatrix);
-    if (!mask) {
-        setupLighting(program);
+    if (boundProgram_!=program) {
+        renderer_.useShaderProgram(program);
+        boundProgram_=program;
+        ++stats_.shaderChanges;
+        renderer_.setMatrix4(program,"view",view_);
+        renderer_.setMatrix4(program,"projection",projection_);
+        if (!mask) setupLighting(program);
     }
+    renderer_.setMatrix4(program,"model",modelMatrix);
 
     const AnimationPose* pose = nullptr;
     if (world.hasComponent<Animator>(entity)) {
-        const auto& animator = world.getComponent<Animator>(entity);
+        const auto& animator = static_cast<const World&>(world).getComponent<Animator>(entity);
         const auto& candidate = animator.pose;
         if (animator.evaluatedMesh == meshData && candidate.globals.size() == meshData->skeleton.nodes.size()
             && candidate.palettes.size() == meshData->subMeshes.size()) pose = &candidate;
@@ -111,6 +140,8 @@ bool RenderSystem::drawEntity(World& world, Entity entity, const MeshRenderer& m
     if (placeholder) {
         if (!mask) {
             renderer_.bindTexture2D(ResourceManager::getInstance().placeholderTextureId(), 0);
+            boundTexture_=ResourceManager::getInstance().placeholderTextureId();
+            ++stats_.textureChanges;
             renderer_.setInt(program, "baseColorTexture", 0);
             renderer_.setInt(program, "useBaseColorTexture", 1);
             renderer_.setVec3(program, "materialColor",
@@ -141,8 +172,6 @@ bool RenderSystem::drawEntity(World& world, Entity entity, const MeshRenderer& m
         renderer_.drawIndexed(meshData->vao, meshData->indexCount);
     }
 
-    renderer_.useShaderProgram(0);
-    renderer_.bindTexture2D(0, 0);
     return true;
 }
 
@@ -169,7 +198,12 @@ void RenderSystem::bindMaterial(const Material& material, const ShaderData& shad
     const bool hasTexture = textureId != 0;
     // Сэмплер в шейдере есть всегда: без текстуры привязываем заглушку, иначе драйвер macOS
     // ругается на «unloadable» текстуру 0, хотя useBaseColorTexture = 0 её и не читает.
-    renderer_.bindTexture2D(hasTexture ? textureId : ResourceManager::getInstance().placeholderTextureId(), 0);
+    const unsigned int effectiveTexture=hasTexture ? textureId : ResourceManager::getInstance().placeholderTextureId();
+    if (boundTexture_!=effectiveTexture) {
+        renderer_.bindTexture2D(effectiveTexture,0);
+        boundTexture_=effectiveTexture;
+        ++stats_.textureChanges;
+    }
     renderer_.setInt(shaderData.programId, "baseColorTexture", 0);
     renderer_.setInt(shaderData.programId, "useBaseColorTexture", hasTexture ? 1 : 0);
     renderer_.setVec3(shaderData.programId, "materialColor", material.diffuseColor);
@@ -180,33 +214,15 @@ void RenderSystem::renderSubMesh(const SubMesh& subMesh, const ShaderData& shade
     renderer_.drawIndexed(subMesh.vao, subMesh.indexCount);
 }
 
-void RenderSystem::setupMatrices(World& world, unsigned int shaderProgram, const Mat4& modelMatrix) {
-    renderer_.setMatrix4(shaderProgram, "model", modelMatrix);
-
-    Mat4 viewMatrix = Mat4::identity();
-    Mat4 projectionMatrix = Mat4::identity();
-
-    bool cameraFound = false;
-    world.forEach<Transform, Camera>([&](Entity, Transform& transform, Camera& camera) {
-        (void)transform;
-        if (cameraFound || !camera.active) {
-            return;
-        }
-
-        viewMatrix = camera.viewMatrix;
-        projectionMatrix = camera.projectionMatrix;
-        cameraFound = true;
+void RenderSystem::selectCamera(const World& world) {
+    bool found=false;
+    world.forEachRead<Camera>([&](Entity,const Camera& camera) {
+        if (!found && camera.active) {view_=camera.viewMatrix; projection_=camera.projectionMatrix; found=true;}
     });
-
-    if (!cameraFound) {
-        viewMatrix = CameraMath::view(Vec3{0.0f, -5.0f, 0.0f}, 0.0f, 0.0f);
-        int width = 0;
-        int height = 0;
-        renderer_.getFramebufferSize(width, height);
-        const float aspect = (width > 0 && height > 0) ? static_cast<float>(width) / static_cast<float>(height) : (800.0f / 600.0f);
-        projectionMatrix = Math::perspective(45.0f * 3.1415926f / 180.0f, aspect, 0.1f, 100.0f);
+    if (!found) {
+        view_=CameraMath::view({0,-5,0},0,0);
+        int width=0,height=0;
+        renderer_.getFramebufferSize(width,height);
+        projection_=Math::perspective(.785398163f,height>0 ? float(width)/height:1.3333333f,.1f,100.f);
     }
-
-    renderer_.setMatrix4(shaderProgram, "view", viewMatrix);
-    renderer_.setMatrix4(shaderProgram, "projection", projectionMatrix);
 }

@@ -182,7 +182,7 @@ void HierarchyPanel::drawRowContents(EditorContext& context, Entity entity, floa
     const float textY = rowMin.y + (rowMax.y - rowMin.y - ImGui::GetFontSize()) * 0.5f;
     bool hidden = false;
     if (context.world.hasComponent<MeshRenderer>(entity)) {
-        hidden = !context.world.getComponent<MeshRenderer>(entity).visible;
+        hidden = !static_cast<const World&>(context.world).getComponent<MeshRenderer>(entity).visible;
     }
     drawList->AddText(ImVec2(labelX, textY), ImGui::GetColorU32(hidden ? withAlpha(iconColor, 0.45f) : iconColor), icon);
     const float nameX = labelX + ImGui::CalcTextSize(icon).x + 7.0f;

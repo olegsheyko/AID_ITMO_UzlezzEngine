@@ -225,7 +225,7 @@ void OpenGLRenderAdapter::beginFrame(float r, float g, float b) {
 		int height = 0;
 		glfwGetFramebufferSize(window_, &width, &height);
 		GLuint target = 0;
-		if (captureEnabled_ && resizeTarget(captureTarget_, std::max(1, width), std::max(1, height), false, GL_RGBA8)) {
+		if (captureEnabled_ && resizeTarget(captureTarget_, std::max(1, width), std::max(1, height), true, GL_RGBA8)) {
 			target = captureTarget_.fbo;
 		}
 		glBindFramebuffer(GL_FRAMEBUFFER, target);

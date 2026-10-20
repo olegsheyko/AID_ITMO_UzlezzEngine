@@ -27,6 +27,14 @@ bool Application::init(int width, int height, const char* title, const LaunchOpt
 	options_ = options;
 	auto openGl = std::make_unique<OpenGLRenderAdapter>();
 	const bool screenshotMode = !options.editor.screenshotPath.empty();
+	if (options.cullingBench && !options.cullingBench->live) {
+		// Fixed offscreen target: benchmarks do not steal focus or depend on
+		// the desktop size, occlusion, or the user closing a transient window.
+		openGl->setHiddenWindow(true);
+		openGl->setOffscreenCapture(true);
+		width=1280;
+		height=720;
+	}
 	if (screenshotMode) {
 		// Скриншот снимается со скрытого окна фиксированного размера: кадр рисуется во внеэкранный буфер.
 		openGl->setHiddenWindow(true);
@@ -77,7 +85,9 @@ bool Application::init(int width, int height, const char* title, const LaunchOpt
 
 	LOG_INFO("Application: HotReload initialized");
 
-	if (options.animationBench) {
+	if (options.cullingBench) {
+        stateManager_.push(std::make_unique<CullingBenchmark>(*renderer_,*options.cullingBench));
+    } else if (options.animationBench) {
         stateManager_.push(std::make_unique<AnimationBenchmark>(*renderer_,*options.animationBench));
         if (stress_) stress_->start();
     } else stateManager_.push(std::make_unique<LoadingState>());
@@ -108,6 +118,10 @@ void Application::run() {
 				break;
 			}
 		}
+        if (auto* culling=dynamic_cast<CullingBenchmark*>(stateManager_.current())) {
+            culling->beginFrame(frameMs);
+            if (culling->finished()) {exitCode_=culling->failed() ? 1:0;break;}
+        }
         if (auto* animation=dynamic_cast<AnimationBenchmark*>(stateManager_.current())) {
             animation->beginFrame(frameMs);
             if (animation->finished()) { exitCode_=animation->failed() ? 1 : 0; break; }
@@ -212,6 +226,7 @@ void Application::render() {
 	}
     {
         ZoneScopedN("Present");
+        if (options_.cullingBench && !options_.cullingBench->live) glFinish();
         renderer_->endFrame();
     }
 }

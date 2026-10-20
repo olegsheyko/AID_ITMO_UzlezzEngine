@@ -19,7 +19,7 @@ void AnimationSystem::update(World& world, float dt) {
     {
         ZoneScopedNC("Animation prepare", 0x72A9DA);
         work_.clear(); jobs_.clear();
-        world.forEach<MeshRenderer>([&](Entity entity, MeshRenderer& renderer) {
+        world.forEachRead<MeshRenderer>([&](Entity entity, const MeshRenderer& renderer) {
             if (!renderer.cachedMesh || !renderer.cachedMesh->isLoaded()) return;
             const auto* mesh = renderer.cachedMesh->getData();
             if (mesh->skeleton.nodes.empty()) return;
@@ -30,6 +30,7 @@ void AnimationSystem::update(World& world, float dt) {
                 animator.time = Animation::wrapTime(animator.time + dt*speed*animator.speed,
                     mesh->skeleton.clips[animator.clip].duration);
             Animation::preparePose(*mesh, animator.pose);
+            world.markSpatialDirty(entity);
             work_.push_back({mesh, &animator});
         });
     }

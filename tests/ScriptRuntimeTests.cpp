@@ -262,7 +262,8 @@ void watcherUsesJobSystem() {
     std::filesystem::create_directories(dir);
     const auto path = (dir / "w.lua").string();
     auto save = [&](const std::string& text) {
-        std::ofstream(path, std::ios::trunc) << text;
+        // The watcher preserves bytes. Keep this fixture LF on Windows too.
+        std::ofstream(path, std::ios::trunc | std::ios::binary) << text;
         static int bump = 0;
         // Метка гарантированно другая, даже если две записи попали в один тик файловой системы.
         std::filesystem::last_write_time(path, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(++bump));

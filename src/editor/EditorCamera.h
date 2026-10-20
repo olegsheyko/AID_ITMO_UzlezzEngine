@@ -15,6 +15,11 @@ public:
     const Vec3& getPivot() const { return pivot_; }
     float getFov() const { return fovDegrees_; }
     void setFov(float degrees) { fovDegrees_ = degrees; }
+    void setPose(const Vec3& position, float pitch, float yaw) {
+        position_=position; pitch_=pitch; yaw_=yaw; animating_=false;
+        const Vec3 f=getForward();
+        pivot_={position.x+f.x*distance_,position.y+f.y*distance_,position.z+f.z*distance_};
+    }
 
     // Скорость полёта на RMB+WASD, единиц в секунду.
     float moveSpeed = 5.0f;

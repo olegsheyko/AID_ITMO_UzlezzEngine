@@ -633,7 +633,7 @@ void SceneViewPanel::drawStatusOverlay(EditorContext& context, const ImVec2& min
     ResourceManager& resources = ResourceManager::getInstance();
     char lines[4][64];
     std::snprintf(lines[0], sizeof(lines[0]), "%.0f FPS  \xC2\xB7  %.2f ms", context.fpsAverage, context.frameTimeAverageMs);
-    std::snprintf(lines[1], sizeof(lines[1]), "Meshes drawn  %zu", context.sceneDrawnMeshes);
+    std::snprintf(lines[1], sizeof(lines[1]), "Scene %zu / GPU %zu", context.sceneRenderStats.registered, context.sceneDrawnMeshes);
     std::snprintf(lines[2], sizeof(lines[2]), "Entities  %zu", context.world.getEntityCount() - 1);
     std::snprintf(lines[3], sizeof(lines[3]), "Loads pending  %zu", resources.pendingLoadCount());
     EditorUI::pushSmallFont();
