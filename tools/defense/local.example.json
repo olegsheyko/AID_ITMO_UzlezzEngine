@@ -1,0 +1,5 @@
+{
+  "EngineExe": "build/windows/Release/GameEngine.exe",
+  "BuildDir": "build/windows",
+  "TracyDir": "build/tracy-tools"
+}
