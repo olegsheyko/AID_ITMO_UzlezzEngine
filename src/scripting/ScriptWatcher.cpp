@@ -18,6 +18,9 @@ ScriptWatcher::~ScriptWatcher() {
     }
 }
 
+// Проверка синтаксиса без выполнения. Текст только компилируется (luaL_loadbufferx), код не запускается.
+// Для этого создаётся отдельный временный lua_State: основная виртуальная машина в главном потоке
+// не затрагивается, поэтому функцию безопасно звать с воркера. Ошибка выглядит как «путь:строка: сообщение».
 bool ScriptWatcher::validate(const std::string& path, const std::string& source, std::string& error) {
     lua_State* L = luaL_newstate();
     if (!L) {
@@ -34,6 +37,16 @@ bool ScriptWatcher::validate(const std::string& path, const std::string& source,
     return ok;
 }
 
+// Один проход проверки (выполняется на воркере). Шаги:
+//   1. собрать список файлов: все .lua из папок roots плюс файлы paths, которые нужны сцене;
+//   2. для каждого сравнить отпечаток (время записи и размер) с известным:
+//      - первый раз видим файл: запоминаем как базовую версию, это не изменение;
+//      - отпечаток тот же: ничего не менялось;
+//      - отпечаток новый: кладём в pending и ждём следующий проход (debounce), потому что редактор
+//        может записывать файл по частям, и половина файла дала бы ложную синтаксическую ошибку;
+//      - отпечаток новый и совпал с pending: файл стабилен, читаем его и проверяем синтаксис;
+//   3. готовый результат (Change) кладётся в shared.ready, главный поток заберёт его через drain().
+// Mutex держится только на короткие обращения к картам, чтение файла и компиляция идут без блокировки.
 void ScriptWatcher::scan(Shared& shared, const std::vector<std::string>& roots, const std::vector<std::string>& paths) {
     ZoneScopedN("Lua watcher: scan");
     std::set<std::string> files;
@@ -95,6 +108,9 @@ void ScriptWatcher::scan(Shared& shared, const std::vector<std::string>& roots, 
     ++shared.scans;
 }
 
+// Вызывается главным потоком каждый кадр, но реально работает раз в interval и только если прошлая задача
+// закончилась. Сама проверка уходит в job system фоновой задачей с низким приоритетом, поэтому
+// кадр не ждёт ни диск, ни компиляцию.
 void ScriptWatcher::poll(double nowSeconds, const std::vector<std::string>& roots, const std::vector<std::string>& paths) {
     if (!due(nowSeconds)) {
         return;
@@ -109,10 +125,12 @@ void ScriptWatcher::poll(double nowSeconds, const std::vector<std::string>& root
     job_ = jobs.submitBackground([shared = shared_, roots, paths] { scan(*shared, roots, paths); }, JobPriority::Low);
 }
 
+// Тот же проход, но синхронно в вызывающем потоке: для тестов и для случая, когда job system не запущена.
 void ScriptWatcher::scanNow(const std::vector<std::string>& roots, const std::vector<std::string>& paths) {
     scan(*shared_, roots, paths);
 }
 
+// Забирает накопленные изменения (swap под mutex) и очищает очередь. Зовётся на главном потоке.
 std::vector<ScriptWatcher::Change> ScriptWatcher::drain() {
     std::lock_guard<std::mutex> lock(shared_->mutex);
     std::vector<Change> changes;

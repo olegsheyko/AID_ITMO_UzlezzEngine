@@ -1,3 +1,13 @@
+// Реализация скриптовой подсистемы: встроенный Lua 5.4 и биндинги через sol2.
+// Карта файла сверху вниз:
+//   1. EntityHandle, WorldApi, ApiState: безопасные ссылки, которые видит Lua (вместо сырых указателей);
+//   2. fromLua, toLua, coerce: перевод значений полей между Lua и C++;
+//   3. Sandbox: потолок памяти и бюджет времени, чтобы скрипт не завесил и не съел движок;
+//   4. LuaBehaviour: адаптер, который из C++ виртуальных методов вызывает методы Lua-класса;
+//   5. bindEngine: что именно скрипт может вызвать у движка (таблица uzlezz);
+//   6. ScriptSystem::Impl: состояние (виртуальная машина, классы, экземпляры) и внутренние операции;
+//   7. публичные методы ScriptSystem: reload, hotReload, start, stop, update.
+// Все вызовы Lua выполняются только в главном потоке.
 #include "scripting/ScriptSystem.h"
 #include "ecs/Components.h"
 #include "core/Logger.h"
@@ -12,6 +22,9 @@
 #include <set>
 
 namespace {
+// То, что скрипт получает вместо сущности. Это не указатель на компонент, а id, номер поколения
+// и слабая ссылка на «жизнь» мира. valid() проверяет все три, поэтому после destroy, Stop или
+// пересоздания мира handle честно отвечает «объект умер» и не читает чужую память.
 struct EntityHandle {
     World* world = nullptr;
     std::weak_ptr<int> lifetime;
@@ -23,6 +36,9 @@ struct EntityHandle {
     void check() const { if (!valid()) throw std::runtime_error("Stale EntityHandle"); }
 };
 EntityHandle handle(World& w, Entity e) { return {&w, w.lifetime(), e, w.generation(e)}; }
+// Общее состояние API на время одного Play: активен ли мир для скриптов, разрешён ли ввод,
+// какие сущности помечены на удаление (destroyed) и строка статуса для HUD.
+// stop() создаёт новый ApiState, поэтому старые ссылки на него у скриптов становятся мёртвыми.
 struct ApiState {
     World* world = nullptr;
     bool active = false, allowInput = false;
@@ -31,6 +47,8 @@ struct ApiState {
     std::set<Entity> destroyed;
     std::string status;
 };
+// Прокси мира, то есть self.world в Lua. Держит weak_ptr на ApiState: после Stop get() бросает ошибку,
+// и сохранённую скриптом ссылку на мир оживить нельзя.
 struct WorldApi {
     std::weak_ptr<ApiState> state;
     std::shared_ptr<ApiState> get() const {
@@ -39,6 +57,9 @@ struct WorldApi {
         return s;
     }
 };
+// Переводит значение Lua в поле компонента. Допустимы только bool, int, double и string:
+// это всё, что умеет хранить ScriptComponent и записывать в JSON префаба.
+// Lua 5.4 различает 2 и 2.0, поэтому целое и дробное число определяются отдельно.
 ScriptValue fromLua(const sol::object& value) {
     switch (value.get_type()) {
     case sol::type::boolean: return value.as<bool>();
@@ -61,6 +82,7 @@ ScriptValue fromLua(const sol::object& value) {
     default: throw std::runtime_error("Script fields support bool, integer, number and string only");
     }
 }
+// Обратный перевод: поле компонента в значение Lua (для entity:get_field).
 sol::object toLua(sol::this_state state, const ScriptValue& value) {
     return std::visit([&](const auto& v) { return sol::make_object(state, v); }, value);
 }
@@ -84,11 +106,13 @@ bool coerce(ScriptValue& value, const ScriptValue& like) {
     }
     return false;
 }
+// Достаёт ScriptComponent сущности. Если handle устарел или скрипта нет, бросает понятную ошибку.
 ScriptComponent& scriptOf(const EntityHandle& h) {
     h.check();
     if (!h.world->hasComponent<ScriptComponent>(h.id)) throw std::runtime_error("Entity has no script fields");
     return h.world->getComponent<ScriptComponent>(h.id);
 }
+// Ищет поле по имени. Неизвестное имя почти всегда опечатка в скрипте, поэтому это ошибка, а не nil.
 ScriptValue& fieldOf(ScriptComponent& c, const std::string& name) {
     auto it = c.fields.find(name);
     if (it == c.fields.end()) throw std::runtime_error(c.className + ": unknown field '" + name + "'");
@@ -108,6 +132,7 @@ int traceback(lua_State* L) {
     luaL_traceback(L, L, message, 1);
     return 1;
 }
+// Замена стандартного print: пишет в лог движка (вкладка Console) с файлом и строкой вызова.
 int print(lua_State* L) {
     luaL_where(L, 1);
     std::string line = lua_tostring(L, -1);
@@ -123,17 +148,23 @@ int print(lua_State* L) {
     LOG_INFO("Lua: " + line);
     return 0;
 }
+// NaN или бесконечность в позиции сломают рендер и физику, поэтому такие значения отвергаются сразу.
 void checkPosition(Vec3 p) {
     if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
         throw std::runtime_error("Position must be finite");
 }
 // Sandbox: потолок кучи Lua через собственный аллокатор и бюджет времени на один вызов скрипта.
 // Живёт дольше sol::state — аллокатор нужен до последнего free.
+// used и peak: сколько памяти занимает куча Lua сейчас и в пике; limit: потолок;
+// budgetMs: сколько миллисекунд можно потратить на один вызов скрипта;
+// deadline: момент, после которого текущий вызов будет прерван (max, пока вызова нет).
 struct Sandbox {
     std::size_t used = 0, peak = 0, limit = ScriptLimits{}.memoryBytes;
     int budgetMs = ScriptLimits{}.timeBudgetMs;
     std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max();
 };
+// Собственный распределитель памяти для Lua (передаётся в lua_newstate). Lua просит и освобождает
+// память только через него, поэтому здесь удобно считать объём и отказывать при превышении потолка.
 void* allocate(void* data, void* block, size_t oldSize, size_t newSize) {
     auto& sandbox = *static_cast<Sandbox*>(data);
     const size_t old = block ? oldSize : 0; // без блока oldSize — код типа объекта
@@ -176,6 +207,12 @@ private:
     std::chrono::steady_clock::time_point previous_;
 };
 // C++ virtual adapter; Lua instances inherit prototypes from uzlezz.behaviour().
+//
+// Адаптер между C++ интерфейсом ScriptBehaviour и Lua-классом (в лекции это trampoline).
+// object_ это self экземпляра, prototype_ это сам Lua-класс. Любой вызов идёт через call():
+// метод ищется только в самом классе (raw_get), поэтому необъявленный колбэк просто ничего не делает.
+// Вызов защищён: protected_function, обработчик ошибок с traceback, бюджет времени и зона Tracy.
+// Ошибка превращается в C++ исключение, его ловит ScriptSystem и отключает только этот экземпляр.
 class LuaBehaviour final : public ScriptBehaviour {
 public:
     LuaBehaviour(sol::table object, sol::table prototype, sol::reference handler, Sandbox& sandbox, const std::string& className)
@@ -186,6 +223,7 @@ public:
     void on_destroy() override { call(2, "on_destroy"); }
     // Hot reload в Play: новый экземпляр сам переносит нужное из старого (необязательный callback).
     void on_reload(const sol::table& previous) { call(3, "on_reload", previous); }
+    // Объявил ли класс этот метод. Нужно для необязательного on_reload.
     bool has(const char* name) const { return prototype_.raw_get<sol::object>(name).get_type() == sol::type::function; }
     const sol::table& object() const { return object_; }
 private:
@@ -210,6 +248,11 @@ private:
     Sandbox& sandbox_;
     std::string labels_[4];
 };
+// Всё, что скрипт может вызвать у движка. Создаёт глобальную таблицу uzlezz с типами
+// ScriptBehaviour, Vec3, Entity, World и функцией uzlezz.behaviour.
+// Новый метод API добавляется здесь и в tools/lua-stubs/uzlezz.lua: тест ideStubsMatchBindings
+// следит, чтобы они совпадали. Методы Entity (кроме is_alive) сначала проверяют handle через h.check(),
+// чтобы устаревший handle давал ошибку с местом вызова, а не падение.
 void bindEngine(sol::state& lua) {
     auto api = lua.create_named_table("uzlezz");
     api.new_usertype<ScriptBehaviour>("ScriptBehaviour", sol::no_constructor,
@@ -223,6 +266,7 @@ void bindEngine(sol::state& lua) {
         "id", sol::property([](const EntityHandle& h) { h.check(); return h.id; }),
         "get_position", [](const EntityHandle& h) { h.check(); return h.world->getComponent<Transform>(h.id).position; },
         "set_position", [](const EntityHandle& h, Vec3 p) { h.check(); checkPosition(p); h.world->getComponent<Transform>(h.id).position = p; },
+        // Поворот только вокруг вертикальной оси Z (в мире Z направлена вверх), в радианах.
         "set_yaw", [](const EntityHandle& h, float yaw) {
             h.check(); if (!std::isfinite(yaw)) throw std::runtime_error("Yaw must be finite");
             h.world->getComponent<Transform>(h.id).rotation.z = yaw;
@@ -232,9 +276,11 @@ void bindEngine(sol::state& lua) {
             h.check(); if (!std::isfinite(speed)) throw std::runtime_error("Speed must be finite");
             if (h.world->hasComponent<Animator>(h.id)) h.world->getComponent<Animator>(h.id).speed = speed;
         },
+        // Поля поведения лежат в ScriptComponent (не в таблице self), поэтому их видят Inspector и сохранение в префаб.
         "get_field", [](const EntityHandle& h, const std::string& name, sol::this_state state) {
             return toLua(state, fieldOf(scriptOf(h), name));
         },
+        // Тип поля менять нельзя: целое принимает только целое, дробное принимает и целое (см. coerce).
         "set_field", [](const EntityHandle& h, const std::string& name, sol::object value) {
             auto& component = scriptOf(h);
             auto& old = fieldOf(component, name);
@@ -247,6 +293,8 @@ void bindEngine(sol::state& lua) {
         "input_pressed", [](const WorldApi& a, const std::string& action) {
             auto s = a.get(); return s->allowInput && s->pressed && s->pressed(action);
         },
+        // Поиск по тегу перебирает все сущности. Помеченные на удаление пропускаются.
+        // Если ничего не нашлось, возвращается пустой handle: проверять его надо через is_alive().
         "find_by_tag", [](const WorldApi& a, const std::string& tag) {
             auto s = a.get();
             for (Entity e : s->world->getEntities())
@@ -261,18 +309,24 @@ void bindEngine(sol::state& lua) {
                     result.push_back(handle(*s->world, e));
             return sol::as_table(std::move(result));
         },
+        // Создаёт сущность из JSON-префаба через внешнюю услугу spawn (PrefabManager) и ставит её в position.
+        // Экземпляр скрипта у новой сущности появится в следующем ScriptSystem::update.
         "spawn_prefab", [](const WorldApi& a, const std::string& path, Vec3 position) {
             auto s = a.get(); checkPosition(position);
             if (!s->spawn) throw std::runtime_error("Prefab service unavailable");
             Entity e = s->spawn(path); auto h = handle(*s->world, e); h.check();
             s->world->getComponent<Transform>(e).position = position; return h;
         },
+        // Только помечает сущность. Реальное удаление выполняет ScriptSystem::update после обхода всех
+        // экземпляров, чтобы не ломать итерацию и не убрать объект из-под другого скрипта в том же кадре.
         "destroy", [](const WorldApi& a, const EntityHandle& h) {
             auto s = a.get(); h.check();
             if (h.world != s->world) throw std::runtime_error("Entity belongs to another world");
             s->destroyed.insert(h.id);
         },
         "set_status", [](const WorldApi& a, const std::string& text) { a.get()->status = text; });
+    // uzlezz.behaviour {...} превращает обычную таблицу в класс поведения: запоминает C++ базу в поле base
+    // (по нему extract() убедится, что класс объявлен правильно) и наследует от базы методы через __index.
     lua.script(R"(
         function uzlezz.behaviour(prototype)
             prototype.base = uzlezz.ScriptBehaviour
@@ -296,23 +350,31 @@ template<class T> void collectApi(lua_State* L, const std::string& type, std::ve
 }
 } // namespace
 
+// Всё внутреннее состояние подсистемы: виртуальная машина Lua, загруженные классы и живые экземпляры.
+// Порядок объявления полей важен: Sandbox должен пережить sol::state (Lua освобождает память через него),
+// а все ссылки sol2 (classes, instances) должны умереть раньше state.
 struct ScriptSystem::Impl {
     Sandbox sandbox; // аллокатор state'а: объявлен раньше и переживает его
     // Declared before every sol reference, destroyed after them.
     sol::state lua{&sol::default_at_panic, &allocate, &sandbox};
     World& world;
     std::shared_ptr<ApiState> api = std::make_shared<ApiState>();
+    // Загруженные Lua-классы. Ключ: «путь к файлу:ИмяКласса» (см. key()).
     std::map<std::string, sol::table> classes;
+    // Один запущенный скрипт на сущность.
     struct Instance {
         EntityHandle entity;
-        std::unique_ptr<LuaBehaviour> behaviour;
-        bool failed = false;
+        std::unique_ptr<LuaBehaviour> behaviour; // адаптер, внутри него таблица self
+        bool failed = false; // отключён ошибкой: on_update ему больше не вызывается до Stop или hot reload
         sol::table initial; // self.* сразу после on_create — чтобы при hot reload понять, что поменяли в коде
     };
     std::map<Entity, Instance> instances;
-    std::string error;
+    std::string error; // последняя ошибка, первая строка. Её показывают окна Gameplay и Console
     sol::reference errorHandler;
     double updateMs = 0.0;
+    // Настройка песочницы и виртуальной машины: хук бюджета времени, только безопасные библиотеки Lua
+    // (без io, os, debug, package), обработчик исключений C++, свой print и запрет dofile и loadfile,
+    // затем регистрация API движка.
     explicit Impl(World& w) : world(w) {
         api->world = &w;
         lua_sethook(lua.lua_state(), &budgetHook, LUA_MASKCOUNT, 1000);
@@ -332,8 +394,10 @@ struct ScriptSystem::Impl {
         error = full.substr(0, full.find('\n'));
         LOG_ERROR("Lua: " + full);
     }
+    // Ключ класса в словаре classes: один файл может содержать несколько классов.
     std::string key(const ScriptComponent& c) const { return c.path + ":" + c.className; }
     // Выполнить файл (или уже прочитанный вотчером текст) в собственном environment.
+    // Отдельное окружение нужно, чтобы глобальные имена файла не смешивались с другими скриптами.
     sol::environment run(const std::string& path, const std::string* source) {
         ZoneScopedN("Lua: load file");
         sol::environment environment(lua, sol::create, lua.globals());
@@ -344,6 +408,10 @@ struct ScriptSystem::Impl {
         if (!result.valid()) { sol::error error = result; throw error; }
         return environment;
     }
+    // Достаёт класс из выполненного файла и проверяет, что он написан правильно, ДО того как класс
+    // заменит старый. Проверки: таблица с таким именем есть; создана через uzlezz.behaviour (поле base);
+    // есть таблица fields с допустимыми типами значений; on_create, on_update, on_destroy, on_reload
+    // (если объявлены) это функции. Любое нарушение бросает исключение, старый код остаётся нетронутым.
     sol::table extract(const sol::environment& environment, const std::string& path, const std::string& className) {
         sol::object object = environment[className];
         if (!object.is<sol::table>()) throw std::runtime_error(path + ": missing behaviour class " + className);
@@ -364,7 +432,10 @@ struct ScriptSystem::Impl {
         }
         return cls;
     }
+    // Прочитать файл с диска и получить проверенный класс.
     sol::table load(const ScriptComponent& c) { return extract(run(c.path, nullptr), c.path, c.className); }
+    // Создаёт self для нового экземпляра: пустая таблица, у которой методы берутся из класса через __index,
+    // плюс служебные поля entity (handle сущности) и world (прокси мира).
     sol::table makeObject(const sol::table& cls, Entity e) {
         sol::table object = lua.create_table();
         object[sol::metatable_key] = lua.create_table_with("__index", cls);
@@ -372,12 +443,14 @@ struct ScriptSystem::Impl {
         object["world"] = WorldApi{api};
         return object;
     }
+    // Служебные поля self (entity и world). Они задаются движком и при копировании состояния пропускаются.
     static bool service(const sol::object& key) {
         if (key.get_type() != sol::type::string) return false;
         const auto name = key.as<std::string>();
         return name == "entity" || name == "world";
     }
-    // Поверхностная копия self.* без entity/world.
+    // Поверхностная копия self.* без entity/world. Снимается сразу после on_create и хранится в Instance::initial:
+    // по ней при hot reload отличают поле, которое поменяли в коде, от поля, которое изменила игра.
     sol::table snapshot(const sol::table& object) {
         sol::table copy = lua.create_table();
         for (const auto& [key, value] : object) {
@@ -435,6 +508,9 @@ struct ScriptSystem::Impl {
             it = c.fields.erase(it);
         }
     }
+    // Создать экземпляр скрипта для сущности: загрузить класс (если ещё не загружен), выровнять поля
+    // компонента по объявлению класса, собрать self, вызвать on_create и запомнить initial.
+    // Если on_create упал, исключение уходит наверх: start() отменит Play, а update() отключит экземпляр.
     void create(Entity e) {
         auto& c = world.getComponent<ScriptComponent>(e);
         const auto k = key(c);
@@ -447,6 +523,8 @@ struct ScriptSystem::Impl {
         entry->on_create();
         instance.initial = snapshot(object);
     }
+    // Убрать экземпляр: вызвать on_destroy (только если сущность ещё жива) и забыть его.
+    // Ошибка в on_destroy только записывается через report(), чтобы уборка не прервалась.
     void remove(Entity e) {
         auto it = instances.find(e);
         if (it == instances.end()) return;
@@ -467,6 +545,8 @@ const std::string& ScriptSystem::error() const { return impl_->error; }
 const std::string& ScriptSystem::status() const { return impl_->api->status; }
 size_t ScriptSystem::instanceCount() const { return impl_->instances.size(); }
 void ScriptSystem::clearError() { impl_->error.clear(); }
+// Для Inspector в Edit: загрузить класс скрипта и заполнить поля компонента значениями по умолчанию,
+// чтобы дизайнер видел и мог менять поля до запуска Play.
 bool ScriptSystem::attachDefaults(Entity e) {
     auto& p = *impl_;
     try {
@@ -500,6 +580,9 @@ std::vector<std::string> ScriptSystem::apiNames() const {
     std::sort(names.begin(), names.end());
     return names;
 }
+// Полная перезагрузка скриптов сцены (только в Edit). Транзакция: сначала всё новое собирается
+// во временные replacement и components, и только если загрузились ВСЕ файлы, они подменяют старые.
+// При ошибке остаются прежние классы и прежние поля, а текст ошибки сохраняется в error.
 bool ScriptSystem::reload() {
     ZoneScopedN("Lua: reload");
     auto& p = *impl_;
@@ -524,6 +607,7 @@ std::string normalizePath(const std::string& path) {
     return std::filesystem::path(path).lexically_normal().generic_string();
 }
 } // namespace
+// Файлы скриптов, которые нужны сцене. Вотчер следит и за ними, даже если они лежат вне assets/scripts.
 std::vector<std::string> ScriptSystem::scriptPaths() const {
     std::set<std::string> paths;
     for (const auto& item : impl_->classes) paths.insert(item.first.substr(0, item.first.rfind(':')));
@@ -531,6 +615,17 @@ std::vector<std::string> ScriptSystem::scriptPaths() const {
         if (impl_->world.hasComponent<ScriptComponent>(e)) paths.insert(impl_->world.getComponent<ScriptComponent>(e).path);
     return {paths.begin(), paths.end()};
 }
+// Горячая замена кода одного файла, в Edit и в Play. source это уже прочитанный текст
+// (его прочитал вотчер), поэтому файл повторно не читается и гонки с редактором нет.
+// Шаги:
+//   1. найти все классы этого файла (уже загруженные и объявленные компонентами сцены);
+//   2. выполнить новый текст и проверить классы. При ошибке сразу выйти: старый код продолжает работать;
+//   3. заменить классы и выровнять поля компонентов по новым объявлениям;
+//   4. в Play: для каждого живого экземпляра создать новый self на новом классе, вызвать on_create
+//      и перенести состояние: режим KeepState (L2) копирует self.* или зовёт on_reload(old),
+//      режим Reset (L1) оставляет состояние из on_create;
+//   5. вернуть отчёт (сколько классов и экземпляров заменено, сколько полей перенесено).
+// Если on_create нового кода упал у какого-то экземпляра, он остаётся на старом классе.
 HotReloadReport ScriptSystem::hotReload(const std::string& path, const std::string& source, ReloadMode mode) {
     ZoneScopedN("Lua: hot reload");
     auto& p = *impl_;
@@ -601,6 +696,9 @@ HotReloadReport ScriptSystem::hotReload(const std::string& path, const std::stri
     p.lua.collect_garbage();
     return report;
 }
+// Начало Play. Сначала stop() (на случай старых экземпляров) и свежая загрузка классов, затем мир
+// объявляется активным, подставляются внешние услуги (спавн префабов, ввод) и создаются экземпляры.
+// Ошибка в любом on_create останавливает всё, Play не начинается.
 bool ScriptSystem::start() {
     ZoneScopedN("Lua: start");
     stop();
@@ -611,6 +709,8 @@ bool ScriptSystem::start() {
     }
     return true;
 }
+// Конец Play: on_destroy у всех экземпляров и сброс ApiState (после этого старые self.world мертвы).
+// Классы и виртуальная машина остаются, закрываются они только вместе с ScriptSystem.
 void ScriptSystem::stop() {
     auto& p = *impl_;
     if (!p.api->active && p.instances.empty()) return;
@@ -619,6 +719,13 @@ void ScriptSystem::stop() {
     p.api = std::make_shared<ApiState>(); p.api->world = &p.world;
     p.lua.collect_garbage();
 }
+// Один игровой кадр скриптов (вызывается из EditorContext::updateGameplay).
+//   1. Берётся копия списка сущностей: сущности, созданные скриптами в этом кадре, в обход не попадают.
+//      Порядок обхода: по возрастанию id, то есть он одинаков из кадра в кадр.
+//   2. Для каждой сущности со ScriptComponent: если экземпляра нет, он создаётся (on_create),
+//      затем зовётся on_update(dt). Ошибка отключает только этот экземпляр (failed), остальные работают.
+//   3. После обхода применяются отложенные destroy: on_destroy и удаление сущности из мира.
+//   4. Небольшой шаг сборщика мусора Lua и данные для графиков Tracy.
 void ScriptSystem::update(float dt, bool allowInput) {
     auto& p = *impl_; if (!running()) return;
     ZoneScopedN("Lua: update");

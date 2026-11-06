@@ -71,7 +71,8 @@ struct Cursor {
         if (drawList) {
             drawList->AddText(position, color, begin, end);
         }
-        position.x += ImGui::CalcTextSize(begin, end).x;
+        
+        position.x += ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0.0f, begin, end).x;
     }
 };
 

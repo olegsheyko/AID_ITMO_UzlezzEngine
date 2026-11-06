@@ -9,6 +9,7 @@
 #include "resources/ResourceManager.h"
 
 #include <imgui.h>
+#include <tracy/Tracy.hpp>
 
 #include <algorithm>
 #include <cfloat>
@@ -132,8 +133,13 @@ void RendererInfoPanel::drawScene(EditorContext& context) {
     ImGui::BeginDisabled(context.isPlaying());
     if (ImGui::Button("Load 10,000-object scene")) context.loadCullingScene();
     ImGui::EndDisabled();
-    ImGui::Checkbox("Frustum culling", &context.renderSystem.cullingEnabled);
-    ImGui::Checkbox("Sort submission", &context.renderSystem.sortingEnabled);
+    // Переключение отмечается сообщением на таймлайне Tracy: видно, с какого кадра поменялся режим.
+    if (ImGui::Checkbox("Frustum culling", &context.renderSystem.cullingEnabled)) {
+        TracyMessageL(context.renderSystem.cullingEnabled ? "Frustum culling ON" : "Frustum culling OFF");
+    }
+    if (ImGui::Checkbox("Sort submission", &context.renderSystem.sortingEnabled)) {
+        TracyMessageL(context.renderSystem.sortingEnabled ? "Sort submission ON" : "Sort submission OFF");
+    }
     const auto& stats=context.sceneRenderStats;
     ImGui::Text("Registered %zu / visible %zu / submitted %zu",stats.registered,stats.visible,stats.submitted);
     ImGui::Text("CPU prepare %.3f / submit %.3f ms",stats.prepareMs,stats.submitMs);

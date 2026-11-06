@@ -141,7 +141,10 @@ public:
     bool isArenaScene() const;
     // Edit: перечитать все скрипты. Play: hot reload каждого файла сцены с диска (режим playReloadMode).
     bool reloadScripts();
+    // Применить одно изменение файла от вотчера: показать ошибку или вызвать ScriptSystem::hotReload
+    // и вывести итог (сколько экземпляров обновлено) в окно Gameplay и Console.
     bool applyScriptChange(const ScriptWatcher::Change& change);
+    // Кнопка Save to Prefab: записать поля скрипта выбранной сущности в её исходный JSON-префаб.
     bool savePrefabFields(Entity entity);
 
     // Лаб-инструменты (ЛР 1)
@@ -169,8 +172,8 @@ public:
     ScriptSystem scripts{world};
     // Сохранили .lua — вотчер (задача job system) находит и проверяет файл, применение — здесь, на главном потоке.
     ScriptWatcher scriptWatcher;
-    bool autoReloadScripts = true;
-    ReloadMode playReloadMode = ReloadMode::KeepState;
+    bool autoReloadScripts = true; // следить за файлами и подменять код сам, без нажатия кнопки
+    ReloadMode playReloadMode = ReloadMode::KeepState; // режим hot reload в Play: L2 (переносить состояние) или L1 (сбросить)
     EditorCamera camera;
     PhysicsSystem physicsSystem;
     SpinSystem spinSystem;
@@ -232,6 +235,8 @@ public:
     bool animationYUp = true;
 
 private:
+    // Копия всех компонентов одной сущности на момент нажатия Play. Флаги has* говорят, какие компоненты были.
+    // Хранятся значения, а не ссылки, поэтому Stop может вернуть сцену ровно такой, какой она была до Play.
     struct EntitySnapshot {
         Entity entity = kInvalidEntity;
         bool hasScript = false;
@@ -256,6 +261,7 @@ private:
         Collider collider{};
     };
 
+    // Снимок всей сцены: сущности и несколько служебных ссылок (выбранный объект, камера, превью врага).
     struct SceneSnapshot {
         std::vector<EntitySnapshot> entities;
         Entity selected = kInvalidEntity;
@@ -291,7 +297,7 @@ private:
     void restoreSnapshot(const SceneSnapshot& snapshot);
 
     std::string scenePath_;
-    SceneSnapshot playSnapshot_;
+    SceneSnapshot playSnapshot_; // сцена до Play: play() её снимает, stop() восстанавливает
     bool stepRequested_ = false;
     float fpsAccumulator_ = 0.0f;
     int fpsFrames_ = 0;

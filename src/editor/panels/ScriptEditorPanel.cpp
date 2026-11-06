@@ -1,3 +1,7 @@
+// Окно редактора Lua-скриптов (ЛР 2): вкладки, подсветка, номера строк, проверка синтаксиса на лету.
+// Само поле ввода это ImGui::InputTextMultiline с прозрачным текстом, а подсветку и номера строк мы рисуем поверх него.
+// Правила текста (отступы, CRLF, табы) вынесены в ScriptText, чтобы их можно было проверять тестами без ImGui.
+// Сохранённый файл подхватывает вотчер hot reload (ScriptWatcher), отдельной кнопки «применить» нет.
 #include "editor/panels/ScriptEditorPanel.h"
 
 #include "core/Logger.h"
@@ -30,12 +34,16 @@ namespace fs = std::filesystem;
 
 // Больше — это уже не скрипт: поле ввода каждый кадр разбирает весь буфер.
 constexpr std::uintmax_t kMaxEditableBytes = 1024 * 1024;
+// Как часто сверяем открытые файлы с диском (чтобы заметить правку во внешнем редакторе).
 constexpr double kDiskPollSeconds = 0.5;
+// Сколько ждём паузы в наборе, прежде чем проверять синтаксис: не на каждую букву.
 constexpr double kValidateDelaySeconds = 0.35;
 // Сколько секунд после сохранения показываем ответ hot reload вместо «Saved».
 constexpr double kReloadResultSeconds = 8.0;
+// Заголовок модального окна закрытия вкладки: часть после ## служит только идентификатором.
 constexpr const char* kCloseDialog = "Unsaved changes##script_close";
 
+// Цвета редактора: фон текста, колонка номеров, подсветка текущей строки и строки с ошибкой, номера строк.
 constexpr ImU32 kEditorBackground = IM_COL32(23, 23, 25, 255);
 constexpr ImU32 kGutterBackground = IM_COL32(28, 28, 30, 255);
 constexpr ImU32 kCurrentLine = IM_COL32(255, 255, 255, 10);
@@ -43,6 +51,7 @@ constexpr ImU32 kErrorLineTint = IM_COL32(240, 86, 78, 38);
 constexpr ImU32 kLineNumber = IM_COL32(82, 82, 90, 255);
 constexpr ImU32 kLineNumberCurrent = IM_COL32(170, 170, 178, 255);
 
+// Слеши Windows в прямые. Путь служит ключом вкладки, поэтому пути из разных источников должны совпадать.
 std::string normalizePath(std::string path) {
     std::replace(path.begin(), path.end(), '\\', '/');
     return path;
@@ -52,6 +61,7 @@ std::string fileName(const std::string& path) {
     return fs::path(path).filename().string();
 }
 
+// Читает файл целиком как байты, без перевода строк и прочей обработки. false, если файл не открылся.
 bool readFile(const std::string& path, std::string& out) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
@@ -61,6 +71,7 @@ bool readFile(const std::string& path, std::string& out) {
     return true;
 }
 
+// Текущее время «ЧЧ:ММ:СС» для статуса «Saved ...».
 std::string clockText() {
     const std::time_t now = std::time(nullptr);
     std::tm local{};
@@ -75,6 +86,9 @@ std::string clockText() {
 }
 
 // «enemy.lua» из сообщения об ошибке → полный путь в assets, если файл по этому пути не нашёлся.
+// assets.search ищет подстроку в имени (по запросу «enemy.lua» найдётся и «big_enemy.lua»),
+// поэтому среди найденного берём файл с тем же именем целиком.
+// Если ничего не нашлось, возвращаем путь как был: load() покажет понятную ошибку в самой вкладке.
 std::string resolvePath(EditorContext& context, const std::string& request) {
     const std::string path = normalizePath(request);
     std::error_code error;
@@ -106,6 +120,8 @@ bool beginBanner(const char* id, ImU32 color) {
     return visible;
 }
 
+// Многострочное поле ImGui живёт в собственном дочернем окне, у которого ChildId равен id поля.
+// Достаём это окно, чтобы рисовать подсветку и номера строк в нём же и с той же прокруткой.
 ImGuiWindow* findInputChild(ImGuiID inputId) {
     ImGuiContext& g = *ImGui::GetCurrentContext();
     ImGuiWindow* parent = ImGui::GetCurrentWindow();
@@ -142,6 +158,7 @@ bool ScriptEditorPanel::openFile(const std::string& request, int line) {
     if (!isScript(path)) {
         return false;
     }
+    // Уже открытый файл заново не читаем: переключаемся на его вкладку.
     Document* doc = find(path);
     if (!doc) {
         auto created = std::make_unique<Document>();
@@ -150,7 +167,10 @@ bool ScriptEditorPanel::openFile(const std::string& request, int line) {
         doc = created.get();
         documents_.push_back(std::move(created));
     }
+    // Наверх вкладку выводит draw() при ближайшей отрисовке вкладок (флаг SetSelected).
+    // Если файл не загрузился, вкладка всё равно появляется и показывает причину.
     selectRequest_ = path;
+    // Фокус и переход к строке нужны только для файла, который удалось загрузить.
     if (doc->loadError.empty()) {
         doc->focusRequest = true;
         if (line > 0) {
@@ -181,6 +201,8 @@ bool ScriptEditorPanel::saveAll() {
             continue;
         }
         // Файл, изменённый снаружи, молча не затираем: сначала пользователь выбирает версию.
+        // Порядок в выражении важен: при конфликте save() не вызывается, а общий результат становится false.
+        // ok стоит последним, чтобы остальные файлы сохранялись, даже если предыдущий не записался.
         ok = !doc->conflict && save(*doc) && ok;
     }
     return ok;
@@ -192,6 +214,9 @@ void ScriptEditorPanel::discardAll() {
     closeRequest_.clear();
 }
 
+// Читает файл в doc. Отказ не бросает исключение: причина кладётся в loadError, а вкладка остаётся и показывает её.
+// Отказываем, если файла нет или он не читается, он больше kMaxEditableBytes или в нём нулевые байты (это не текст).
+// При успехе text и saved получают один и тот же текст в виде для поля ввода, а формат файла на диске запоминается в doc.format.
 void ScriptEditorPanel::load(Document& doc) {
     doc.loadError.clear();
     std::error_code error;
@@ -213,6 +238,8 @@ void ScriptEditorPanel::load(Document& doc) {
         doc.loadError = "This file contains binary data, it is not a Lua script.";
         return;
     }
+    // Запоминаем метку и размер файла: по ним checkDisk() потом отличит правку снаружи.
+    // Всё производное от текста (индекс строк, проверка синтаксиса, внутренняя копия поля) помечаем устаревшим.
     doc.diskTime = fs::last_write_time(doc.path, error);
     doc.diskSize = size;
     doc.saved = ScriptText::fromDisk(bytes, doc.format);
@@ -224,6 +251,9 @@ void ScriptEditorPanel::load(Document& doc) {
     doc.conflict = false;
 }
 
+// Записывает text в файл, возвращая CRLF, табы и BOM как были (ScriptText::toDisk).
+// Зовут кнопка Save, диалог закрытия вкладки и saveAll(). Если запись не удалась, причина идёт в status и в лог,
+// а saved не трогаем: правки остаются несохранёнными.
 bool ScriptEditorPanel::save(Document& doc) {
     if (!doc.loadError.empty()) {
         return false;
@@ -240,6 +270,8 @@ bool ScriptEditorPanel::save(Document& doc) {
         LOG_ERROR("Script editor: " + doc.status);
         return false;
     }
+    // Запись удалась. Метку и размер обновляем сразу: иначе checkDisk() примет нашу же запись
+    // за правку снаружи и покажет ложный конфликт.
     std::error_code error;
     doc.diskTime = fs::last_write_time(doc.path, error);
     doc.diskSize = bytes.size();
@@ -247,8 +279,12 @@ bool ScriptEditorPanel::save(Document& doc) {
     doc.missing = false;
     doc.conflict = false;
     doc.diskCopy.clear();
+    // Запоминаем момент сохранения и сообщение скриптинга на начало кадра. Если оно потом сменится,
+    // это ответ hot reload на именно это сохранение, и drawStatusBar покажет его вместо «Saved».
     doc.savedAt = ImGui::GetTime();
     doc.messageAtSave = lastScriptMessage_;
+    // Синтаксис проверяем сразу, не дожидаясь паузы в наборе. Файл с ошибкой всё равно сохраняется,
+    // но hot reload его не применит: в игре продолжает работать прежний код.
     validate(doc);
     doc.status = "Saved " + clockText();
     doc.statusIsError = false;
@@ -266,6 +302,9 @@ void ScriptEditorPanel::revert(Document& doc) {
     doc.statusIsError = false;
 }
 
+// Подмена всего текста не из поля ввода (Revert, перечитывание с диска, Load from Disk).
+// Пока поле активно, ImGui держит собственную копию текста, поэтому ставим resetInput: drawEditor её сбросит.
+// Курсор сохраняем (не дальше конца нового текста), а фокус возвращаем, если он был у поля.
 void ScriptEditorPanel::replaceText(Document& doc, std::string text) {
     doc.text = std::move(text);
     doc.indexDirty = true;
@@ -275,6 +314,9 @@ void ScriptEditorPanel::replaceText(Document& doc, std::string text) {
     doc.focusRequest = doc.focusRequest || doc.hadFocus;
 }
 
+// Индекс для рисования: lineStarts (где начинается каждая строка) и lineInComment
+// (открыт ли в начале строки блочный комментарий --[[ ]]).
+// Благодаря ему рисуем только видимые строки и не разбираем текст с самого начала при каждой прокрутке.
 void ScriptEditorPanel::rebuildIndex(Document& doc) {
     doc.lineStarts.clear();
     doc.lineInComment.clear();
@@ -286,15 +328,20 @@ void ScriptEditorPanel::rebuildIndex(Document& doc) {
             doc.lineStarts.push_back(static_cast<int>(p - text) + 1);
         }
     }
+    // Идём по строкам и передаём состояние «внутри блочного комментария» от одной строки к следующей.
     bool inComment = false;
     for (std::size_t i = 0; i < doc.lineStarts.size(); ++i) {
         doc.lineInComment.push_back(inComment ? 1 : 0);
+        // Конец строки без '\n' (у последней строки это конец текста).
         const char* lineEnd = i + 1 < doc.lineStarts.size() ? text + doc.lineStarts[i + 1] - 1 : end;
         advanceBlockComment(text + doc.lineStarts[i], lineEnd, SyntaxLanguage::Lua, inComment);
     }
     doc.indexDirty = false;
 }
 
+// Проверяет синтаксис, ничего не запуская: ScriptWatcher::validate компилирует текст в одноразовом lua_State.
+// Это тот же вызов, что в вотчере hot reload, поэтому ошибки совпадают с теми, что увидит игра.
+// Из текста ошибки вида «path.lua:12: ...» достаём номер строки для подсветки (0, если номера нет).
 void ScriptEditorPanel::validate(Document& doc) {
     doc.validateDue = false;
     std::string error;
@@ -309,6 +356,10 @@ void ScriptEditorPanel::validate(Document& doc) {
     doc.errorLine = ScriptText::parseErrorLocation(doc.error, path, line) ? line : 0;
 }
 
+// Раз в kDiskPollSeconds сверяет файл с диском: так ловится правка во внешнем редакторе.
+// Сначала сравниваются только метка времени и размер, содержимое читается лишь когда они изменились.
+// Что делаем с новой версией: если в буфере нет несохранённых правок, молча подтягиваем её; если правки совпали с диском,
+// просто считаем их сохранёнными; иначе это конфликт, и баннер предлагает выбрать версию.
 void ScriptEditorPanel::checkDisk(Document& doc) {
     if (!doc.loadError.empty()) {
         return;
@@ -323,12 +374,14 @@ void ScriptEditorPanel::checkDisk(Document& doc) {
     if (error) {
         return;
     }
+    // Файл мог исчезнуть и появиться снова: тогда сверяем содержимое, даже если метка и размер совпали.
     const bool reappeared = doc.missing;
     doc.missing = false;
     if (!reappeared && time == doc.diskTime && size == doc.diskSize) {
         return;
     }
     std::string bytes;
+    // Файл стал слишком большим, нечитаемым или бинарным: оставляем то, что в буфере, и не трогаем.
     if (size > kMaxEditableBytes || !readFile(doc.path, bytes) || ScriptText::looksBinary(bytes)) {
         return;
     }
@@ -340,6 +393,7 @@ void ScriptEditorPanel::checkDisk(Document& doc) {
     if (disk == doc.saved && !reappeared) {
         return; // файл тронули, а содержимое то же
     }
+    // Три исхода: правок нет (берём версию с диска), правки уже совпали с диском, либо конфликт.
     if (!doc.dirty()) {
         doc.saved = disk;
         replaceText(doc, std::move(disk));
@@ -360,6 +414,7 @@ void ScriptEditorPanel::gotoLine(Document& doc, int line) {
     doc.focusRequest = true;
 }
 
+// Закрывает вкладку без вопросов: про несохранённые правки спрашивает вызывающий код (draw, drawCloseDialog).
 void ScriptEditorPanel::closeDocument(const std::string& path) {
     documents_.erase(std::remove_if(documents_.begin(), documents_.end(), [&path](const auto& doc) { return doc->path == path; }),
         documents_.end());
@@ -368,9 +423,15 @@ void ScriptEditorPanel::closeDocument(const std::string& path) {
     }
 }
 
+// Колбэк поля ввода ImGui: один на все события, вид события в data->EventFlag. Здесь живёт поведение редактора кода:
+// Resize (ImGui просит буфер под новый текст), CharFilter (Tab не вставляется как символ), а по Edit и Always идут
+// автоотступ после Enter, Tab и Shift+Tab, отложенный переход курсора и запись позиции курсора обратно в Document.
+// Document приходит через UserData. Вызывается из InputTextMultiline в drawEditor.
 int ScriptEditorPanel::onText(ImGuiInputTextCallbackData* data) {
     Document& doc = *static_cast<Document*>(data->UserData);
     if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+        // ImGui просит буфер под новый текст: подгоняем размер строки и отдаём указатель на её данные,
+        // туда ImGui потом скопирует результат.
         doc.text.resize(static_cast<std::size_t>(data->BufTextLen));
         data->Buf = doc.text.data();
         return 0;
@@ -380,6 +441,8 @@ int ScriptEditorPanel::onText(ImGuiInputTextCallbackData* data) {
     }
 
     // CallbackEdit или CallbackAlways: правка уже в буфере, поле ещё не вернуло управление.
+    // Автоотступ после Enter. doc.text пока хранит текст до этой правки (ImGui копирует результат позже),
+    // поэтому «BufTextLen больше на 1» значит: добавлен ровно один символ.
     if (doc.enterKey) {
         doc.enterKey = false;
         // Enter вставил ровно один '\n' — переносим отступ предыдущей строки.
@@ -392,6 +455,9 @@ int ScriptEditorPanel::onText(ImGuiInputTextCallbackData* data) {
             }
         }
     }
+    // Tab. Без Shift и без выделения нескольких строк: ставим пробелы до следующей позиции табуляции
+    // (выделенное внутри строки заменяем ими). С Shift или с выделением нескольких строк: сдвигаем вправо
+    // или влево все затронутые строки (ScriptText::indentLines).
     if (doc.tabKey) {
         doc.tabKey = false;
         const std::string current(data->Buf, static_cast<std::size_t>(data->BufTextLen));
@@ -419,6 +485,7 @@ int ScriptEditorPanel::onText(ImGuiInputTextCallbackData* data) {
             data->SelectionStart = data->SelectionEnd = data->CursorPos;
         }
     }
+    // Отложенный переход курсора (открытие на строке, клик по ошибке, замена текста): ставим курсор и снимаем выделение.
     if (doc.pendingCursor >= 0) {
         const int position = std::min(doc.pendingCursor, data->BufTextLen);
         data->CursorPos = data->SelectionStart = data->SelectionEnd = position;
@@ -433,6 +500,7 @@ int ScriptEditorPanel::onText(ImGuiInputTextCallbackData* data) {
     while (lineStart > 0 && buffer[lineStart - 1] != '\n') {
         --lineStart;
     }
+    // Колонка считается в символах, а не в байтах: байты продолжения UTF-8 (10xxxxxx) пропускаем.
     int column = 0;
     for (int i = lineStart; i < cursor; ++i) {
         column += (static_cast<unsigned char>(buffer[i]) & 0xC0) != 0x80 ? 1 : 0;
@@ -449,6 +517,8 @@ int ScriptEditorPanel::onText(ImGuiInputTextCallbackData* data) {
 void ScriptEditorPanel::draw(EditorContext& context) {
     // Сообщение скриптинга на начало кадра: сохранение в этом кадре отличит от него ответ hot reload.
     lastScriptMessage_ = context.scriptMessage;
+    // Запрос на открытие от других мест (Content Browser, Inspector, кнопка Go to line, параметр командной строки
+    // --editor-open-script): открываем файл, показываем окно и выводим его на передний план.
     if (!context.openScriptRequest.empty()) {
         if (openFile(resolvePath(context, context.openScriptRequest), context.openScriptLine)) {
             open = true;
@@ -457,6 +527,7 @@ void ScriptEditorPanel::draw(EditorContext& context) {
         context.openScriptRequest.clear();
         context.openScriptLine = 0;
     }
+    // Опрос диска идёт и при закрытом окне: вкладки остаются в памяти, их буфер должен оставаться свежим.
     const double now = ImGui::GetTime();
     if (now - lastDiskCheck_ >= kDiskPollSeconds) {
         lastDiskCheck_ = now;
@@ -481,6 +552,7 @@ void ScriptEditorPanel::draw(EditorContext& context) {
     if (documents_.empty()) {
         drawEmpty(context);
     } else {
+        // Одна вкладка на документ. Содержимое рисуется только у выбранной вкладки: BeginTabItem возвращает true лишь для неё.
         const ImGuiTabBarFlags tabFlags = ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_AutoSelectNewTabs |
             ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton;
         std::string closing;
@@ -502,6 +574,7 @@ void ScriptEditorPanel::draw(EditorContext& context) {
                     drawDocument(context, doc);
                     ImGui::EndTabItem();
                 }
+                // Нажат крестик: запоминаем и закрываем после цикла, чтобы не менять documents_ во время обхода.
                 if (!keepOpen) {
                     closing = doc.path;
                 }
@@ -509,6 +582,7 @@ void ScriptEditorPanel::draw(EditorContext& context) {
             ImGui::EndTabBar();
         }
         selectRequest_.clear();
+        // Вкладка с несохранёнными правками сначала спрашивает (drawCloseDialog), остальные закрываются сразу.
         if (!closing.empty()) {
             const Document* doc = find(closing);
             if (doc && doc->loadError.empty() && doc->dirty()) {
@@ -519,6 +593,7 @@ void ScriptEditorPanel::draw(EditorContext& context) {
             }
         }
     }
+    // Модальное окно рисуется каждый кадр: BeginPopupModal сам решает, открыто ли оно.
     drawCloseDialog();
 
     // Скрипт, брошенный из Content Browser на окно, открывается во вкладке.
@@ -534,6 +609,7 @@ void ScriptEditorPanel::draw(EditorContext& context) {
     ImGui::End();
 }
 
+// Окно без вкладок: подсказка и список всех .lua из assets, чтобы открыть скрипт в один клик.
 void ScriptEditorPanel::drawEmpty(EditorContext& context) {
     const float top = std::max(px(130.0f), ImGui::GetContentRegionAvail().y * 0.34f);
     if (ImGui::BeginChild("##script_empty", ImVec2(0.0f, top), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar)) {
@@ -546,6 +622,7 @@ void ScriptEditorPanel::drawEmpty(EditorContext& context) {
     EditorUI::popFont();
     int shown = 0;
     for (const AssetEntry& entry : context.assets.search(".lua", 200)) {
+        // search ищет подстроку в имени (подойдёт и «x.lua.bak»), поэтому оставляем только настоящие .lua.
         if (entry.extension != ".lua") {
             continue;
         }
@@ -560,6 +637,8 @@ void ScriptEditorPanel::drawEmpty(EditorContext& context) {
     }
 }
 
+// Содержимое одной вкладки сверху вниз: панель кнопок, баннеры, поле ввода (занимает всё оставшееся место), статус-бар.
+// PushID по пути нужен, чтобы у разных вкладок не совпадали id виджетов. Если файл не открылся, показываем только причину.
 void ScriptEditorPanel::drawDocument(EditorContext& context, Document& doc) {
     ImGui::PushID(doc.path.c_str());
     drawToolbar(context, doc);
@@ -579,6 +658,9 @@ void ScriptEditorPanel::drawDocument(EditorContext& context, Document& doc) {
     ImGui::PopID();
 }
 
+// Панель над текстом: Save, Revert, открыть во внешнем приложении, показать в файловом менеджере, переключатель Reload on save.
+// Save тут сохраняет только этот файл, а сочетание Ctrl+S ловит EditorState и вызывает saveAll() для всех скриптов.
+// При конфликте с диском Save недоступна: сначала нужно выбрать версию в баннере.
 void ScriptEditorPanel::drawToolbar(EditorContext& context, Document& doc) {
     const bool editable = doc.loadError.empty();
     const bool canSave = editable && doc.dirty() && !doc.conflict;
@@ -606,6 +688,8 @@ void ScriptEditorPanel::drawToolbar(EditorContext& context, Document& doc) {
     }
     EditorUI::toolbarSeparator();
     ImGui::AlignTextToFramePadding();
+    // Тот же флаг, что в панели Gameplay: он включает вотчер hot reload в EditorContext.
+    // Если флаг выключен, сохранённый файл попадёт в игру только по кнопке Reload Scripts.
     EditorUI::checkbox("Reload on save##script_auto", &context.autoReloadScripts);
     ImGui::SetItemTooltip("Same switch as in the Gameplay panel: a saved .lua file is checked and applied to the running game,\n"
                           "in Edit and in Play. A broken script is not applied, the previous code keeps running.");
@@ -617,6 +701,7 @@ void ScriptEditorPanel::drawToolbar(EditorContext& context, Document& doc) {
     }
 }
 
+// Плашки над текстом, каждая рисуется только при своём условии: конфликт с диском, файл удалён или перемещён, ошибка синтаксиса.
 void ScriptEditorPanel::drawBanners(Document& doc) {
     if (doc.conflict) {
         if (beginBanner("##banner_conflict", kWarning)) {
@@ -625,6 +710,7 @@ void ScriptEditorPanel::drawBanners(Document& doc) {
             ImGui::TextColored(toVec4(kWarning), ICON_LC_TRIANGLE_ALERT);
             ImGui::SameLine();
             ImGui::TextUnformatted("Changed on disk while you were editing.");
+            // Кнопки прижаты к правому краю плашки, но не заезжают на текст слева.
             const float buttons = ImGui::CalcTextSize("Load from Disk").x + ImGui::CalcTextSize("Keep Mine").x + ImGui::GetStyle().FramePadding.x * 4.0f +
                 ImGui::GetStyle().ItemSpacing.x;
             ImGui::SameLine(std::max(ImGui::GetCursorPosX() + px(8.0f), rowEnd - buttons));
@@ -639,6 +725,8 @@ void ScriptEditorPanel::drawBanners(Document& doc) {
             }
             ImGui::SetItemTooltip("Drop your unsaved changes and take the file as it is on disk.");
             ImGui::SameLine();
+            // Версию с диска объявляем «сохранённой»: тогда текст в буфере остаётся несохранённым, Save снова доступна
+            // и следующее сохранение перезапишет файл.
             if (ImGui::SmallButton("Keep Mine")) {
                 doc.saved = doc.diskCopy;
                 doc.conflict = false;
@@ -657,6 +745,8 @@ void ScriptEditorPanel::drawBanners(Document& doc) {
         }
         ImGui::EndChild();
     }
+    // Ошибка синтаксиса: в плашке номер строки и короткий текст, полный текст в подсказке.
+    // Клик по плашке переносит курсор на эту строку. Проверки после EndChild относятся ко всей плашке.
     if (!doc.error.empty()) {
         const std::string text = doc.errorLine > 0 ? "Line " + std::to_string(doc.errorLine) + ": " + ScriptText::errorText(doc.error)
                                                     : ScriptText::errorText(doc.error);
@@ -676,7 +766,15 @@ void ScriptEditorPanel::drawBanners(Document& doc) {
     }
 }
 
+// Поле ввода и всё, что рисуется вокруг текста. Устройство:
+// 1. InputTextMultiline рисуется с прозрачным текстом и левым отступом под колонку номеров: оно отвечает за ввод,
+//    курсор, выделение, прокрутку и клики мышью.
+// 2. Поверх него, в том же дочернем окне и с той же прокруткой, рисуем подсвеченный текст, подсветку текущей строки
+//    и строки с ошибкой, колонку номеров.
+// 3. Tab и Enter обрабатывает колбэк onText, а нажатия приходят в него флагами в doc.
 void ScriptEditorPanel::drawEditor(Document& doc, float height) {
+    // Индекс строк пересобираем, если текст менялся не через поле (загрузка, Revert). Проверка синтаксиса откладывается
+    // до паузы в наборе: компилятор Lua на каждую букву не гоняем.
     if (doc.indexDirty) {
         rebuildIndex(doc);
     }
@@ -687,6 +785,7 @@ void ScriptEditorPanel::drawEditor(Document& doc, float height) {
     EditorUI::pushMono();
     const float lineHeight = ImGui::GetFontSize();
     const float charWidth = ImGui::CalcTextSize("0").x;
+    // Ширина колонки номеров: минимум 3 цифры, для файлов от 1000 строк больше.
     int digits = 3;
     for (int count = static_cast<int>(doc.lineStarts.size()); count >= 1000; count /= 10) {
         ++digits;
@@ -699,6 +798,7 @@ void ScriptEditorPanel::drawEditor(Document& doc, float height) {
     ImGuiContext& g = *ImGui::GetCurrentContext();
     ImGuiIO& io = ImGui::GetIO();
     const ImGuiID id = ImGui::GetID("##source");
+    // wasActive: курсор был в поле ещё до этого кадра. Клавиши ниже разбираем только в таком случае.
     const bool wasActive = ImGui::GetActiveID() == id;
     if (doc.resetInput) {
         // Текст подменили снаружи (Revert, перечитывание с диска): поле держит свою копию, пока активно,
@@ -715,6 +815,8 @@ void ScriptEditorPanel::drawEditor(Document& doc, float height) {
         // Tab и Shift+Tab — отступы, а не переход по виджетам: без этого Shift+Tab уводит фокус из поля.
         ImGui::SetKeyOwner(ImGuiKey_Tab, id);
     }
+    // Колбэк не знает, какая клавиша вызвала правку, поэтому Tab и Enter передаём ему флагами.
+    // Ctrl и Alt исключены, чтобы не ломать шорткаты.
     doc.tabKey = wasActive && ImGui::IsKeyPressed(ImGuiKey_Tab) && !io.KeyCtrl && !io.KeyAlt;
     doc.enterKey = wasActive && (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) && !io.KeyCtrl && !io.KeyAlt;
 
@@ -729,38 +831,47 @@ void ScriptEditorPanel::drawEditor(Document& doc, float height) {
             clipboardSwapped = true;
         }
     }
+    // Просьба вернуть фокус полю (после открытия, перехода к строке, замены текста).
     if (doc.focusRequest) {
         ImGui::SetKeyboardFocusHere();
         doc.focusRequest = false;
     }
+    // Переход к строке: просим поле прокрутить так, чтобы курсор оказался посередине.
     if (doc.centerCursor && doc.pendingCursor >= 0 && wasActive) {
         if (ImGuiInputTextState* state = ImGui::GetInputTextState(id)) {
             state->CursorCenterY = true;
         }
     }
 
+    // Поле без рамки и скруглений, с левым отступом под колонку номеров.
     ImGui::PushStyleColor(ImGuiCol_FrameBg, toVec4(kEditorBackground));
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 0.0f)); // текст рисуем сами, с подсветкой
     ImGui::PushStyleColor(ImGuiCol_InputTextCursor, toVec4(kText));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(paddingX, paddingY));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+    // AllowTabInput пропускает Tab в поле. Остальные флаги включают колбэк onText: Resize (рост буфера),
+    // CharFilter (запрет вставки символа Tab), Edit и Always (разбор Tab и Enter, запись курсора).
     const ImGuiInputTextFlags flags = ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CallbackResize |
         ImGuiInputTextFlags_CallbackCharFilter | ImGuiInputTextFlags_CallbackEdit | ImGuiInputTextFlags_CallbackAlways;
+    // Буфер поля это сам doc.text (его ёмкость растёт через колбэк Resize). changed: пользователь изменил текст.
     const bool changed = ImGui::InputTextMultiline("##source", doc.text.data(), doc.text.capacity() + 1, ImVec2(-FLT_MIN, height), flags,
         &ScriptEditorPanel::onText, &doc);
     ImGui::PopStyleVar(3);
     ImGui::PopStyleColor(3);
+    // Вставка уже произошла внутри InputTextMultiline: возвращаем настоящий буфер обмена.
     if (clipboardSwapped) {
         ImGui::SetClipboardText(clipboardBackup.c_str());
     }
     doc.hadFocus = ImGui::GetActiveID() == id;
+    // Текст изменил пользователь: индекс и проверка синтаксиса устарели, старый статус («Saved ...») снимаем.
     if (changed) {
         doc.indexDirty = true;
         doc.validateDue = true;
         doc.editedAt = ImGui::GetTime();
         doc.status.clear();
     }
+    // Индекс нужен уже в этом кадре, иначе подсветка отстала бы от текста на кадр.
     if (doc.indexDirty) {
         rebuildIndex(doc);
     }
@@ -771,10 +882,12 @@ void ScriptEditorPanel::drawEditor(Document& doc, float height) {
     if (child && !child->Hidden) {
         ImDrawList* drawList = child->DrawList;
         const ImRect inner = child->InnerRect;
+        // Горизонтальную прокрутку хранит состояние поля, вертикальную дочернее окно.
         const ImGuiInputTextState* state = ImGui::GetInputTextState(id);
         const float scrollX = state ? state->Scroll.x : 0.0f;
         const ImVec2 origin(inner.Min.x + paddingX - scrollX, inner.Min.y + paddingY - child->Scroll.y);
         const int lineCount = static_cast<int>(doc.lineStarts.size());
+        // Рисуем только видимые строки: диапазон first..last считается по прокрутке и высоте окна.
         const int first = std::clamp(static_cast<int>(std::floor((inner.Min.y - origin.y) / lineHeight)), 0, lineCount - 1);
         const int last = std::clamp(static_cast<int>(std::floor((inner.Max.y - origin.y) / lineHeight)), 0, lineCount - 1);
         const float textLeft = inner.Min.x + gutterWidth;
@@ -782,19 +895,23 @@ void ScriptEditorPanel::drawEditor(Document& doc, float height) {
         const char* textEnd = base + doc.text.size();
         const bool hasSelection = doc.selStart != doc.selEnd;
 
+        // Первый проход: строки текста с подсветкой, обрезанные справа от колонки номеров.
         drawList->PushClipRect(ImVec2(textLeft, inner.Min.y), inner.Max, true);
         for (int line = first; line <= last; ++line) {
             const float y = origin.y + static_cast<float>(line) * lineHeight;
             const char* begin = base + doc.lineStarts[static_cast<std::size_t>(line)];
             const char* end = line + 1 < lineCount ? base + doc.lineStarts[static_cast<std::size_t>(line) + 1] - 1 : textEnd;
+            // Текущую строку подсвечиваем, только пока поле активно и нет выделения.
             if (doc.hadFocus && !hasSelection && line == doc.line) {
                 drawList->AddRectFilled(ImVec2(textLeft, y), ImVec2(inner.Max.x, y + lineHeight), kCurrentLine);
             }
+            // Строка с ошибкой: красноватая заливка и красное подчёркивание под текстом.
             if (line + 1 == doc.errorLine) {
                 drawList->AddRectFilled(ImVec2(textLeft, y), ImVec2(inner.Max.x, y + lineHeight), kErrorLineTint);
                 drawList->AddLine(ImVec2(origin.x, y + lineHeight - 1.0f), ImVec2(origin.x + ImGui::CalcTextSize(begin, end).x, y + lineHeight - 1.0f),
                     kError, 1.0f);
             }
+            // Состояние блочного комментария на начало строки берём из индекса: так можно рисовать с любой видимой строки.
             bool inComment = doc.lineInComment[static_cast<std::size_t>(line)] != 0;
             drawHighlightedLine(drawList, ImVec2(origin.x, y), begin, end, SyntaxLanguage::Lua, inComment);
         }
@@ -812,6 +929,7 @@ void ScriptEditorPanel::drawEditor(Document& doc, float height) {
             const float numberWidth = ImGui::CalcTextSize(number).x;
             const ImU32 color = isError ? kError : (doc.hadFocus && line == doc.line ? kLineNumberCurrent : kLineNumber);
             drawList->AddText(ImVec2(textLeft - px(10.0f) - numberWidth, y), color, number);
+            // Красная точка слева у строки с ошибкой.
             if (isError) {
                 drawList->AddCircleFilled(ImVec2(inner.Min.x + px(8.0f), y + lineHeight * 0.5f), px(2.5f), kError);
             }
@@ -821,6 +939,8 @@ void ScriptEditorPanel::drawEditor(Document& doc, float height) {
     EditorUI::popFont();
 }
 
+// Нижняя строка окна. Справа: строка и колонка курсора, число строк, отступы, кодировка, перевод строки.
+// Слева: одно сообщение, выбранное по приоритету (см. ниже).
 void ScriptEditorPanel::drawStatusBar(EditorContext& context, Document& doc) {
     const float height = ImGui::GetFrameHeight();
     const ImVec2 position = ImGui::GetCursorScreenPos();
@@ -846,8 +966,11 @@ void ScriptEditorPanel::drawStatusBar(EditorContext& context, Document& doc) {
     // Слева — что произошло с файлом. После сохранения здесь ответ hot reload: «enemy.lua reloaded in Play: ...».
     std::string message;
     ImU32 color = kTextDim;
+    // Ответ hot reload показываем kReloadResultSeconds секунд после сохранения и только при включённом Reload on save:
+    // если сообщение скриптинга с тех пор сменилось, значит вотчер применил файл (или отверг его с ошибкой).
     const bool reloadAnswer = ImGui::GetTime() - doc.savedAt < kReloadResultSeconds && !context.scriptMessage.empty() &&
         context.scriptMessage != doc.messageAtSave && context.autoReloadScripts;
+    // Приоритет: конфликт, файл пропал, несохранённые правки, ответ hot reload, статус последнего действия, подсказка.
     if (doc.conflict) {
         message = "Changed on disk: choose which version to keep";
         color = kWarning;
@@ -873,11 +996,14 @@ void ScriptEditorPanel::drawStatusBar(EditorContext& context, Document& doc) {
     ImGui::Dummy(ImVec2(width, height));
 }
 
+// Диалог «Save changes to файл before closing?». Его открывает draw(), когда закрывают вкладку с несохранёнными правками.
+// Save закрывает вкладку после записи, Don't Save закрывает и теряет правки, Cancel или Escape оставляют вкладку.
 void ScriptEditorPanel::drawCloseDialog() {
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (!ImGui::BeginPopupModal(kCloseDialog, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
         return;
     }
+    // Вкладку могли закрыть другим путём, пока диалог был открыт: тогда просто закрываем диалог.
     Document* doc = find(closeRequest_);
     if (!doc) {
         closeRequest_.clear();
@@ -888,8 +1014,10 @@ void ScriptEditorPanel::drawCloseDialog() {
     ImGui::Text("Save changes to %s before closing?", fileName(doc->path).c_str());
     EditorUI::textFaint("Your changes will be lost if you don't save them.");
     ImGui::Dummy(ImVec2(0.0f, px(4.0f)));
+    // При конфликте с диском Save недоступна: сначала нужно выбрать версию в баннере вкладки.
     const bool canSave = !doc->conflict;
     ImGui::BeginDisabled(!canSave);
+    // Вкладка закрывается, только если запись удалась; иначе диалог остаётся.
     if (EditorUI::primaryButton("Save", ImVec2(px(100.0f), 0.0f)) && save(*doc)) {
         closeDocument(closeRequest_);
         closeRequest_.clear();

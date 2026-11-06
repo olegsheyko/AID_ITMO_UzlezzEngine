@@ -12,6 +12,7 @@
 #include "ecs/SceneVisibility.h"
 #include <chrono>
 #include <tuple>
+#include <string>
 #include <algorithm>
 
 RenderSystem::RenderSystem(IRenderAdapter& renderer)
@@ -28,15 +29,33 @@ void RenderSystem::render(World& world) {
     submit(world);
     stats_.prepareMs=std::chrono::duration<double,std::milli>(prepared-start).count();
     stats_.submitMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-prepared).count();
+    // Графики Tracy: те же счётчики, что в окне Renderer Info, но на таймлайне рядом с зонами кадра.
+    TracyPlot("Render: registered", static_cast<int64_t>(stats_.registered));
+    TracyPlot("Render: visible", static_cast<int64_t>(stats_.visible));
+    TracyPlot("Render: submitted", static_cast<int64_t>(stats_.submitted));
+    TracyPlot("Render: shader switches", static_cast<int64_t>(stats_.shaderChanges));
+    TracyPlot("Render: texture switches", static_cast<int64_t>(stats_.textureChanges));
+    TracyPlot("Render: depth inversions", static_cast<int64_t>(stats_.depthInversions));
+    TracyPlot("Render: visibility updates", static_cast<int64_t>(stats_.updates));
+    TracyPlot("Render: CPU prepare ms", stats_.prepareMs);
+    TracyPlot("Render: CPU submit ms", stats_.submitMs);
 }
 
 void RenderSystem::prepare(World& world) {
     ZoneScopedN("Visible set and sorted packet");
     selectCamera(world);
-    stats_.updates=SceneVisibility::synchronize(world);
+    // Каждая фаза подготовки своей зоной Tracy: видно, сколько стоит синхронизация, отбор, сборка и сортировка.
+    {
+        ZoneScopedN("Visibility sync");
+        stats_.updates=SceneVisibility::synchronize(world);
+    }
     stats_.registered=world.visibility.size();
-    visible_=world.visibility.query(Math::multiply(projection_,view_),cullingEnabled);
+    {
+        ZoneScopedN("Visibility query");
+        visible_=world.visibility.query(Math::multiply(projection_,view_),cullingEnabled);
+    }
     stats_.visible=visible_.size();
+    ZoneNamedN(buildPacketZone, "Build and sort packet", true);
     packet_.clear();
     const World& read=world;
     for (auto h:visible_) {
@@ -65,9 +84,32 @@ void RenderSystem::submit(World& world) {
     ZoneScopedN("Submission packet");
     boundProgram_=boundTexture_=~0u;
     const World& read=world;
+    // Разметка для RenderDoc и GPU-зон Tracy: весь пакет одной группой, внутри по группе на каждый
+    // набор одинаковых шейдера, меша и текстуры. С сортировкой групп столько, сколько смен ресурсов;
+    // без неё почти каждый объект своя группа, это и видно в дереве событий RenderDoc.
+    const bool markers=renderer_.debugMarkersActive();
+    if (markers) renderer_.pushDebugGroup(("Submission packet: "+std::to_string(packet_.size())+" objects").c_str());
+    const Submission* previous=nullptr;
+    std::size_t group=0;
     for (const auto& item:packet_) {
+        const MeshRenderer& meshRenderer=read.getComponent<MeshRenderer>(item.entity);
+        if (markers && (!previous || std::tie(previous->shader,previous->mesh,previous->texture)!=std::tie(item.shader,item.mesh,item.texture))) {
+            if (previous) renderer_.popDebugGroup();
+            auto shortName=[](const std::string& path,const char* fallback) {
+                if (path.empty()) return std::string(fallback);
+                const auto slash=path.find_last_of("/\\");
+                return slash==std::string::npos ? path : path.substr(slash+1);
+            };
+            renderer_.pushDebugGroup(("Group "+std::to_string(++group)+": "+shortName(meshRenderer.meshId,"mesh")
+                +" | "+shortName(meshRenderer.baseColorTextureId,"texture")).c_str());
+        }
+        previous=&item;
         submittedModel_=&item.model;
-        if (drawEntity(world,item.entity,read.getComponent<MeshRenderer>(item.entity),0)) ++lastDrawnMeshCount_;
+        if (drawEntity(world,item.entity,meshRenderer,0)) ++lastDrawnMeshCount_;
+    }
+    if (markers) {
+        if (previous) renderer_.popDebugGroup();
+        renderer_.popDebugGroup();
     }
     submittedModel_=nullptr;
     renderer_.useShaderProgram(0);

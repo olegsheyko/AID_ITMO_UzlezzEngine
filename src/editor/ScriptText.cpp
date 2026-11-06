@@ -1,3 +1,5 @@
+// Реализация текстовой модели скрипта (описание в ScriptText.h): перевод между файлом и буфером редактора,
+// разбор сообщений об ошибках Lua, автоотступы и сдвиг блока строк по Tab. Без ImGui, поэтому проверяется обычным тестом.
 #include "editor/ScriptText.h"
 
 #include <algorithm>
@@ -11,6 +13,7 @@ bool isIdentifierChar(char c) {
     return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
 }
 
+// Байт продолжения UTF-8 (10xxxxxx): сам символ не начинает, при подсчёте колонок его пропускаем.
 bool isContinuationByte(char c) {
     return (static_cast<unsigned char>(c) & 0xC0) == 0x80;
 }
@@ -41,6 +44,7 @@ std::string withoutComment(const std::string& line) {
     return line;
 }
 
+// Есть ли слово целиком, а не часть идентификатора (например, 'end' внутри 'endless' не считается).
 bool hasWord(const std::string& code, const std::string& word) {
     for (std::size_t pos = code.find(word); pos != std::string::npos; pos = code.find(word, pos + 1)) {
         const bool leftOk = pos == 0 || !isIdentifierChar(code[pos - 1]);
@@ -74,12 +78,14 @@ bool opensBlock(const std::string& code) {
 } // namespace
 
 std::string fromDisk(const std::string& bytes, DiskFormat& format) {
+    // 1. BOM в начале файла запоминаем в format и пропускаем.
     format = {};
     std::size_t start = 0;
     if (bytes.size() >= 3 && bytes.compare(0, 3, "\xEF\xBB\xBF") == 0) {
         format.bom = true;
         start = 3;
     }
+    // 2. Выбираем перевод строки: CRLF, если перед '\n' стоит '\r' хотя бы у половины строк.
     std::size_t lineFeeds = 0;
     std::size_t crLineFeeds = 0;
     for (std::size_t i = start; i < bytes.size(); ++i) {
@@ -90,6 +96,8 @@ std::string fromDisk(const std::string& bytes, DiskFormat& format) {
     }
     format.crlf = crLineFeeds > 0 && crLineFeeds * 2 >= lineFeeds;
 
+    // 3. Собираем текст буфера: CRLF и одиночный CR становятся '\n', табы раскрываются в пробелы до границы kTabWidth
+    // (column считает символы, а не байты), а tabIndent запоминает, что в начале строки были именно табы.
     std::string text;
     text.reserve(bytes.size());
     int column = 0;
@@ -125,6 +133,8 @@ std::string fromDisk(const std::string& bytes, DiskFormat& format) {
 }
 
 std::string toDisk(const std::string& text, const DiskFormat& format) {
+    // Идём по строкам. Если файл был с табами в отступе, ведущие пробелы снова собираем в табы,
+    // а перевод строки возвращаем прежний (CRLF или LF).
     std::string out;
     out.reserve(text.size() + 16);
     if (format.bom) {
@@ -203,6 +213,7 @@ int countLines(const std::string& text) {
 }
 
 bool parseErrorLocation(const std::string& message, std::string& path, int& line) {
+    // Перебираем все вхождения «.lua:» и берём первое, после которого идёт число больше нуля.
     std::size_t search = 0;
     for (std::size_t pos = message.find(".lua:"); pos != std::string::npos; pos = message.find(".lua:", search)) {
         search = pos + 5;
@@ -213,6 +224,7 @@ bool parseErrorLocation(const std::string& message, std::string& path, int& line
         if (digitsEnd == search) {
             continue;
         }
+        // Начало пути: идём влево, пока символы допустимы в пути.
         std::size_t begin = pos;
         while (begin > 0 && (isIdentifierChar(message[begin - 1]) || message[begin - 1] == '/' || message[begin - 1] == '.' ||
                                 message[begin - 1] == '-')) {
@@ -222,6 +234,7 @@ bool parseErrorLocation(const std::string& message, std::string& path, int& line
         if (number <= 0) {
             continue;
         }
+        // pos + 4 захватывает в путь и само «.lua».
         path = message.substr(begin, pos + 4 - begin);
         line = number;
         return true;
@@ -234,6 +247,7 @@ std::string errorText(const std::string& message) {
     int line = 0;
     std::string rest = message;
     if (parseErrorLocation(message, path, line)) {
+        // Отрезаем «путь.lua:строка:» и пробелы после него, остаётся сам текст ошибки.
         const std::size_t marker = message.find(".lua:" + std::to_string(line));
         std::size_t after = marker + 5 + std::to_string(line).size();
         if (after < message.size() && message[after] == ':') {
@@ -256,17 +270,22 @@ std::string tabSpaces(const std::string& text, int cursor) {
 }
 
 std::string newLineIndent(const std::string& text, int cursor) {
+    // Курсор должен стоять сразу после только что вставленного '\n', иначе отступ не переносим.
     if (cursor <= 0 || cursor > static_cast<int>(text.size()) || text[static_cast<std::size_t>(cursor - 1)] != '\n') {
         return {};
     }
+    // Берём предыдущую строку (без '\n'): её отступ переносим на новую.
     const int previousEnd = cursor - 1;
     const int previousStart = lineStart(text, previousEnd);
     const std::string line = text.substr(static_cast<std::size_t>(previousStart), static_cast<std::size_t>(previousEnd - previousStart));
+    // Отступ это ведущие пробелы (табов в буфере нет, fromDisk их раскрыл).
     std::size_t spaces = line.find_first_not_of(' ');
     if (spaces == std::string::npos) {
         spaces = line.size();
     }
     std::string indent(spaces, ' ');
+    // Смотрим на код без комментария и хвостовых пробелов: если строка открывает блок, добавляем ещё один шаг.
+    // Уменьшать отступ для закрывающего end эта функция не умеет, это делает пользователь.
     std::string code = withoutComment(line);
     while (!code.empty() && std::isspace(static_cast<unsigned char>(code.back()))) {
         code.pop_back();
@@ -277,6 +296,10 @@ std::string newLineIndent(const std::string& text, int cursor) {
     return indent;
 }
 
+// Tab и Shift+Tab над блоком строк. Расширяем выделение до целых строк [begin, end) и собираем их новый текст в
+// edit.replacement: при отступе добавляем kTabWidth пробелов (пустые строки не трогаем),
+// при outdent снимаем до kTabWidth пробелов.
+// Затем пересчитываем выделение функцией map, чтобы оно осталось на тех же символах, что и до сдвига.
 BlockEdit indentLines(const std::string& text, int selStart, int selEnd, bool outdent) {
     selStart = clampOffset(text, selStart);
     selEnd = clampOffset(text, selEnd);
@@ -289,12 +312,15 @@ BlockEdit indentLines(const std::string& text, int selStart, int selEnd, bool ou
     const int lastOffset = (selEnd > selStart && text[static_cast<std::size_t>(selEnd - 1)] == '\n') ? selEnd - 1 : selEnd;
     edit.end = lineEnd(text, lastOffset);
 
+    // Для пересчёта выделения помним по каждой строке, где она была (oldStart), где стала (newStart, от начала диапазона)
+    // и на сколько сдвинулся её текст (delta).
     struct Line {
         int oldStart;
         int newStart; // от начала диапазона
         int delta;
     };
     std::vector<Line> lines;
+    // Идём по строкам диапазона и собираем replacement.
     int position = edit.begin;
     while (true) {
         const int end = lineEnd(text, position);
@@ -323,6 +349,9 @@ BlockEdit indentLines(const std::string& text, int selStart, int selEnd, bool ou
         position = end + 1;
     }
 
+    // map: куда переехало смещение offset. За концом диапазона просто сдвигаем на totalShift. Внутри диапазона находим строку,
+    // в которой оно было, и сдвигаем колонку на delta этой строки. Колонку 0 оставляем нулевой,
+    // чтобы позиция не ушла левее начала строки.
     const int totalShift = static_cast<int>(edit.replacement.size()) - (edit.end - edit.begin);
     auto map = [&](int offset) {
         if (offset > edit.end) {

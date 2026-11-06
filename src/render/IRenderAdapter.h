@@ -117,9 +117,31 @@ class IRenderAdapter {
 	virtual void drawIndexed(unsigned int vao, unsigned int indexCount) = 0;
 	virtual void getFramebufferSize(int& width, int& height) const = 0;
 
+	// Отладочная разметка кадра. Группы команд видны в RenderDoc (дерево событий) и, на Windows,
+	// в Tracy как GPU-зоны; имена объектов видны в RenderDoc вместо голых номеров. Без поддержки
+	// всё это ничего не делает, поэтому звать можно всегда.
+	enum class DebugObject { Texture, Mesh, Program };
+	virtual void pushDebugGroup(const char* name) { (void)name; }
+	virtual void popDebugGroup() {}
+	virtual void setDebugLabel(DebugObject kind, unsigned int id, const std::string& name) { (void)kind; (void)id; (void)name; }
+	// Есть ли приёмник разметки. Пока его нет, рендеру незачем собирать строки имён групп.
+	virtual bool debugMarkersActive() const { return false; }
+
 	// Present the rendered frame.
 	virtual void endFrame() = 0;
 
 	// Release window and renderer resources.
 	virtual void shutdown() = 0;
+};
+
+// Группа отладочной разметки на время блока: открывается в конструкторе, закрывается в деструкторе.
+class RenderDebugScope {
+public:
+	RenderDebugScope(IRenderAdapter& renderer, const char* name) : renderer_(renderer) { renderer_.pushDebugGroup(name); }
+	~RenderDebugScope() { renderer_.popDebugGroup(); }
+	RenderDebugScope(const RenderDebugScope&) = delete;
+	RenderDebugScope& operator=(const RenderDebugScope&) = delete;
+
+private:
+	IRenderAdapter& renderer_;
 };

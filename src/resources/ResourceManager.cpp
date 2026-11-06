@@ -17,6 +17,18 @@
 #include <vector>
 
 namespace {
+// Имена GPU-объектов для отладчиков графики: в RenderDoc вместо «Texture 37» видно имя файла.
+std::string fileName(const std::string& path) {
+    const auto slash = path.find_last_of("/\\");
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+void labelMesh(IRenderAdapter* renderer, const MeshData& mesh, const std::string& path) {
+    if (renderer == nullptr) return;
+    for (std::size_t i = 0; i < mesh.subMeshes.size(); ++i)
+        renderer->setDebugLabel(IRenderAdapter::DebugObject::Mesh, mesh.subMeshes[i].vao, fileName(path) + " #" + std::to_string(i));
+    if (mesh.subMeshes.empty()) renderer->setDebugLabel(IRenderAdapter::DebugObject::Mesh, mesh.vao, fileName(path));
+}
+
 // Меряет, сколько главный поток провёл в загрузке — для колонки main_load_ms бенчмарка.
 class MainThreadLoadTimer {
 public:
@@ -59,6 +71,7 @@ std::shared_ptr<Resource<MeshData>> ResourceManager::loadMesh(const std::string&
     MainThreadLoadTimer timer(mainThreadLoadMs_);
     auto resource = std::make_shared<Resource<MeshData>>(path);
     if (MeshLoader::load(path, *resource->getData(), renderer_)) {
+        labelMesh(renderer_, *resource->getData(), path);
         // Resolve material textures once, not during every draw of every submesh.
         for (auto& subMesh : resource->getData()->subMeshes) {
             auto& material = subMesh.material;
@@ -91,6 +104,7 @@ std::shared_ptr<Resource<TextureData>> ResourceManager::loadTexture(const std::s
     MainThreadLoadTimer timer(mainThreadLoadMs_);
     auto resource = std::make_shared<Resource<TextureData>>(path);
     if (TextureLoader::load(path, *resource->getData(), renderer_)) {
+        if (renderer_) renderer_->setDebugLabel(IRenderAdapter::DebugObject::Texture, resource->getData()->textureId, fileName(path));
         resource->setLoaded(true);
         textureCache_[path] = resource;
         LOG_INFO("Texture loaded: " + path);
@@ -113,6 +127,7 @@ std::shared_ptr<Resource<ShaderData>> ResourceManager::loadShader(const std::str
     MainThreadLoadTimer timer(mainThreadLoadMs_);
     auto resource = std::make_shared<Resource<ShaderData>>(key);
     if (ShaderLoader::load(vertexPath, fragmentPath, *resource->getData(), renderer_)) {
+        if (renderer_) renderer_->setDebugLabel(IRenderAdapter::DebugObject::Program, resource->getData()->programId, fileName(vertexPath) + " | " + fileName(fragmentPath));
         resource->setLoaded(true);
         shaderCache_[key] = resource;
         LOG_INFO("Shader loaded: " + key);
@@ -176,7 +191,7 @@ std::shared_ptr<Resource<MeshData>> ResourceManager::loadMeshAsync(const std::st
     auto resource = std::make_shared<Resource<MeshData>>(path);
     meshCache_[path] = resource;
     startAsync(resource, [path](MeshData& data) { return MeshLoader::decode(path, data); },
-        [this, priority, next = size_t{0}](MeshData& data) mutable {
+        [this, path, priority, next = size_t{0}](MeshData& data) mutable {
             ZoneScopedN("Mesh GPU upload chunk");
             if (!renderer_ || data.subMeshes.empty()) throw std::runtime_error("Mesh has no GPU data");
             // One submesh per pump step; texture decoding uses the same Job System.
@@ -184,6 +199,7 @@ std::shared_ptr<Resource<MeshData>> ResourceManager::loadMeshAsync(const std::st
             if (!sub.material.diffuseTexturePath.empty())
                 sub.material.cachedDiffuseTexture = loadTextureAsync(sub.material.diffuseTexturePath, priority);
             if (!MeshLoader::uploadSubMeshToGPU(sub, renderer_)) throw std::runtime_error("Mesh GPU upload failed");
+            renderer_->setDebugLabel(IRenderAdapter::DebugObject::Mesh, sub.vao, fileName(path) + " #" + std::to_string(next));
             if (++next < data.subMeshes.size()) return false;
             if (data.subMeshes.size() == 1) {
                 data.vao = sub.vao; data.vbo = sub.vbo; data.ebo = sub.ebo; data.indexCount = sub.indexCount;
@@ -213,6 +229,7 @@ std::shared_ptr<Resource<TextureData>> ResourceManager::loadTextureAsync(const s
     startAsync(resource, [path](TextureData& data) { return TextureLoader::decode(path, data); },
         [this, path](TextureData& data) {
             if (!TextureLoader::upload(data, renderer_, path)) throw std::runtime_error("Texture GPU upload failed: " + path);
+            if (renderer_) renderer_->setDebugLabel(IRenderAdapter::DebugObject::Texture, data.textureId, fileName(path));
             return true;
         }, [](TextureData& data) { std::free(data.pixels); data.pixels = nullptr; }, priority);
     return resource;
@@ -300,6 +317,7 @@ unsigned int ResourceManager::placeholderTextureId() {
             }
         }
         renderer_->createTexture(kSize, kSize, 4, pixels.data(), placeholderTextureId_);
+        renderer_->setDebugLabel(IRenderAdapter::DebugObject::Texture, placeholderTextureId_, "Placeholder checker");
     }
     return placeholderTextureId_;
 }
@@ -387,6 +405,7 @@ void ResourceManager::reloadShader(const std::string& vertexPath, const std::str
         }
 
         if (ShaderLoader::load(vertexPath, fragmentPath, *shaderData, renderer_)) {
+            if (renderer_) renderer_->setDebugLabel(IRenderAdapter::DebugObject::Program, shaderData->programId, fileName(vertexPath) + " | " + fileName(fragmentPath));
             LOG_INFO("Shader reloaded: " + key);
         } else {
             LOG_ERROR("Failed to reload shader: " + key);

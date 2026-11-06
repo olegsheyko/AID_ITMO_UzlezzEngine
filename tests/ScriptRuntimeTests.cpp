@@ -1,5 +1,7 @@
 // Рантайм скриптов сверх базовой механики: место ошибки из C++-биндингов, print в лог,
 // приведение типов полей, лимиты времени и памяти (sandbox).
+// Запускается через ctest из корня репозитория (читает tools/lua-stubs/uzlezz.lua). Каждый тест независим:
+// упавший печатает причину и не мешает остальным, а код возврата 1 говорит, что упал хотя бы один.
 #include "scripting/ScriptSystem.h"
 #include "scripting/ScriptWatcher.h"
 #include "ecs/Components.h"
@@ -19,11 +21,14 @@
 #include <vector>
 
 namespace {
+// Папка для временных Lua-файлов (первый аргумент командной строки).
 std::filesystem::path fixtures;
 
+// Проверка: при невыполнении бросает исключение, main считает тест упавшим и печатает message.
 void require(bool ok, const std::string& message) {
     if (!ok) throw std::runtime_error(message);
 }
+// Записывает Lua-файл в папку фикстур и возвращает путь к нему (его кладут в ScriptComponent.path).
 std::string write(const std::string& name, const std::string& text) {
     const auto path = fixtures / name;
     std::ofstream out(path);
@@ -31,6 +36,7 @@ std::string write(const std::string& name, const std::string& text) {
     require(bool(out), "fixture write failed: " + path.string());
     return path.string();
 }
+// Создаёт сущность со скриптом из файла path и классом className. fields задают начальные значения полей, как в префабе.
 Entity attach(World& world, const std::string& path, const std::string& className,
     std::map<std::string, ScriptValue> fields = {}) {
     const Entity entity = world.createEntity();
@@ -38,6 +44,7 @@ Entity attach(World& world, const std::string& path, const std::string& classNam
     world.addComponent<ScriptComponent>(entity, ScriptComponent{path, className, {}, std::move(fields)});
     return entity;
 }
+// Значение поля скрипта у сущности. Тип T должен совпасть с хранимым, иначе std::get бросит исключение.
 template<class T> T field(World& world, Entity entity, const std::string& name) {
     return std::get<T>(world.getComponent<ScriptComponent>(entity).fields.at(name));
 }
@@ -51,6 +58,8 @@ std::string logSince(std::uint64_t& cursor) {
 }
 bool contains(const std::string& text, const std::string& part) { return text.find(part) != std::string::npos; }
 
+// Ошибка из C++-биндинга (здесь опечатка в имени поля) должна содержать файл и строку Lua, откуда её вызвали.
+// Сломавшийся экземпляр отключается, движок продолжает работать.
 void bindingErrorsHaveLocation() {
     World world;
     ScriptSystem scripts(world);
@@ -68,6 +77,7 @@ end
     scripts.update(0.1f, true); // отключённый экземпляр больше не зовётся, движок жив
 }
 
+// print из Lua попадает в лог движка с местом вызова, а доступ к файлам закрыт песочницей (dofile и loadfile убраны).
 void printGoesToLogAndFilesAreClosed() {
     World world;
     ScriptSystem scripts(world);
@@ -85,6 +95,9 @@ end
     require(contains(log, "print.lua:4: hello\t42\tnil"), "print must reach the engine log with its location:\n" + log);
 }
 
+// Приведение типов полей между JSON префаба и Lua. int расширяется до double, целое число double сужается до int,
+// несовпадающий тип сбрасывается к значению по умолчанию, необъявленное поле удаляется. Reload при этом только предупреждает
+// в лог и не падает. set_field тоже приводит числа, а дробное значение в целое поле даёт ошибку с местом.
 void fieldTypesAreCoerced() {
     World world;
     ScriptSystem scripts(world);
@@ -115,9 +128,12 @@ end
         "fractional value into an integer field must fail with location: " + scripts.error());
 }
 
+// Лимит времени: бесконечный цикл в on_update прерывается по бюджету и отключает только свой экземпляр, остальные работают.
+// Бесконечный цикл в теле файла (при загрузке) тоже прерывается.
 void runawayScriptIsInterrupted() {
     World world;
     ScriptSystem scripts(world);
+    // Бюджет на один вызов 50 мс (по умолчанию 100), память по умолчанию.
     scripts.setLimits(ScriptLimits{50, ScriptLimits{}.memoryBytes});
     const auto loop = write("loop.lua", R"(Loop = uzlezz.behaviour {fields = {}}
 function Loop:on_update(dt)
@@ -139,11 +155,13 @@ end
     require(elapsed < std::chrono::seconds(2), "infinite loop must be interrupted by the time budget");
     require(contains(scripts.error(), "loop.lua:4:") && contains(scripts.error(), "50 ms time budget"),
         "budget error must point at the loop: " + scripts.error());
+    // Зациклившийся экземпляр отключён, а соседний Counter считает дальше: один тик в первом update и ещё десять.
     for (int i = 0; i < 10; ++i) scripts.update(0.1f, true);
     require(field<int>(world, ticks, "ticks") == 11, "other instances keep running");
     require(scripts.stats().failedInstances == 1, "only the runaway instance is disabled");
     scripts.stop();
 
+    // Бесконечный цикл не в функции, а в теле файла: он выполняется при загрузке, и бюджет прерывает его тоже.
     const auto topLevel = write("toplevel.lua", "Spin = uzlezz.behaviour {fields = {}}\nwhile true do end\n");
     world.clear();
     attach(world, topLevel, "Spin");
@@ -151,6 +169,7 @@ end
     require(contains(scripts.error(), "toplevel.lua:2:"), "load budget error must point at the file: " + scripts.error());
 }
 
+// Лимит кучи Lua: попытка выделить строку в 1 ГБ отклоняется как ошибка скрипта, память остаётся маленькой.
 void heapLimitIsEnforced() {
     World world;
     ScriptSystem scripts(world);
@@ -169,6 +188,8 @@ end
     require(stats.instances == 1, "stats count instances");
 }
 // Версии одного поведения для hot reload. Состояние self.* выводится в поля, чтобы тест его видел.
+// label попадает в поле label (так видно, какая версия кода работает), speedFactor это множитель скорости,
+// extra дописывается в конец файла (например, свой on_reload или сломанный on_update).
 std::string mover(const std::string& label, const std::string& speedFactor, const std::string& extra = {}) {
     return "Mover = uzlezz.behaviour {fields = {speed = 1.0, ticks = 0, label = ''}}\n"
         "function Mover:on_create() self.ticks = 0; self.label = '" + label + "' end\n"
@@ -183,6 +204,10 @@ std::string mover(const std::string& label, const std::string& speedFactor, cons
 }
 float positionX(World& world, Entity entity) { return world.getComponent<Transform>(entity).position.x; }
 
+// Hot reload в Play (ScriptSystem::hotReload) на версиях v1, v2 и так далее одного файла.
+// Проверяется, что новый код работает без Stop, состояние переносится или сбрасывается по режиму,
+// сломанный файл не мешает старому коду, отключённый ошибкой экземпляр оживает после исправления,
+// а 200 перезагрузок подряд не роняют скрипты и не раздувают кучу.
 void hotReloadInPlay() {
     World world;
     ScriptSystem scripts(world);
@@ -270,8 +295,10 @@ void watcherUsesJobSystem() {
     };
     save("Watched = 1\n");
     ScriptWatcher watcher;
+    // Без паузы между опросами: новая фоновая задача ставится, как только закончилась прошлая.
     watcher.interval = 0.0;
     const std::vector<std::string> roots{dir.string()};
+    // Опрашивает вотчер (до 400 раз по 5 мс), пока фоновая задача не вернёт изменения. now растёт на 1.0 за вызов.
     auto waitForChange = [&]() {
         double now = 0.0;
         for (int i = 0; i < 400; ++i) {
@@ -282,6 +309,7 @@ void watcherUsesJobSystem() {
         }
         throw std::runtime_error("watcher did not report the change");
     };
+    // Первый проход запоминает метки как базовую версию, изменением он не считается.
     watcher.scanNow(roots, {});
     require(watcher.drain().empty(), "first scan is a baseline, not a change");
 
@@ -306,8 +334,10 @@ void ideStubsMatchBindings() {
     std::stringstream buffer;
     buffer << in.rdbuf();
     const std::string stub = buffer.str();
+    // Что реально привязано в C++ (имена вида Тип:метод).
     const auto bound = scripts.apiNames();
     require(bound.size() >= 15, "bindings introspection returned too few names");
+    // Привязано, значит должно быть описано: в заглушке есть класс uzlezz.Тип, а в нём функция или поле.
     for (const std::string& name : bound) {
         const auto colon = name.find(':');
         const std::string type = name.substr(0, colon), member = name.substr(colon + 1);
@@ -320,6 +350,7 @@ void ideStubsMatchBindings() {
             contains(section, "---@field " + member + " ");
         require(documented, "stub does not describe bound " + name);
     }
+    // И наоборот: каждый метод, который обещает заглушка, должен быть привязан.
     const std::regex method(R"(function (\w+):(\w+)\()");
     for (auto it = std::sregex_iterator(stub.begin(), stub.end(), method); it != std::sregex_iterator(); ++it) {
         const std::string name = (*it)[1].str() + ":" + (*it)[2].str();
@@ -328,6 +359,7 @@ void ideStubsMatchBindings() {
 }
 } // namespace
 
+// Первый аргумент это папка для фикстур.
 int main(int argc, char** argv) {
     fixtures = std::filesystem::absolute(argc > 1 ? argv[1] : "script-runtime-fixtures");
     std::filesystem::create_directories(fixtures);
@@ -341,8 +373,10 @@ int main(int argc, char** argv) {
         {"hot reload in Play (L1/L2)", hotReloadInPlay},
         {"watcher uses the job system", watcherUsesJobSystem},
     };
+    // Вотчеру нужен запущенный job system (воркеры).
     JobSystem::getInstance().init();
     int failed = 0;
+    // Тесты идут по одному: исключение из require считается падением только этого теста.
     for (const auto& [name, test] : tests) {
         try {
             test();

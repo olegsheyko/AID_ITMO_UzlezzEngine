@@ -8,8 +8,12 @@
 //   move x y | down b | up b | click x y | drag x1 y1 x2 y2 | wheel dy | key Name | key ctrl+D | text строка
 //   shot файл.png | quit
 // Координаты — в точках окна, кнопки мыши 0/1/2. '#' — комментарий.
+// Запускается параметром --editor-script файл (см. docs/EDITOR.md). Кроме перечисленного есть rclick (правая кнопка)
+// и dclick (двойной клик). Перетаскивание собирается из шагов move, down, move, up.
+// Сценарий держит EditorState: apply() вызывается на каждом кадре, screenshots() и quitAt() после кадра.
 class EditorScript {
 public:
+    // Читает файл сценария. false, если файл не открылся (причина в outError).
     bool load(const std::string& path, std::string& outError);
     bool empty() const { return steps_.empty(); }
     // Вызывается до NewFrame: ставит в очередь ImGui события этого кадра.
@@ -27,6 +31,8 @@ private:
     // Отложенное событие: клик разносится на кадры «навести — нажать — отпустить», как у живой руки.
     struct Pending {
         int frame = 0;
+        // mouseButton: 0..2 кнопка мыши, -1 клавиша ImGui (поле key), -2 клавиша игры (kGameKey в .cpp).
+        // down: true нажать, false отпустить.
         int mouseButton = -1;
         int key = 0;
         bool down = false;

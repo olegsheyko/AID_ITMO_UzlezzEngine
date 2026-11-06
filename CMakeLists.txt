@@ -299,6 +299,7 @@ add_executable(GameEngine
     src/input/GlfwInputHandler.cpp
     src/input/InputManager.cpp
     src/render/OpenGLRenderAdapter.cpp
+    src/render/GpuMarkers.cpp
     src/editor/AssetDatabase.cpp
     src/editor/AssetPreview.cpp
     src/editor/EditorCamera.cpp
@@ -407,6 +408,7 @@ if(BUILD_TESTING)
         src/ecs/World.cpp
         src/ecs/RenderSystem.cpp
         src/render/OpenGLRenderAdapter.cpp
+        src/render/GpuMarkers.cpp
         src/render/ShaderProgram.cpp
         src/resources/ResourceManager.cpp
         src/resources/MeshLoader.cpp

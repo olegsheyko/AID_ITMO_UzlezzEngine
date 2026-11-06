@@ -13,6 +13,8 @@
 namespace {
 // ordered_json: Save to Prefab не переставляет ключи файла.
 using Json=nlohmann::ordered_json;
+// JSON-массив из трёх чисел в Vec3. Если ключа нет (null), берётся значение по умолчанию fallback.
+// Неверная длина или NaN дают ошибку, чтобы испорченный префаб не попал в сцену.
 Vec3 vector(const Json& j,Vec3 fallback){
     if(j.is_null())return fallback;
     if(!j.is_array()||j.size()!=3)throw std::runtime_error("Expected vector of three numbers");
@@ -20,6 +22,8 @@ Vec3 vector(const Json& j,Vec3 fallback){
     if(!std::isfinite(v.x)||!std::isfinite(v.y)||!std::isfinite(v.z))throw std::runtime_error("Non-finite vector");
     return v;
 }
+// JSON-значение в поле скрипта. Поддержаны bool, целое (в пределах int32), дробное и строка.
+// Тип в JSON решает тип поля: 2 даст int, а 2.0 даст double (потом ScriptSystem приведёт к типу из Lua-класса).
 ScriptValue value(const Json& j){
     if(j.is_boolean())return j.get<bool>();
     if(j.is_number_integer()) {
@@ -36,6 +40,14 @@ ScriptValue value(const Json& j){
     throw std::runtime_error("Prefab fields must be bool, int, float or string");
 }
 }
+// Создание сущности из префаба. Порядок:
+//   1. прочитать и разобрать JSON, заранее собрать Transform и ScriptComponent (ошибки данных вылезут до создания);
+//   2. создать пустую сущность и по очереди добавить компоненты, которые описаны в файле:
+//      tag, transform, script, animator, collider, rigidbody, meshRenderer;
+//   3. meshRenderer только запрашивает ресурсы (меш и текстура грузятся асинхронно, шейдер синхронно),
+//      а в тестах без графики (renderResources=false) пропускается;
+//   4. если что-то бросило исключение, сущность целиком удаляется (catch внизу) и ошибка идёт дальше.
+// Отсутствующие в файле поля получают значения по умолчанию, поэтому префаб может быть очень коротким.
 Entity PrefabManager::spawn(World& world,const std::string& path,bool renderResources){
     std::ifstream in(path);if(!in)throw std::runtime_error("Cannot open prefab: "+path);
     Json document;in>>document;
@@ -89,6 +101,12 @@ Entity PrefabManager::spawn(World& world,const std::string& path,bool renderReso
     } catch(...) {world.destroyEntity(e);throw;}
     return e;
 }
+// Сохранение полей скрипта в исходный префаб (кнопка Save to Prefab в Inspector). Шаги:
+//   1. прочитать текущий JSON и проверить, что скрипт в нём тот же (файл мог измениться на диске);
+//   2. убрать из секции fields ключи, которых больше нет у компонента, и записать текущие значения;
+//   3. записать результат во временный файл .tmp и заменить им исходный: если запись прервётся,
+//      исходный префаб не будет повреждён (на Windows замена через MoveFileEx, на остальных rename).
+// Остальные ключи файла не трогаются, порядок ключей сохраняется (ordered_json).
 bool PrefabManager::saveFields(const ScriptComponent& component,std::string& error){
     try {
         if(component.prefab.empty())throw std::runtime_error("Entity has no source prefab");

@@ -21,6 +21,8 @@ Entity World::createEntityWithId(Entity entity) {
     return entity;
 }
 
+// Удаляет сущность: отцепляет её от родителя, у детей обнуляет parent, убирает id и поколение
+// и стирает компонент этой сущности из каждой таблицы. Дети не удаляются вместе с родителем.
 void World::destroyEntity(Entity entity) {
     if (!isAlive(entity)) {
         return;

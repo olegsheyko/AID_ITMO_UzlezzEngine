@@ -186,6 +186,9 @@ bool OpenGLRenderAdapter::init(int width, int height, const std::string& title) 
 		return false;
 	}
 
+	markers_.init();
+	LOG_INFO(std::string("OpenGLRenderAdapter: debug markers: ") + markers_.backend());
+
 	glfwSetFramebufferSizeCallback(window_, framebufferSizeCallback);
 	glViewport(0, 0, width, height);
 	glfwSwapInterval(1);
@@ -798,6 +801,17 @@ void OpenGLRenderAdapter::getFramebufferSize(int& width, int& height) const {
 void OpenGLRenderAdapter::endFrame() {
 	if (window_) {
 		glfwSwapBuffers(window_);
+	}
+	// Времена GPU-зон Tracy забираются после present, когда команды кадра уже отправлены.
+	markers_.collect();
+}
+
+void OpenGLRenderAdapter::setDebugLabel(DebugObject kind, unsigned int id, const std::string& name) {
+	// Первое число: тип объекта для KHR_debug, второе: для EXT_debug_label (у них разные константы).
+	switch (kind) {
+	case DebugObject::Texture: markers_.label(GL_TEXTURE, GL_TEXTURE, id, name.c_str()); break;
+	case DebugObject::Mesh: markers_.label(0x8074 /* GL_VERTEX_ARRAY */, 0x9154 /* GL_VERTEX_ARRAY_OBJECT_EXT */, id, name.c_str()); break;
+	case DebugObject::Program: markers_.label(0x82E2 /* GL_PROGRAM */, 0x8B40 /* GL_PROGRAM_OBJECT_EXT */, id, name.c_str()); break;
 	}
 }
 

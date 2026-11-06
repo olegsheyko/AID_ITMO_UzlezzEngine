@@ -722,13 +722,18 @@ void InspectorPanel::drawCamera(EditorContext& context, Entity entity, bool lock
     }
 }
 
+// Секция компонента ScriptComponent (ЛР 2): ссылки на файлы скрипта и префаба, поля из fields Lua-класса
+// (виджет выбирается по типу значения), кнопки Edit Script, Save to Prefab и Reload Scripts.
+// В Play (locked) значения только для чтения. Действие из меню заголовка (action) применяется в конце функции.
 void InspectorPanel::drawScript(EditorContext& context, Entity entity, bool locked) {
     if (!context.world.hasComponent<ScriptComponent>(entity)) {
         return;
     }
     ScriptComponent& script = context.world.getComponent<ScriptComponent>(entity);
     const std::string title = script.className.empty() ? std::string("Script") : script.className + " (Script)";
+    // Записать поля в префаб можно, только если сущность создана из префаба и сейчас не Play.
     const bool canSave = !locked && !script.prefab.empty();
+    // Extra здесь значит «записать поля в файл префаба»: его выдаёт и пункт меню заголовка, и кнопка Save to Prefab ниже.
     EditorUI::ComponentAction action;
     if (EditorUI::componentHeader("script", ICON_LC_FILE_CODE, title.c_str(), !locked, action,
             canSave ? ICON_LC_SAVE "  Save Fields to Prefab" : nullptr)) {
@@ -751,6 +756,8 @@ void InspectorPanel::drawScript(EditorContext& context, Entity entity, bool lock
                 assetLink("Prefab", ICON_LC_PACKAGE, script.prefab);
             }
             ImGui::BeginDisabled(locked);
+            // Поля скрипта правятся прямо в script.fields. Тип значения (bool, int, double, строка)
+            // выбирает виджет через std::visit, а PushID по имени поля нужен, потому что у всех виджетов один и тот же id «##value».
             for (auto& [name, value] : script.fields) {
                 const std::string label = nicifyFieldName(name);
                 ImGui::PushID(name.c_str());
@@ -782,6 +789,8 @@ void InspectorPanel::drawScript(EditorContext& context, Entity entity, bool lock
             EditorUI::textFaint("No fields: declare them in the Lua class.");
         }
         ImGui::Dummy(ImVec2(0.0f, 2.0f));
+        // Открыть файл в редакторе скриптов: просьба уходит в context.openScriptRequest,
+        // панель редактора заберёт её в начале кадра.
         if (ImGui::Button(ICON_LC_FILE_PEN "  Edit Script", ImVec2(-FLT_MIN, 0.0f))) {
             context.openScriptRequest = script.path;
         }
@@ -798,12 +807,14 @@ void InspectorPanel::drawScript(EditorContext& context, Entity entity, bool lock
             ImGui::SetItemTooltip("Write these values into %s.\nNew spawns and scene loads use the prefab, not this copy.",
                 script.prefab.empty() ? "the source prefab" : script.prefab.c_str());
             ImGui::SameLine();
+            // Кнопка есть только вне Play. Результат (или текст ошибки) запоминаем и показываем под кнопками.
             if (ImGui::Button(ICON_LC_REFRESH_CW "  Reload Scripts", ImVec2(-FLT_MIN, 0.0f))) {
                 const bool ok = context.reloadScripts();
                 scriptResultEntity_ = entity;
                 scriptResult_ = ok ? "Scripts reloaded." : context.scripts.error();
                 scriptResultError_ = !ok;
             }
+            // Результат последней перезагрузки или записи в префаб показываем только у той сущности, для которой его получили.
             if (scriptResultEntity_ == entity && !scriptResult_.empty()) {
                 EditorUI::pushSmallFont();
                 ImGui::PushStyleColor(ImGuiCol_Text, toVec4(scriptResultError_ ? kError : kSuccess));
@@ -814,6 +825,7 @@ void InspectorPanel::drawScript(EditorContext& context, Entity entity, bool lock
         }
         EditorUI::componentSpacing();
     }
+    // Действие, выбранное в меню заголовка или кнопкой, применяем после отрисовки секции.
     if (action == EditorUI::ComponentAction::Extra && canSave) {
         const bool ok = context.savePrefabFields(entity);
         scriptResultEntity_ = entity;

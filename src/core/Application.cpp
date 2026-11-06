@@ -307,6 +307,7 @@ void Application::renderEditorGuiFrame() {
 	}
 
 	ImGui::Render();
+	RenderDebugScope gui(*renderer_, "ImGui");
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 

@@ -25,6 +25,7 @@ void CullingBenchmark::onEnter() {
         unsigned char pixels[3]={static_cast<unsigned char>(60+(i*71)%190),
             static_cast<unsigned char>(60+(i*113)%190),static_cast<unsigned char>(60+(i*43)%190)};
         if (!renderer_.createTexture(1,1,3,pixels,texture->getData()->textureId)) {failed_=finished_=true;return;}
+        renderer_.setDebugLabel(IRenderAdapter::DebugObject::Texture,texture->getData()->textureId,"Bench texture "+std::to_string(i+1));
         texture->setLoaded(true);
         textures_.push_back(texture);
     }
@@ -115,7 +116,10 @@ void CullingBenchmark::render() {
         renderer_.beginFrame(.075f,.075f,.08f);
         setCamera(0);
     }
-    render_.render(world_);
+    {
+        RenderDebugScope pass(renderer_,"Culling benchmark frame");
+        render_.render(world_);
+    }
     lastStats_=render_.stats();
     if (!config_.live) return; // benchmark excludes UI
     const int mode=(render_.cullingEnabled ? 2:0)+(render_.sortingEnabled ? 1:0);

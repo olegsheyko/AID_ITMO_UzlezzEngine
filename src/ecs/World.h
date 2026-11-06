@@ -19,6 +19,10 @@
 struct Transform;
 struct MeshRenderer;
 struct Hierarchy;
+
+// Мир ECS: набор живых сущностей и таблицы компонентов (для каждого типа своя таблица id в компонент).
+// Для скриптинга здесь две вещи, на которых держится безопасность handle (см. EntityHandle в ScriptSystem.cpp):
+// lifetime() и generation().
 class World {
 public:
     // Mutable component access is an edit notification. Do not retain mutable
@@ -34,7 +38,11 @@ public:
     std::unordered_map<Entity,Visibility::Handle> visibilityHandles;
     std::unordered_set<Entity> visibilityPending;
     // Weak lifetime token invalidates handles on clear and World destruction.
+    // Слабая ссылка на «токен жизни» мира. clear() создаёт новый токен, поэтому все handle,
+    // выданные до очистки, перестают быть действительными.
     std::weak_ptr<int> lifetime() const { return lifetime_; }
+    // Номер поколения сущности. Он уникален для каждого создания, поэтому handle на удалённую сущность
+    // не совпадёт даже в том случае, если такой же id окажется занят снова. У мёртвой сущности возвращает 0.
     std::uint64_t generation(Entity e) const { auto it = generations_.find(e); return it == generations_.end() ? 0 : it->second; }
     Entity createEntity();
     Entity createEntityWithId(Entity entity);
@@ -95,6 +103,8 @@ public:
         }
     }
 
+    // Вызывает func(entity, первый, остальные...) для каждой сущности, у которой есть все перечисленные компоненты.
+    // Обход идёт по таблице первого типа, остальные компоненты ищутся по id. Порядок обхода не определён.
     template <typename TFirst, typename... TRest, typename Func>
     void forEach(Func&& func) {
         static_assert(kIsComponent<TFirst> && (... && kIsComponent<TRest>), "All component types must satisfy the Component contract");

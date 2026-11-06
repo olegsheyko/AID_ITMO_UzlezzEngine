@@ -11,6 +11,12 @@
 // Вотчер .lua для hot reload. Тяжёлая часть — обход папок, сравнение меток, чтение файла и проверка
 // синтаксиса в одноразовом lua_State — идёт задачей job system на воркере. Главный поток только
 // ставит задачу и забирает готовые изменения; применяет их ScriptSystem там же, на главном потоке.
+//
+// Как это используется (EditorContext::update каждый кадр):
+//   1. poll() раз в interval ставит фоновую задачу scan();
+//   2. scan() на воркере находит изменённые файлы и складывает результаты в Shared::ready;
+//   3. drain() на главном потоке забирает готовые Change, и редактор передаёт каждый в hotReload.
+// Общие данные (Shared) защищены mutex, потому что их трогают сразу два потока.
 class ScriptWatcher {
 public:
     struct Change {
@@ -43,12 +49,15 @@ public:
     static bool validate(const std::string& path, const std::string& source, std::string& error);
 
 private:
+    // «Отпечаток» файла: время последней записи и размер. Если он изменился, файл считается изменённым.
     struct Stamp {
         std::filesystem::file_time_type time{};
         std::uintmax_t size = 0;
         bool operator==(const Stamp& other) const { return time == other.time && size == other.size; }
         bool operator!=(const Stamp& other) const { return !(*this == other); }
     };
+    // Данные, общие для главного потока и воркера. Лежат в shared_ptr, чтобы задача могла безопасно
+    // дожить до конца, даже если сам вотчер уже уничтожен.
     struct Shared {
         std::mutex mutex;
         std::map<std::string, Stamp> known;   // последняя применённая версия

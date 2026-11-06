@@ -1,5 +1,6 @@
 #pragma once
 #include "IRenderAdapter.h"
+#include "render/GpuMarkers.h"
 #include "render/ShaderProgram.h"
 
 #include <glad/glad.h>
@@ -78,6 +79,10 @@ class OpenGLRenderAdapter : public IRenderAdapter {
 	virtual void bindTexture2D(unsigned int textureId, unsigned int unit) override;
 	virtual void drawIndexed(unsigned int vao, unsigned int indexCount) override;
 	virtual void getFramebufferSize(int& width, int& height) const override;
+	virtual void pushDebugGroup(const char* name) override { markers_.push(name); }
+	virtual void popDebugGroup() override { markers_.pop(); }
+	virtual void setDebugLabel(DebugObject kind, unsigned int id, const std::string& name) override;
+	virtual bool debugMarkersActive() const override { return markers_.active(); }
 	virtual void endFrame() override;
 	virtual void shutdown() override;
 
@@ -133,6 +138,7 @@ private:
 	bool renderingViewport_ = false;
 	bool hiddenWindow_ = false;
 	bool captureEnabled_ = false;
+	GpuMarkers markers_; // разметка для RenderDoc и GPU-зоны Tracy
 	GLuint gridProgram_ = 0;
 	GLuint gridVao_ = 0;
 	GLuint gridVbo_ = 0;

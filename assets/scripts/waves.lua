@@ -5,12 +5,16 @@
 ---@field timer number секунды до следующего спавна
 ---@field serial integer порядковый номер спавна в волне
 ---@field wave_count integer размер текущей волны
+-- Поля: first_wave_count и count_increment задают размер волны (первая волна, и на сколько больше каждая
+-- следующая), spawn_interval (пауза между врагами внутри волны), spawn_radius (радиус круга вокруг ядра,
+-- где появляются враги), enemy_prefab (какой префаб спавнить). Значения переопределяются в waves.json.
 Waves = uzlezz.behaviour {
     fields = {first_wave_count = 4, count_increment = 2,
               spawn_interval = 0.6, spawn_radius = 10.0,
               enemy_prefab = "assets/prefabs/enemy.json"}
 }
 
+-- Старт Play: проверяем баланс и обнуляем состояние волн (оно хранится в self, а не в fields).
 function Waves:on_create()
     assert(self.entity:get_field("first_wave_count") >= 1 and self.entity:get_field("count_increment") >= 0,
            "Wave count must be positive and increment nonnegative")
@@ -20,6 +24,11 @@ function Waves:on_create()
     self.wave_count = 0
 end
 
+-- Каждый кадр. Это управляющий скрипт игры: он сам решает, когда начинается волна и когда игра проиграна.
+--   1. Если у ядра не осталось HP, показываем поражение и больше ничего не делаем.
+--   2. Если волна закончена (врагов нет, спавнить нечего) и нажат Space, начинаем следующую.
+--   3. Пока есть кого спавнить и таймер вышел, создаём врага из префаба на окружности вокруг ядра.
+--   4. Обновляем строку статуса для HUD и окна Gameplay.
 function Waves:on_update(dt)
     local core = self.world:find_by_tag("Core")
     assert(core:is_alive(), "Wave scene needs a Core")

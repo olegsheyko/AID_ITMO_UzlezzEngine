@@ -1,3 +1,6 @@
+// Проигрыватель сценария ввода для проверки редактора без человека (параметр --editor-script, формат описан в EditorScript.h).
+// Превращает шаги сценария в события ImGui по номерам кадров, а клавиши без модификаторов ещё и в нажатия InputManager,
+// чтобы их видела игра.
 #include "editor/EditorScript.h"
 
 #include "input/InputManager.h"
@@ -36,6 +39,8 @@ KeyCode gameKeyByName(const std::string& name) {
     return KeyCode::Unknown;
 }
 
+// Клавиша ImGui по имени (Escape, Enter, D, F5 и так далее): перебираем все именованные клавиши, регистр не важен.
+// Не нашли: ImGuiKey_None.
 ImGuiKey keyByName(const std::string& name) {
     const std::string wanted = lower(name);
     for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key) {
@@ -61,11 +66,14 @@ int modifierByName(const std::string& name) {
     return 0;
 }
 
+// Числовой аргумент шага; если аргумента нет или он не число, то 0.
 float number(const std::vector<std::string>& args, std::size_t index) {
     return index < args.size() ? std::strtof(args[index].c_str(), nullptr) : 0.0f;
 }
 }
 
+// Разбирает файл сценария в список шагов. Пустые и неразборные строки пропускаются без ошибки,
+// ошибкой считается только файл, который не открылся.
 bool EditorScript::load(const std::string& path, std::string& outError) {
     std::ifstream file(path);
     if (!file) {
@@ -76,6 +84,7 @@ bool EditorScript::load(const std::string& path, std::string& outError) {
     int lineNumber = 0;
     while (std::getline(file, line)) {
         ++lineNumber;
+        // Всё после '#' это комментарий. Из-за этого в строке text нельзя написать «#».
         const std::size_t hash = line.find('#');
         if (hash != std::string::npos) {
             line.erase(hash);
@@ -85,6 +94,8 @@ bool EditorScript::load(const std::string& path, std::string& outError) {
         if (!(stream >> step.frame >> step.action)) {
             continue;
         }
+        // Для text аргумент это весь остаток строки с пробелами (без первого пробела),
+        // для остальных действий аргументы делятся по пробелам.
         if (step.action == "text") {
             std::string rest;
             std::getline(stream, rest);
@@ -97,10 +108,13 @@ bool EditorScript::load(const std::string& path, std::string& outError) {
         }
         steps_.push_back(step);
     }
+    // Сортировка по кадру стабильная: шаги одного кадра выполняются в том порядке, в каком они записаны в файле.
     std::stable_sort(steps_.begin(), steps_.end(), [](const Step& a, const Step& b) { return a.frame < b.frame; });
     return true;
 }
 
+// Вызывается на каждом кадре до NewFrame. Сначала выполняет отложенные события (отпускания и вторые половинки кликов),
+// потом шаги, назначенные на этот кадр. Нажатие и отпускание разнесены по кадрам, чтобы ImGui и игра успели их заметить.
 void EditorScript::apply(int frame) {
     ImGuiIO& io = ImGui::GetIO();
     for (auto it = pending_.begin(); it != pending_.end();) {
@@ -117,6 +131,7 @@ void EditorScript::apply(int frame) {
         }
         it = pending_.erase(it);
     }
+    // Шаги этого кадра.
     for (const Step& step : steps_) {
         if (step.frame != frame) {
             continue;
@@ -131,6 +146,7 @@ void EditorScript::apply(int frame) {
         } else if (step.action == "click" || step.action == "rclick" || step.action == "dclick") {
             const int button = step.action == "rclick" ? 1 : 0;
             io.AddMousePosEvent(number(args, 0), number(args, 1));
+            // Позицию ставим сейчас, нажатие через два кадра, отпускание через три: ImGui успевает увидеть наведение.
             pending_.push_back({frame + 2, button, 0, true});
             pending_.push_back({frame + 3, button, 0, false});
             if (step.action == "dclick") {
@@ -140,6 +156,7 @@ void EditorScript::apply(int frame) {
         } else if (step.action == "wheel") {
             io.AddMouseWheelEvent(0.0f, number(args, 0));
         } else if (step.action == "key" && !args.empty()) {
+            // «ctrl+shift+D» делим по плюсам: все части, кроме последней, это модификаторы, последняя это сама клавиша.
             std::stringstream combo(args[0]);
             std::string part;
             std::vector<std::string> parts;

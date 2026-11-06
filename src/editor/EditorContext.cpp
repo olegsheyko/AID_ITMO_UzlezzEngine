@@ -135,6 +135,8 @@ EditorContext::EditorContext(IRenderAdapter& renderer)
       debugRenderSystem(renderer),
       stress(renderer) {
     // Враги из волн появляются через тот же PrefabManager, что и в редакторе.
+    // Здесь скриптовая подсистема получает две внешние услуги: создавать сущности из префабов
+    // (World:spawn_prefab в Lua) и узнавать, нажато ли игровое действие (World:input_pressed).
     scripts.spawnPrefab = [this](const std::string& path) { return PrefabManager::spawn(world, path); };
     scripts.inputPressed = [](const std::string& action) { return InputManager::getInstance().isActionPressed(action); };
 }
@@ -208,6 +210,8 @@ void EditorContext::update(float dt) {
     }
 
     // Шейдеры перезагружает Application (HotReload); здесь — скрипты.
+    // Каждый кадр: вотчер при необходимости ставит фоновую проверку файлов, а готовые изменения
+    // (файл сохранён и синтаксис проверен на воркере) применяются здесь, на главном потоке.
     const double now = ImGui::GetTime();
     if (autoReloadScripts && scriptWatcher.due(now)) {
         scriptWatcher.poll(now, {kScriptRoot}, scripts.scriptPaths());
@@ -320,6 +324,9 @@ void EditorContext::setScriptMessage(const std::string& message, bool isError) {
     scriptMessageIsError = isError;
 }
 
+// Собирает демо-сцену ЛР 2 целиком из префабов: арена, ядро (Core), волны (Waves) и превью врага.
+// Превью врага виден только в Edit, чтобы настроить поля префаба. В Play враги появляются из JSON,
+// а превью удаляется (см. play()). В конце scripts.reload() загружает Lua-классы и заполняет поля.
 void EditorContext::loadArenaScene() {
     resetSceneState();
     scenePath_ = kArenaScenePath;
@@ -355,6 +362,8 @@ void EditorContext::loadArenaScene() {
     LOG_INFO("Editor: loaded the Lua arena scene");
 }
 
+// Кнопка Reload Scripts. В Edit это полная перезагрузка классов. В Play каждый файл сцены читается с диска,
+// проверяется и подменяется на ходу тем же путём, что и при автоматическом hot reload.
 bool EditorContext::reloadScripts() {
     if (!isPlaying()) {
         const bool ok = scripts.reload();
@@ -380,6 +389,10 @@ bool EditorContext::reloadScripts() {
     return ok;
 }
 
+// Применяет одно изменение файла (из вотчера или из кнопки Reload). Два исхода:
+//   файл с ошибкой синтаксиса: ошибка в Console и Gameplay, прежний код продолжает работать;
+//   файл в порядке: ScriptSystem::hotReload подменяет классы, а сюда приходит отчёт, из которого
+//   собирается сообщение вида «enemy.lua reloaded in Play: N instance(s), state kept (L2)...».
 bool EditorContext::applyScriptChange(const ScriptWatcher::Change& change) {
     const std::string name = std::filesystem::path(change.path).filename().string();
     if (!change.ok) {
@@ -415,6 +428,8 @@ bool EditorContext::applyScriptChange(const ScriptWatcher::Change& change) {
     return true;
 }
 
+// Save to Prefab: переносит значения полей скрипта из компонента в исходный JSON (PrefabManager::saveFields).
+// После этого новые спавны и перезагрузка сцены используют обновлённые числа баланса.
 bool EditorContext::savePrefabFields(Entity entity) {
     if (!world.isAlive(entity) || !world.hasComponent<ScriptComponent>(entity)) {
         return false;
@@ -433,6 +448,8 @@ bool EditorContext::savePrefabFields(Entity entity) {
     return ok;
 }
 
+// Ручной спавн префаба в Edit (его зовут Scene View, Content Browser и Inspector). Во время Play запрещён:
+// сущности в Play создают скрипты. Позиция префаба считается смещением от точки, куда его бросили.
 Entity EditorContext::spawnPrefab(const std::string& path, const Vec3& position) {
     if (mode == EditorMode::Play) {
         return kInvalidEntity;
@@ -454,6 +471,9 @@ Entity EditorContext::spawnPrefab(const std::string& path, const Vec3& position)
     }
 }
 
+// Привязка клавиш к именам действий. Скрипты спрашивают действия по имени (World:input_pressed("StartWave")),
+// а не клавиши, поэтому раскладку можно менять здесь, не трогая Lua. StartWave (Space) и DefensePulse (F)
+// нужны скриптам waves.lua и core.lua.
 void EditorContext::bindActions() {
     InputManager& inputManager = InputManager::getInstance();
     inputManager.bindAction("MoveLeft", KeyCode::Left);
@@ -1207,6 +1227,12 @@ void EditorContext::clearSelection() {
     selectedAsset.clear();
 }
 
+// Кнопка Play. Порядок важен:
+//   1. снять снимок сцены (playSnapshot_), чтобы Stop мог её вернуть;
+//   2. убрать превью врага (оно только для настройки в Edit);
+//   3. scripts.start() создаёт экземпляры и вызывает on_create. Если скрипты не запустились,
+//      сцена возвращается из снимка и Play отменяется с сообщением об ошибке;
+//   4. включить игровую камеру и режим Play.
 void EditorContext::play() {
     if (mode == EditorMode::Play) {
         return;
@@ -1241,6 +1267,8 @@ void EditorContext::play() {
     LOG_INFO("Editor: entered Play mode");
 }
 
+// Кнопка Stop. Сначала останавливаются скрипты (on_destroy, мёртвые handle), потом сцена восстанавливается
+// из снимка: всё, что игра создала или изменила за время Play, исчезает.
 void EditorContext::stop() {
     if (mode != EditorMode::Play) {
         return;
@@ -1316,10 +1344,15 @@ void EditorContext::updateEditorCamera(float dt, int width, int height, bool inp
 
 void EditorContext::renderSceneView(int width, int height) {
     ZoneScopedN("Scene View");
+    // Группы разметки повторяют шаги кадра окна Scene: в RenderDoc это дерево событий, в Tracy GPU-зоны.
+    RenderDebugScope pass(renderer, "Scene View");
     syncEditorCameraEntity(width, height);
     activateCamera(editorCameraEntity);
     renderer.beginViewportFrame(kSceneViewTarget, width, height, 0.155f, 0.16f, 0.175f);
-    renderer.drawSky(camera.getViewMatrix(), camera.getProjectionMatrix(), camera.getPosition(), kSunDirection);
+    {
+        RenderDebugScope sky(renderer, "Sky");
+        renderer.drawSky(camera.getViewMatrix(), camera.getProjectionMatrix(), camera.getPosition(), kSunDirection);
+    }
     renderSystem.render(world);
     sceneDrawnMeshes = renderSystem.getLastDrawnMeshCount();
     sceneRenderStats=renderSystem.stats();
@@ -1332,6 +1365,7 @@ void EditorContext::renderSceneView(int width, int height) {
         ++cullingSamples[index];
     }
     if (sceneView.showGrid) {
+        RenderDebugScope grid(renderer, "Grid");
         renderer.drawGrid(camera.getViewMatrix(), camera.getProjectionMatrix(), camera.getPosition(), sceneView.gridHeight);
     }
     // Коллайдеры в Scene View рисует оверлей панели (сглаженные линии); DebugRenderSystem — в Game View.
@@ -1347,6 +1381,7 @@ void EditorContext::renderSceneView(int width, int height) {
                 stack.push_back(child);
             }
         }
+        RenderDebugScope outline(renderer, "Selection outline");
         renderer.beginSelectionMask();
         renderSystem.renderMask(world, outlined, renderer.selectionMaskProgram());
         const float scale = ImGui::GetIO().DisplayFramebufferScale.x;
@@ -1387,6 +1422,7 @@ Mat4 EditorContext::gameProjectionMatrix(float aspect) const {
 
 void EditorContext::renderGameView(int width, int height) {
     ZoneScopedN("Game View");
+    RenderDebugScope pass(renderer, "Game View");
     const bool hasCamera = world.isAlive(gameCameraEntity) && world.hasComponent<Camera>(gameCameraEntity);
     if (hasCamera) {
         Camera& gameCamera = world.getComponent<Camera>(gameCameraEntity);
@@ -1398,8 +1434,12 @@ void EditorContext::renderGameView(int width, int height) {
     if (hasCamera) {
         renderer.beginViewportFrame(kGameViewTarget, width, height, 0.32f, 0.44f, 0.6f);
         const Camera& gameCamera = world.getComponent<Camera>(gameCameraEntity);
-        renderer.drawSky(gameCamera.viewMatrix, gameCamera.projectionMatrix, transformPoint(worldMatrix(gameCameraEntity), {}), kSunDirection);
+        {
+            RenderDebugScope sky(renderer, "Sky");
+            renderer.drawSky(gameCamera.viewMatrix, gameCamera.projectionMatrix, transformPoint(worldMatrix(gameCameraEntity), {}), kSunDirection);
+        }
         renderSystem.render(world);
+        RenderDebugScope colliders(renderer, "Debug colliders");
         debugRenderSystem.render(world);
     } else {
         renderer.beginViewportFrame(kGameViewTarget, width, height, 0.0f, 0.0f, 0.0f);
@@ -1408,6 +1448,8 @@ void EditorContext::renderGameView(int width, int height) {
     setCameraMode();
 }
 
+// Один кадр симуляции в Play. Порядок задан здесь: сначала скрипты (они двигают объекты и спавнят врагов),
+// затем ввод, физика (пока грузятся меши, физика ждёт), вращение и камера. Анимация считается отдельно в update().
 void EditorContext::updateGameplay(float dt, bool allowInput) {
     ZoneScopedN("Simulation");
     scripts.update(dt, allowInput);
@@ -1513,6 +1555,8 @@ void EditorContext::processGameplayInput() {
     mmbWasPressed_ = mmbNow;
 }
 
+// Снимок сцены перед Play: копия всех компонентов каждой сущности, кроме служебных (камера редактора).
+// Значения полей скриптов (ScriptComponent) копируются вместе с остальным, а Lua-объекты self в снимок не входят.
 EditorContext::SceneSnapshot EditorContext::captureSnapshot() const {
     SceneSnapshot snapshot;
     snapshot.selected = selected;
@@ -1574,6 +1618,9 @@ EditorContext::SceneSnapshot EditorContext::captureSnapshot() const {
     return snapshot;
 }
 
+// Возврат сцены из снимка: мир очищается и сущности создаются заново с теми же id, затем им возвращаются
+// компоненты. world.clear() выдаёт миру новый «токен жизни», поэтому любой handle, который скрипт
+// сохранил во время Play, после этого считается мёртвым.
 void EditorContext::restoreSnapshot(const SceneSnapshot& snapshot) {
     world.clear();
     editorCameraEntity = kInvalidEntity;

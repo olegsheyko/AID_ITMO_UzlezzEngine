@@ -1,3 +1,5 @@
+// Панель Gameplay для ЛР 2: показывает состояние Lua-скриптинга (версия, память, время), статус игры Arena,
+// ошибки скриптов и настройки hot reload. Данные берёт у EditorContext (там живёт ScriptSystem), сама скрипты не запускает.
 #include "editor/panels/GameplayPanel.h"
 
 #include "editor/EditorContext.h"
@@ -36,6 +38,9 @@ std::string trim(const std::string& text) {
     return text.substr(begin, text.find_last_not_of(' ') - begin + 1);
 }
 
+// Скрипт Waves передаёт статус одной строкой через world:set_status, сегменты разделены знаком '|'.
+// Сегмент вида «ключ: число» становится плиткой метрики, любой другой (например, «Space: next wave») подсказкой.
+// Числом считается строка из цифр и минусов.
 StatusParts parseStatus(const std::string& status) {
     StatusParts parts;
     std::size_t start = 0;
@@ -119,6 +124,8 @@ void messageBox(const char* icon, const std::string& text, ImU32 color) {
 }
 
 // «assets/scripts/enemy.lua:12: ...» в сообщении → кнопка, открывающая скрипт на этой строке в редакторе скриптов.
+// Если в сообщении нет места ошибки вида «файл.lua:строка», кнопка не рисуется. Сам файл открывает ScriptEditorPanel:
+// здесь мы только кладём запрос в context (openScriptRequest и openScriptLine).
 void goToErrorButton(EditorContext& context, const std::string& message) {
     std::string path;
     int line = 0;
@@ -149,6 +156,8 @@ void GameplayPanel::draw(EditorContext& context) {
     ImGui::End();
 }
 
+// Секция Lua. Таблица со свойствами: версия Lua и sol2, состояние (Running в Play или Idle), куча Lua, время скриптов,
+// сцена. Ниже кнопки и настройки hot reload.
 void GameplayPanel::drawRuntime(EditorContext& context) {
     if (!EditorUI::sectionHeader("lua_runtime", ICON_LC_FILE_CODE, "Lua  \xC2\xB7  Lab 2")) {
         return;
@@ -164,6 +173,7 @@ void GameplayPanel::drawRuntime(EditorContext& context) {
             ImGui::TextColored(toVec4(kTextDim), ICON_LC_PAUSE "  Idle until Play");
         }
         // Живые цифры для блока «Стабильность»: куча Lua не растёт от волны к волне и между Play.
+        // Эти цифры считает ScriptSystem: куча (текущая и пик) и время последнего update.
         const ScriptStats stats = context.scripts.stats();
         const ScriptLimits limits = context.scripts.limits();
         constexpr double kMb = 1024.0 * 1024.0;
@@ -171,6 +181,7 @@ void GameplayPanel::drawRuntime(EditorContext& context) {
         std::snprintf(text, sizeof(text), "%.2f MB  \xC2\xB7  peak %.2f  \xC2\xB7  limit %.0f MB",
             stats.memoryBytes / kMb, stats.peakMemoryBytes / kMb, limits.memoryBytes / kMb);
         EditorUI::propertyValue("Lua heap", text);
+        // В Play показываем время скриптов за кадр, вне Play только бюджет на один вызов (ScriptLimits).
         if (playing) {
             std::snprintf(text, sizeof(text), "%.3f ms per frame  \xC2\xB7  budget %d ms per call", stats.updateMs, limits.timeBudgetMs);
         } else {
@@ -188,6 +199,7 @@ void GameplayPanel::drawRuntime(EditorContext& context) {
     ImGui::Dummy(ImVec2(0.0f, px(2.0f)));
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
     const float half = (ImGui::GetContentRegionAvail().x - spacing) * 0.5f;
+    // Арену нельзя загрузить в Play: она заменяет текущую сцену.
     ImGui::BeginDisabled(playing);
     if (EditorUI::primaryButton(ICON_LC_SWORDS "  Open Arena", ImVec2(half, ImGui::GetFrameHeight() + px(4.0f)))) {
         context.loadArenaScene();
@@ -195,6 +207,7 @@ void GameplayPanel::drawRuntime(EditorContext& context) {
     ImGui::SetItemTooltip("Replace the current scene with the Lua arena: core, wave spawner and an enemy prefab preview.");
     ImGui::EndDisabled();
     ImGui::SameLine();
+    // reloadScripts() сам выбирает способ: в Edit перечитывает все классы, в Play подменяет код на ходу (hot reload).
     if (ImGui::Button(ICON_LC_REFRESH_CW "  Reload Scripts", ImVec2(-FLT_MIN, ImGui::GetFrameHeight() + px(4.0f)))) {
         context.reloadScripts();
     }
@@ -210,6 +223,7 @@ void GameplayPanel::drawRuntime(EditorContext& context) {
     ImGui::AlignTextToFramePadding();
     EditorUI::textDim("In Play:");
     ImGui::SameLine();
+    // Режим hot reload в Play (ReloadMode): L2 переносит self.* в новый экземпляр, L1 заново вызывает on_create.
     static const char* const kModes[] = {"Keep state (L2)", "Reset state (L1)"};
     int mode = context.playReloadMode == ReloadMode::KeepState ? 0 : 1;
     ImGui::SetNextItemWidth(-FLT_MIN);
@@ -221,6 +235,8 @@ void GameplayPanel::drawRuntime(EditorContext& context) {
     EditorUI::componentSpacing();
 }
 
+// Секция Status. Приоритет: пока идёт Play и скрипт задал статус, показываем его (плитки метрик, красная плашка при DEFEAT
+// или просто строка), иначе последнее сообщение скриптинга, иначе подсказка, что делать. Ошибки рисуются под этим.
 void GameplayPanel::drawStatus(EditorContext& context) {
     if (!EditorUI::sectionHeader("game_status", ICON_LC_CASTLE, "Status")) {
         return;
@@ -229,9 +245,12 @@ void GameplayPanel::drawStatus(EditorContext& context) {
     if (context.isPlaying() && !context.scripts.status().empty()) {
         const std::string& status = context.scripts.status();
         const StatusParts parts = parseStatus(status);
+        // Статус, начинающийся с DEFEAT (так пишет Waves, когда у ядра кончилось здоровье), показываем красной плашкой.
         if (status.rfind("DEFEAT", 0) == 0) {
             messageBox(ICON_LC_SKULL, status, kError);
         } else if (!parts.metrics.empty()) {
+            // Плитки идут в несколько колонок: сколько влезает при ширине около 92 пикселей, но не больше, чем метрик.
+            // Ширина плитки делится поровну.
             const int columns = std::max(1, std::min(static_cast<int>(parts.metrics.size()),
                 static_cast<int>(ImGui::GetContentRegionAvail().x / px(92.0f))));
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
@@ -239,6 +258,7 @@ void GameplayPanel::drawStatus(EditorContext& context) {
             for (std::size_t i = 0; i < parts.metrics.size(); ++i) {
                 const std::string& label = parts.metrics[i].first;
                 const std::string& value = parts.metrics[i].second;
+                // Цвет полоски плитки: HP зелёный (красный при нуле), Alive жёлтый, остальное акцентный.
                 ImU32 accent = kAccent;
                 if (label.find("HP") != std::string::npos) {
                     accent = value == "0" ? kError : kSuccess;
@@ -257,11 +277,14 @@ void GameplayPanel::drawStatus(EditorContext& context) {
             messageBox(ICON_LC_INFO, status, kAccent);
         }
     } else if (!context.scriptMessage.empty() && !context.scriptMessageIsError) {
+        // Статуса из игры нет (Edit или скрипт его не задал): показываем последнее обычное сообщение скриптинга.
+        // Ошибки идут ниже.
         messageBox(ICON_LC_INFO, context.scriptMessage, kAccent);
     } else if (!context.isPlaying() && context.scriptMessage.empty() && error.empty()) {
         EditorUI::textFaint(context.isArenaScene() ? "Press Play, then click the Game view to give it keyboard focus."
                                                    : "Open the Arena to try the Lua wave defense.");
     }
+    // Ошибка выполнения Lua (ScriptSystem::error): плашка, кнопка копирования и переход к строке в редакторе.
     if (!error.empty()) {
         messageBox(ICON_LC_CIRCLE_ALERT, "Lua error: " + error, kError);
         if (ImGui::SmallButton(ICON_LC_COPY "  Copy error")) {
@@ -269,12 +292,16 @@ void GameplayPanel::drawStatus(EditorContext& context) {
         }
         goToErrorButton(context, error);
     } else if (context.scriptMessageIsError && !context.scriptMessage.empty()) {
+        // Ошибка последнего действия: например, hot reload отклонён из-за синтаксиса (прежний код продолжает работать)
+        // или не записался префаб.
         messageBox(ICON_LC_CIRCLE_ALERT, context.scriptMessage, kError);
         goToErrorButton(context, context.scriptMessage);
     }
     EditorUI::componentSpacing();
 }
 
+// Подсказка по клавишам Arena. Space и F это действия StartWave и DefensePulse: привязку клавиш к именам действий
+// делает EditorContext, а скрипты спрашивают действие по имени (world:input_pressed).
 void GameplayPanel::drawControls() {
     if (!EditorUI::sectionHeader("game_controls", ICON_LC_KEYBOARD, "Controls")) {
         return;
@@ -288,6 +315,8 @@ void GameplayPanel::drawControls() {
     EditorUI::componentSpacing();
 }
 
+// Список сущностей со ScriptComponent (служебные сущности редактора пропускаем): иконка, имя и справа имя Lua-класса.
+// Показывается не больше 64 строк.
 void GameplayPanel::drawScriptedEntities(EditorContext& context) {
     if (!EditorUI::sectionHeader("scripted_entities", ICON_LC_LIST_TREE, "Scripted Entities")) {
         return;
@@ -306,6 +335,7 @@ void GameplayPanel::drawScriptedEntities(EditorContext& context) {
         ImGui::PushID(static_cast<int>(entity));
         const ImVec2 start = ImGui::GetCursorScreenPos();
         const float rowHeight = ImGui::GetFrameHeight();
+        // Невидимая кнопка-строка на всю ширину: она даёт выделение по клику, а содержимое строки рисуем поверх через drawList.
         if (ImGui::Selectable("##entity", context.selected == entity, ImGuiSelectableFlags_None, ImVec2(0.0f, rowHeight))) {
             context.select(entity);
         }
