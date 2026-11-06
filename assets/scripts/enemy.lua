@@ -39,4 +39,3 @@ function Enemy:on_update(dt)
 
     --while true do end 
 end
-

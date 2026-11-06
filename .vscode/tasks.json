@@ -1,98 +1,186 @@
 {
-    // Задачи для macOS: сборка, запуск движка, профайлер Tracy, тесты.
-    //   Cmd+Shift+B                          — собрать движок (Release)
-    //   Cmd+Shift+P → «Tasks: Run Task»      — выбрать любую задачу ниже
-    //
-    // Профайлер должен совпадать с клиентом Tracy 0.14.1 из external/tracy.
-    // Если его нет на машине, собрать один раз (~5 минут):
-    //   git clone --depth 1 --branch v0.14.1 https://github.com/wolfpld/tracy.git ~/tools/tracy-0.14.1
-    //   cmake -S ~/tools/tracy-0.14.1/profiler -B ~/tools/tracy-0.14.1/profiler/build -DCMAKE_BUILD_TYPE=Release
-    //   cmake --build ~/tools/tracy-0.14.1/profiler/build -j
     "version": "2.0.0",
-    "options": {
-        "env": {
-            // VS Code, запущенный из Dock, может не видеть brew в PATH.
-            "PATH": "/opt/homebrew/bin:/usr/local/bin:${env:PATH}"
-        }
-    },
     "tasks": [
         {
+            "label": "Engine: configure (Release)",
+            "type": "process",
+            "command": "cmake",
+            "args": [
+                "-S",
+                "${workspaceFolder}",
+                "-B",
+                "${workspaceFolder}\\build\\vscode",
+                "-G",
+                "Visual Studio 17 2022",
+                "-A",
+                "x64",
+                "-DENGINE_ENABLE_TRACY=ON",
+                "-DENGINE_BUILD_TRACY_DEMOS=OFF"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "dedicated",
+                "clear": true
+            }
+        },
+        {
             "label": "Engine: build (Release)",
-            "type": "shell",
-            // Конфигурирует build/mac только при первом запуске, дальше CMake сам следит за CMakeLists.txt.
-            "command": "[ -f build/mac/CMakeCache.txt ] || cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release && cmake --build build/mac --target GameEngine CopyAssets --parallel $(sysctl -n hw.ncpu)",
-            "group": { "kind": "build", "isDefault": true },
-            "problemMatcher": { "base": "$gcc", "fileLocation": ["autoDetect", "${workspaceFolder}"] },
-            "presentation": { "panel": "dedicated", "clear": true }
+            "type": "process",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "${workspaceFolder}\\build\\vscode",
+                "--config",
+                "Release",
+                "--target",
+                "GameEngine",
+                "CopyAssets",
+                "CopyLuaLicenses",
+                "--parallel"
+            ],
+            "dependsOn": "Engine: configure (Release)",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile",
+            "presentation": {
+                "panel": "dedicated",
+                "clear": true
+            }
+        },
+        {
+            "label": "Engine: prepare runtime",
+            "type": "process",
+            "command": "cmake",
+            "args": [
+                "-E",
+                "copy_if_different",
+                "${workspaceFolder}\\external\\assimp\\lib\\assimp-vc143-mt.dll",
+                "${workspaceFolder}\\build\\vscode\\Release"
+            ],
+            "dependsOn": "Engine: build (Release)",
+            "problemMatcher": [],
+            "hide": true
         },
         {
             "label": "Engine: run",
-            "type": "shell",
-            // Из корня репозитория: правки assets/scripts и assets/prefabs сразу видны движку,
-            // Save to Prefab пишет в исходники, а не в копию в build/mac, которую затирает CopyAssets.
-            "command": "./build/mac/GameEngine",
-            "options": { "cwd": "${workspaceFolder}" },
-            "dependsOn": "Engine: build (Release)",
+            "type": "process",
+            "command": "${workspaceFolder}\\build\\vscode\\Release\\GameEngine.exe",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "Engine: prepare runtime",
             "problemMatcher": [],
-            "presentation": { "panel": "dedicated", "clear": true }
+            "presentation": {
+                "panel": "dedicated",
+                "clear": true
+            }
         },
         {
             "label": "Engine: run arena (ЛР 2)",
-            "type": "shell",
-            // Сразу Lua-арена: правки assets/scripts подхватываются на лету, в том числе в Play.
-            "command": "./build/mac/GameEngine --editor-arena",
-            "options": { "cwd": "${workspaceFolder}" },
-            "dependsOn": "Engine: build (Release)",
+            "type": "process",
+            "command": "${workspaceFolder}\\build\\vscode\\Release\\GameEngine.exe",
+            "args": ["--editor-arena"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "Engine: prepare runtime",
             "problemMatcher": [],
-            "presentation": { "panel": "dedicated", "clear": true }
+            "presentation": {
+                "panel": "dedicated",
+                "clear": true
+            }
+        },
+        {
+            "label": "Tracy: prepare profiler",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}\\tools\\setup_tracy_profiler.ps1"
+            ],
+            "problemMatcher": [],
+            "hide": true
         },
         {
             "label": "Tracy: connect",
-            "type": "shell",
-            // Ждёт движок и подключается к нему сам: переподключение раз в 10 мс.
-            "command": "${userHome}/tools/tracy-0.14.1/profiler/build/tracy-profiler",
+            "type": "process",
+            "command": "${workspaceFolder}\\build\\tracy-profiler\\tracy-profiler.exe",
             "args": ["-a", "127.0.0.1"],
+            "dependsOn": "Tracy: prepare profiler",
             "problemMatcher": [],
-            "presentation": { "panel": "dedicated", "reveal": "silent" }
-        },
-        {
-            "label": "Tracy: open profiler",
-            "type": "shell",
-            // Стартовый экран Tracy: подключиться вручную или открыть сохранённый .tracy.
-            "command": "${userHome}/tools/tracy-0.14.1/profiler/build/tracy-profiler",
-            "problemMatcher": [],
-            "presentation": { "panel": "dedicated", "reveal": "silent" }
+            "presentation": {
+                "panel": "dedicated",
+                "reveal": "silent"
+            }
         },
         {
             "label": "Engine + Tracy",
-            // Профайлер стартует сразу и ждёт, движок — после сборки. Трейс захватит и запуск.
-            "dependsOn": ["Tracy: connect", "Engine: run"],
+            "type": "process",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}\\tools\\run_engine_with_tracy.ps1"
+            ],
+            "dependsOn": [
+                "Tracy: prepare profiler",
+                "Engine: prepare runtime"
+            ],
             "dependsOrder": "parallel",
-            "problemMatcher": []
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "dedicated",
+                "clear": true
+            }
         },
         {
-            "label": "Bench: run",
-            // Серия прогонов для замеров ЛР 1: оба сценария по 3 раза, в конце — таблица.
-            "type": "shell",
-            "command": "tools/run_bench.sh ${input:benchLabel} 3",
+            "label": "Engine + Tracy: culling",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}\\tools\\run_engine_with_tracy.ps1",
+                "-Culling"
+            ],
+            "dependsOn": [
+                "Tracy: prepare profiler",
+                "Engine: prepare runtime"
+            ],
+            "dependsOrder": "parallel",
             "problemMatcher": [],
-            "presentation": { "panel": "dedicated", "clear": true }
+            "presentation": {
+                "panel": "dedicated",
+                "clear": true
+            }
         },
         {
             "label": "Engine: tests",
-            "type": "shell",
-            "command": "cmake --build build/mac --parallel $(sysctl -n hw.ncpu) && ctest --test-dir build/mac --output-on-failure",
+            "type": "process",
+            "command": "ctest",
+            "args": [
+                "--test-dir",
+                "${workspaceFolder}\\build\\vscode",
+                "-C",
+                "Release",
+                "--output-on-failure"
+            ],
+            "dependsOn": "Engine: build (Release)",
             "group": "test",
-            "problemMatcher": { "base": "$gcc", "fileLocation": ["autoDetect", "${workspaceFolder}"] },
-            "presentation": { "panel": "dedicated", "clear": true }
-        }
-    ],
-    "inputs": [
-        {
-            "id": "benchLabel",
-            "type": "promptString",
-            "description": "Метка прогона: before — синхронная загрузка, after — через job system",
-            "default": "before"
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "dedicated",
+                "clear": true
+            }
         }
     ]
 }
